@@ -26,4 +26,7 @@ public interface NseDeliveryDataRepository extends JpaRepository<NseDeliveryData
 
     @Query("SELECT n FROM NseDeliveryData n WHERE n.symbol = :symbol ORDER BY n.tradeDate DESC")
     List<NseDeliveryData> findBySymbolOrderByDateDesc(String symbol);
+
+    @Query("SELECT n FROM NseDeliveryData n WHERE n.tradeDate BETWEEN :start AND :end AND n.series = 'EQ' ORDER BY n.symbol, n.tradeDate")
+    List<NseDeliveryData> findRangeEQ(LocalDate start, LocalDate end);
 }

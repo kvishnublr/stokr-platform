@@ -1,78 +1,133 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
 
-export default function Orders() {
-  const { data: deployments } = useQuery({ queryKey: ['deployments'], queryFn: () => client.get('/deployments').then((r) => r.data) });
+const STATUS_STYLE = {
+  COMPLETE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  REJECTED: 'bg-rose-50 text-rose-600 border-rose-200',
+  OPEN: 'bg-amber-50 text-amber-600 border-amber-200',
+  UNKNOWN: 'bg-slate-50 text-slate-500 border-slate-200',
+};
 
-  if (!deployments) return <div className="text-slate-500">Loading orders...</div>;
-  if (deployments.length === 0) return (
-    <div>
-      <div className="mb-8 animate-fade-in-up">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-1 h-7 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Orders & Trades</h1>
-        </div>
-        <p className="text-slate-400 text-sm ml-4">Track all your order executions</p>
-      </div>
-      <div className="card-crystal p-12 text-center">
-        <svg className="w-10 h-10 text-slate-300 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-        <p className="text-slate-400">No deployments yet. Create a deployment to see orders here.</p>
-      </div>
-    </div>
-  );
+const FILTERS = [
+  { id: 'ALL', label: 'All' },
+  { id: 'COMPLETE', label: 'Executed' },
+  { id: 'REJECTED', label: 'Rejected' },
+  { id: 'OPEN', label: 'Pending' },
+];
 
-  return (
-    <div>
-      <div className="mb-8 animate-fade-in-up">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-1 h-7 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Orders & Trades</h1>
-        </div>
-        <p className="text-slate-400 text-sm ml-4">Track all your order executions</p>
-      </div>
-      {deployments.map((d) => <DeploymentOrders key={d.id} deployment={d} />)}
-    </div>
-  );
+function fmtTime(iso) {
+  if (!iso) return '--';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '--';
+  return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 }
 
-function DeploymentOrders({ deployment }) {
-  const { data: orders, isLoading } = useQuery({
-    queryKey: ['orders', deployment.id],
-    queryFn: () => client.get('/orders', { params: { deploymentId: deployment.id, page: 0, size: 20 } }).then((r) => r.data?.content || r.data),
+export default function Orders() {
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [brokerFilter, setBrokerFilter] = useState('ALL');
+
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+    queryKey: ['optionArbOrders', statusFilter],
+    queryFn: () => client.get('/option-arbitrage/orders', {
+      params: { status: statusFilter === 'ALL' ? undefined : statusFilter, limit: 500 },
+    }).then((r) => r.data),
+    refetchInterval: 10000,
   });
 
+  const allOrders = data?.orders || [];
+  const orders = brokerFilter === 'ALL' ? allOrders : allOrders.filter(o => (o.broker || 'PAPER') === brokerFilter);
+  const brokers = [...new Set(allOrders.map(o => o.broker || 'PAPER'))];
+
   return (
-    <div className="card-crystal overflow-hidden mb-4">
-      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-        <div>
-          <h2 className="font-semibold text-slate-800 text-sm">{deployment.strategyName || `Strategy #${deployment.strategyId}`}</h2>
-          <p className="text-xs text-slate-400">{deployment.mode}</p>
+    <div>
+      <div className="mb-6">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-1 h-7 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Orders</h1>
+        </div>
+        <p className="text-slate-400 text-sm ml-4">Every order this platform has placed -- executed, rejected, or pending -- across all strategies</p>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          {FILTERS.map(f => (
+            <button key={f.id} onClick={() => setStatusFilter(f.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${statusFilter === f.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          {brokers.length > 1 && (
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+              <button onClick={() => setBrokerFilter('ALL')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${brokerFilter === 'ALL' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>All</button>
+              {brokers.map(b => (
+                <button key={b} onClick={() => setBrokerFilter(b)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${brokerFilter === b ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>{b}</button>
+              ))}
+            </div>
+          )}
+          <button onClick={() => refetch()} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50">
+            {isFetching ? '...' : '↻ Refresh'}
+          </button>
         </div>
       </div>
-      <table className="w-full text-sm table-crystal">
-        <thead><tr>
-          <th>Time</th>
-          <th>Symbol</th>
-          <th>Side</th>
-          <th>Qty</th>
-          <th>Price</th>
-          <th>Status</th>
-        </tr></thead>
-        <tbody>
-          {isLoading && <tr><td colSpan="6" className="p-6 text-center text-slate-400">Loading...</td></tr>}
-          {!isLoading && (!orders || orders.length === 0) && <tr><td colSpan="6" className="p-8 text-center text-slate-400">No orders yet</td></tr>}
-          {orders?.map((o) => (
-            <tr key={o.id}>
-              <td className="text-xs text-slate-500">{new Date(o.createdAt).toLocaleString()}</td>
-              <td className="font-medium text-slate-800">{o.symbol}</td>
-              <td><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${o.side === 'BUY' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}>{o.side}</span></td>
-              <td>{o.quantity}</td>
-              <td>{o.price ? `₹${o.price}` : '-'}</td>
-              <td><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${o.status === 'COMPLETE' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : o.status === 'REJECTED' ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-amber-50 text-amber-600 border border-amber-200'}`}>{o.status}</span></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+        {isLoading && <div className="p-12 text-center text-slate-400 text-sm font-semibold">Loading orders...</div>}
+        {isError && <div className="p-12 text-center text-rose-500 text-sm font-semibold">Could not load orders</div>}
+        {!isLoading && !isError && orders.length === 0 && (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No orders match this filter</div>
+        )}
+        {!isLoading && !isError && orders.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px] text-left border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-tight font-bold text-[11px]">
+                <tr>
+                  <th className="px-4 py-3">Time</th>
+                  <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Instrument</th>
+                  <th className="px-4 py-3">Product</th>
+                  <th className="px-4 py-3">Broker</th>
+                  <th className="px-4 py-3 text-right">Qty</th>
+                  <th className="px-4 py-3 text-right">Price</th>
+                  <th className="px-4 py-3 text-center">Status</th>
+                  <th className="px-4 py-3">Reason</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {orders.map((o, i) => (
+                  <tr key={i} className={`hover:bg-slate-50 ${o.reason ? 'bg-rose-50/30' : ''}`}>
+                    <td className="px-4 py-2.5 font-mono text-[11px] text-slate-500">{fmtTime(o.time)}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${o.side === 'BUY' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-rose-50 text-rose-600 border-rose-200'}`}>
+                        {o.side}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 font-bold text-slate-800">
+                      {o.symbol} <span className="text-slate-400 font-normal text-[10px]">NFO</span>
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-500 text-[11px]">{o.product}</td>
+                    <td className="px-4 py-2.5 text-slate-500 text-[11px]">{o.broker}</td>
+                    <td className="px-4 py-2.5 text-right font-mono">{o.qty}</td>
+                    <td className="px-4 py-2.5 text-right font-mono">₹{Number(o.price || 0).toFixed(2)}</td>
+                    <td className="px-4 py-2.5 text-center">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_STYLE[o.status] || STATUS_STYLE.UNKNOWN}`}>
+                        {o.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-[11px] text-rose-700 max-w-[320px]" title={o.reason || ''}>
+                      {o.reason || <span className="text-slate-300">--</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

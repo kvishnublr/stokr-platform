@@ -97,6 +97,29 @@ public class BrokerController {
         return connectNavia(body);
     }
 
+    @PostMapping("/motilaloswal/connect")
+    public ResponseEntity<Map<String, Object>> connectMotilalOswal(@RequestBody Map<String, String> body) {
+        String clientCode = body.getOrDefault("clientCode", "").trim();
+        String password = body.getOrDefault("password", "").trim();
+        String totpSecret = body.getOrDefault("totpSecret", "").trim();
+        if (clientCode.isBlank() || password.isBlank() || totpSecret.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "clientCode, password, and totpSecret are required"));
+        }
+        try {
+            Long userId = SecurityUtils.currentUserId();
+            BrokerAdapter adapter = brokerRegistry.getAdapter("MOTILALOSWAL");
+            if (adapter instanceof MotilalOswalAdapter mofsl) {
+                BrokerAccount account = mofsl.connectWithTotp(userId, clientCode, password, totpSecret);
+                log.info("MOFSL connected with TOTP for user {}, clientCode={}, account {}", userId, clientCode, account.getId());
+                return ResponseEntity.ok(Map.of("status", "ok", "accountId", account.getId(), "broker", "MOTILALOSWAL"));
+            }
+            return ResponseEntity.badRequest().body(Map.of("error", "Motilal Oswal adapter not available"));
+        } catch (Exception e) {
+            log.error("MOFSL TOTP connection failed", e);
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @GetMapping
     public ResponseEntity<List<BrokerAccount>> getMyBrokers() {
         return ResponseEntity.ok(brokerService.getUserBrokers(SecurityUtils.currentUserId()));

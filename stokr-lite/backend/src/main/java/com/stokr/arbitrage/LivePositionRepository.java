@@ -30,6 +30,15 @@ public interface LivePositionRepository extends JpaRepository<LivePosition, Long
     @Query("SELECT COUNT(p) FROM LivePosition p WHERE p.status = 'OPEN'")
     long countAllOpen();
 
+    /** Open LIVE positions only (excludes paper) -- used to gate live order placement so
+     *  stale paper positions can't block a real trade from ever being attempted. */
+    @Query("SELECT COUNT(p) FROM LivePosition p WHERE p.status = 'OPEN' AND p.broker IS NOT NULL AND p.broker != 'PAPER'")
+    long countOpenLive();
+
+    /** Open PAPER positions only -- used to gate paper trade entry independently of live. */
+    @Query("SELECT COUNT(p) FROM LivePosition p WHERE p.status = 'OPEN' AND (p.broker IS NULL OR p.broker = 'PAPER')")
+    long countOpenPaper();
+
     @Query("SELECT p FROM LivePosition p WHERE p.status IN ('FAILED','REJECTED') ORDER BY p.enteredAt DESC")
     List<LivePosition> findAllFailed();
 
@@ -38,4 +47,10 @@ public interface LivePositionRepository extends JpaRepository<LivePosition, Long
 
     @Query("SELECT p FROM LivePosition p WHERE p.status = :status ORDER BY p.enteredAt DESC")
     List<LivePosition> findByStatusExact(@Param("status") String status);
+
+    /** Open positions (any broker, including PAPER) for a batch of opportunity ids -- used to
+     *  warn "you already hold this" on a signal without blocking re-entry (Trade must always
+     *  still reach the broker per product decision). */
+    @Query("SELECT p FROM LivePosition p WHERE p.status = 'OPEN' AND p.opportunityId IN :opportunityIds")
+    List<LivePosition> findOpenByOpportunityIdIn(@Param("opportunityIds") List<Long> opportunityIds);
 }

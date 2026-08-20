@@ -131,6 +131,16 @@ public class ZerodhaAdapter implements BrokerAdapter {
         }
     }
 
+    /** NSE F&O tick size is Rs0.05 -- a limit price rounded only to paise (e.g. 668.17) gets
+     *  rejected with "Order price is not a multiple of tick size" even though it looks like a
+     *  perfectly normal price. Every limit price sent to Kite must be rounded to this grid. */
+    private static double roundToTick(double price) {
+        // Extra round to 2dp cleans up float noise (0.05 isn't exactly representable in
+        // binary, so price/0.05*0.05 alone can land on 668.1500000000001) which Kite would
+        // otherwise reject the same way as an unrounded price.
+        return Math.round(Math.round(price / 0.05) * 0.05 * 100.0) / 100.0;
+    }
+
     @Override
     public BrokerOrderResponse placeOrder(String accessToken, BrokerOrderRequest request) {
         log.info("Placing Zerodha order: {} {} qty={} price={}", request.side(), request.symbol(), request.quantity(), request.price());
@@ -145,12 +155,26 @@ public class ZerodhaAdapter implements BrokerAdapter {
 
         if (request.price() != null && request.price() > 0) {
             double bufferFactor = request.side() == BrokerOrderRequest.Side.BUY ? 1.0015 : 0.9985;
-            double limitPrice = Math.round(request.price() * bufferFactor * 100.0) / 100.0;
+            double limitPrice = roundToTick(request.price() * bufferFactor);
             form.add("order_type", "LIMIT");
             form.add("price", String.valueOf(limitPrice));
         } else {
-            form.add("order_type", "MARKET");
-            form.add("disclosed_quantity", "0");
+            // NSE now rejects bare F&O market orders ("Market orders without market
+            // protection are not allowed... use a Limit order"), and Kite Connect has no
+            // request field to supply protection like Navia's mkt_protection does -- its
+            // own error says to use a Limit order instead. Fetch the current LTP and place
+            // an aggressive marketable limit (wider buffer than the explicit-price branch,
+            // since this is standing in for "just fill me now" rather than a targeted close).
+            double ltp = fetchLtp(accessToken, request.exchange() != null ? request.exchange() : "NFO", request.symbol());
+            if (ltp > 0) {
+                double bufferFactor = request.side() == BrokerOrderRequest.Side.BUY ? 1.01 : 0.99;
+                double limitPrice = roundToTick(ltp * bufferFactor);
+                form.add("order_type", "LIMIT");
+                form.add("price", String.valueOf(limitPrice));
+            } else {
+                form.add("order_type", "MARKET");
+                form.add("disclosed_quantity", "0");
+            }
         }
 
         try {
@@ -176,6 +200,92 @@ public class ZerodhaAdapter implements BrokerAdapter {
             String msg = extractZerodhaMessage(e);
             log.error("Zerodha placeOrder failed for {}: {}", request.symbol(), msg != null ? msg : e.getMessage());
             return new BrokerOrderResponse(null, "REJECTED", msg != null ? msg : e.getMessage());
+        }
+    }
+
+    /**
+     * Real lot size per underlying, straight from Zerodha's own instrument dump -- avoids
+     * hardcoding numbers that go stale whenever NSE revises them (which already happened:
+     * NIFTY's real lot size is 65, not the 25 that used to be hardcoded here). NFO's dump
+     * has one row per strike/expiry per underlying; lot size is invariant per underlying at
+     * any point in time, so the first row seen per "name" is kept.
+     */
+    public Map<String, Integer> fetchLotSizes(String accessToken) {
+        Map<String, Integer> result = new LinkedHashMap<>();
+        try {
+            String csv = http.get()
+                    .uri(java.net.URI.create(KITE_API_BASE + "/instruments/NFO"))
+                    .header("X-Kite-Version", "3")
+                    .header("Authorization", "token " + apiKey + ":" + accessToken)
+                    .retrieve()
+                    .body(String.class);
+            if (csv == null || csv.isBlank()) return result;
+            String[] lines = csv.split("\n");
+            if (lines.length < 2) return result;
+            String[] header = lines[0].split(",");
+            int nameIdx = -1, lotIdx = -1;
+            for (int i = 0; i < header.length; i++) {
+                String h = header[i].trim();
+                if ("name".equalsIgnoreCase(h)) nameIdx = i;
+                if ("lot_size".equalsIgnoreCase(h)) lotIdx = i;
+            }
+            if (nameIdx < 0 || lotIdx < 0) {
+                log.warn("Zerodha instruments CSV missing name/lot_size columns: {}", lines[0]);
+                return result;
+            }
+            for (int i = 1; i < lines.length; i++) {
+                String[] cols = lines[i].split(",");
+                if (cols.length <= Math.max(nameIdx, lotIdx)) continue;
+                // Kite quotes the "name" field ("NIFTY" not NIFTY) -- unstripped, every key
+                // came out wrong and every lookup by bare underlying name silently missed,
+                // which is exactly why the first deploy of this fix logged NIFTY=null instead
+                // of catching the value that was sitting right there in the response.
+                String name = stripQuotes(cols[nameIdx].trim());
+                if (name.isEmpty() || result.containsKey(name)) continue;
+                try {
+                    int lot = Integer.parseInt(stripQuotes(cols[lotIdx].trim()));
+                    if (lot > 0) result.put(name, lot);
+                } catch (NumberFormatException ignored) {}
+            }
+        } catch (Exception e) {
+            log.error("Failed to fetch Zerodha instruments for lot sizes: {}", e.getMessage());
+        }
+        log.info("Zerodha instruments: parsed {} distinct underlyings for lot size", result.size());
+        return result;
+    }
+
+    private static String stripQuotes(String s) {
+        if (s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"")) return s.substring(1, s.length() - 1);
+        return s;
+    }
+
+    private double fetchLtp(String accessToken, String exchange, String symbol) {
+        try {
+            String instrument = exchange + ":" + symbol;
+            // RestClient's .uri(String) overload treats the string as a URI TEMPLATE and
+            // re-encodes it -- manually URL-encoding the ":" here first (as the old code did)
+            // got double-encoded into %253A, which Kite doesn't match to any instrument and
+            // silently returns empty data (no error, no exception -- just a wrong answer).
+            // Building a raw java.net.URI bypasses template processing entirely.
+            java.net.URI uri = java.net.URI.create(
+                KITE_API_BASE + "/quote/ltp?i=" + java.net.URLEncoder.encode(instrument, StandardCharsets.UTF_8));
+            String body = http.get()
+                    .uri(uri)
+                    .header("X-Kite-Version", "3")
+                    .header("Authorization", "token " + apiKey + ":" + accessToken)
+                    .retrieve()
+                    .body(String.class);
+            JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+            if (!"success".equalsIgnoreCase(root.path("status").asText())) {
+                log.warn("Zerodha LTP fetch for {} returned non-success: {}", instrument, body);
+                return 0;
+            }
+            double ltp = root.path("data").path(instrument).path("last_price").asDouble(0);
+            if (ltp <= 0) log.warn("Zerodha LTP fetch for {} returned no price: {}", instrument, body);
+            return ltp;
+        } catch (Exception e) {
+            log.warn("Zerodha LTP fetch failed for {}: {}", symbol, e.getMessage());
+            return 0;
         }
     }
 

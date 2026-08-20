@@ -31,6 +31,20 @@ public class ArbitrageOpportunity {
     // Cost breakdown (for parity break opportunities)
     public Map<String, Double> costBreakdown;
 
+    /**
+     * Structured trade legs for strategies that aren't the CE+PE+FUT conversion/reversal
+     * shape (Box/Vertical/Butterfly/Condor spreads: 2-4 same-underlying legs, no futures).
+     * Each entry: {strike: int, optionType: "CE"|"PE", side: "BUY"|"SELL", qty: int}.
+     * Null/empty means "use the legacy CE+PE+FUT executor".
+     */
+    public java.util.List<Map<String, Object>> legList;
+
+    /** Lot size used to compute edgePoints/edgeAfterCosts -- carried through so the frontend
+     *  payoff chart can show total rupee figures (payoff per share x lotSize), matching how
+     *  every third-party payoff tool (AlgoTest etc) displays profit/loss, instead of only the
+     *  per-share number which reads as a mismatch even when the underlying math is identical. */
+    public int lotSize;
+
     public LocalDateTime detectedAt;
 
     public ArbitrageOpportunity() {
@@ -66,6 +80,10 @@ public class ArbitrageOpportunity {
         if (costBreakdown != null) {
             map.put("costBreakdown", costBreakdown);
         }
+        if (legList != null) {
+            map.put("legList", legList);
+        }
+        map.put("lotSize", lotSize);
         return map;
     }
 }

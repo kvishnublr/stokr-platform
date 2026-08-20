@@ -55,7 +55,8 @@ public class ThreeRedDaysStrategy implements StrategyPlugin {
         if (c3 >= o3) return null;  // Day-3 must be red
 
         // ─── 2. TOTAL DROP > 3% ────────────────────────────────────
-        double dropPct = (c3 - c1) / c1 * 100;
+        // Calculate drop from Day 1 Open to Day 3 Close to capture the entire downward move
+        double dropPct = (c3 - o1) / o1 * 100;
         if (dropPct > -3.0) return null;  // not enough selling
 
         // ─── 3. VOLUME SURGE > 1.2× 10-DAY AVG ─────────────────────

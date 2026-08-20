@@ -94,6 +94,13 @@ public class OptionArbHistoryService {
                         log.warn("Failed to serialize costBreakdown: {}", e.getMessage());
                     }
                 }
+                if (opp.legList != null && !opp.legList.isEmpty()) {
+                    try {
+                        entity.setLegList(opp.legList);
+                    } catch (Exception e) {
+                        log.warn("Failed to serialize legList: {}", e.getMessage());
+                    }
+                }
 
                 repository.save(entity);
                 saved.add(entity);
@@ -143,6 +150,16 @@ public class OptionArbHistoryService {
                     .strategyType("IRON_CONDOR")
                     .createdAt(LocalDateTime.now())
                     .build();
+                Object legListObj = o.get("legList");
+                if (legListObj instanceof List<?> ll) {
+                    try {
+                        @SuppressWarnings("unchecked")
+                        List<Map<String, Object>> cast = (List<Map<String, Object>>) ll;
+                        entity.setLegList(cast);
+                    } catch (Exception e) {
+                        log.warn("Failed to serialize Iron Condor legList: {}", e.getMessage());
+                    }
+                }
                 repository.save(entity);
                 saved.add(entity);
             } catch (Exception e) {

@@ -27,11 +27,20 @@ public class OptionArbitrageController {
     private final OptionArbHistoryService historyService;
     private final BidParityService bidParityService;
     private final BoxSpreadService boxSpreadService;
+    private final VerticalSpreadService verticalSpreadService;
+    private final ButterflySpreadService butterflySpreadService;
+    private final CondorSpreadService condorSpreadService;
     private final CalendarSpreadService calendarSpreadService;
     private final ZerodhaSpotPriceFetcher spotFetcher;
     private final OptionArbAutoExecService autoExecService;
     private final LivePositionRepository livePositionRepo;
     private final OptionArbOpportunityRepository oppRepo;
+    private final com.stokr.delivery.CashScannerService cashScannerService;
+    private final com.stokr.delivery.CashExecutionService cashExecutionService;
+    private final AutoRollService autoRollService;
+    private final CandidateSnapshotRepository candidateSnapshotRepo;
+    private final com.stokr.broker.BrokerAccountRepository brokerAccountRepo;
+    private final com.stokr.broker.BrokerService brokerService;
 
     private final Map<String, Object> autoExecSettings = new ConcurrentHashMap<>();
     private final List<Map<String, Object>> auditLogs = Collections.synchronizedList(new ArrayList<>());
@@ -40,20 +49,38 @@ public class OptionArbitrageController {
                                      OptionArbHistoryService historyService,
                                      BidParityService bidParityService,
                                      BoxSpreadService boxSpreadService,
+                                     VerticalSpreadService verticalSpreadService,
+                                     ButterflySpreadService butterflySpreadService,
+                                     CondorSpreadService condorSpreadService,
                                      CalendarSpreadService calendarSpreadService,
                                      ZerodhaSpotPriceFetcher spotFetcher,
                                      OptionArbAutoExecService autoExecService,
                                      LivePositionRepository livePositionRepo,
-                                     OptionArbOpportunityRepository oppRepo) {
+                                     OptionArbOpportunityRepository oppRepo,
+                                     com.stokr.delivery.CashScannerService cashScannerService,
+                                     com.stokr.delivery.CashExecutionService cashExecutionService,
+                                     AutoRollService autoRollService,
+                                     CandidateSnapshotRepository candidateSnapshotRepo,
+                                     com.stokr.broker.BrokerAccountRepository brokerAccountRepo,
+                                     com.stokr.broker.BrokerService brokerService) {
         this.optionChainService = optionChainService;
         this.historyService = historyService;
         this.bidParityService = bidParityService;
         this.boxSpreadService = boxSpreadService;
+        this.verticalSpreadService = verticalSpreadService;
+        this.butterflySpreadService = butterflySpreadService;
+        this.condorSpreadService = condorSpreadService;
         this.calendarSpreadService = calendarSpreadService;
         this.spotFetcher = spotFetcher;
         this.autoExecService = autoExecService;
         this.livePositionRepo = livePositionRepo;
         this.oppRepo = oppRepo;
+        this.cashScannerService = cashScannerService;
+        this.cashExecutionService = cashExecutionService;
+        this.autoRollService = autoRollService;
+        this.candidateSnapshotRepo = candidateSnapshotRepo;
+        this.brokerAccountRepo = brokerAccountRepo;
+        this.brokerService = brokerService;
 
         autoExecSettings.put("normalParityEnabled", true);
         autoExecSettings.put("normalEntryEdge", 150.0);
@@ -70,6 +97,29 @@ public class OptionArbitrageController {
         autoExecSettings.put("status", "IDLE");
 
         addAuditLog("SYSTEM", "INFO", "Option Arbitrage Engine initialized. Ready for scanning.");
+    }
+
+    /** Marks each opportunity map with whether an OPEN position (paper or live) already exists
+     *  for it, so the UI can warn "you already hold this" -- without blocking re-entry, since
+     *  the manual Trade button must always still reach the broker. */
+    private void markExistingPositions(List<Map<String, Object>> opps) {
+        if (opps == null || opps.isEmpty()) return;
+        List<Long> ids = opps.stream()
+                .map(m -> m.get("id"))
+                .filter(id -> id instanceof Number)
+                .map(id -> ((Number) id).longValue())
+                .collect(Collectors.toList());
+        if (ids.isEmpty()) return;
+        Map<Long, String> openBrokerByOppId = livePositionRepo.findOpenByOpportunityIdIn(ids).stream()
+                .collect(Collectors.toMap(LivePosition::getOpportunityId, p -> p.getBroker() != null ? p.getBroker() : "PAPER",
+                        (a, b) -> b));
+        for (Map<String, Object> m : opps) {
+            Object idObj = m.get("id");
+            if (!(idObj instanceof Number)) continue;
+            String existingBroker = openBrokerByOppId.get(((Number) idObj).longValue());
+            m.put("existingOpenPosition", existingBroker != null);
+            if (existingBroker != null) m.put("existingPositionBroker", existingBroker);
+        }
     }
 
     private void addAuditLog(String type, String status, String message) {
@@ -156,6 +206,7 @@ public class OptionArbitrageController {
         if (opps != null && !opps.isEmpty()) {
             try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from bid-parity scan failed: {}", e.getMessage()); }
         }
+        markExistingPositions(opps);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
@@ -166,9 +217,10 @@ public class OptionArbitrageController {
     }
 
     @GetMapping("/box-spread/scan")
-    public ResponseEntity<Map<String, Object>> scanBoxSpread(@RequestParam(defaultValue = "ALL") String underlying) {
+    public ResponseEntity<Map<String, Object>> scanBoxSpread(@RequestParam(defaultValue = "ALL") String underlying,
+                                                               @RequestParam(defaultValue = "false") boolean force) {
         java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
             return ResponseEntity.ok(Map.of(
                 "timestamp", System.currentTimeMillis(),
                 "underlying", underlying,
@@ -182,6 +234,7 @@ public class OptionArbitrageController {
         if (opps != null && !opps.isEmpty()) {
             try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from box-spread scan failed: {}", e.getMessage()); }
         }
+        markExistingPositions(opps);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
@@ -191,11 +244,37 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(resp);
     }
 
-    @GetMapping("/calendar/scan")
-    public ResponseEntity<Map<String, Object>> scanCalendarSpread(
-            @RequestParam(defaultValue = "ALL") String underlying) {
+    @GetMapping("/box-spread/near-miss")
+    public ResponseEntity<Map<String, Object>> scanBoxNearMiss(@RequestParam(defaultValue = "ALL") String underlying,
+                                                                  @RequestParam(defaultValue = "0.15") double maxGapPct,
+                                                                  @RequestParam(defaultValue = "false") boolean force) {
         java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "nearMisses", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
+        List<Map<String, Object>> nearMisses = boxSpreadService.scanNearMiss(underlying, maxGapPct);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
+        resp.put("nearMisses", nearMisses);
+        resp.put("count", nearMisses.size());
+        resp.put("note", "Watchlist tool -- these are NOT arbitrage yet. A box's payoff is fixed regardless of settlement, so any box priced below width is already genuine arbitrage and shown in the main scan; this list is combos close to crossing that line.");
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/vertical-spread/scan")
+    public ResponseEntity<Map<String, Object>> scanVerticalSpread(@RequestParam(defaultValue = "ALL") String underlying,
+                                                                    @RequestParam(defaultValue = "false") boolean force) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
             return ResponseEntity.ok(Map.of(
                 "timestamp", System.currentTimeMillis(),
                 "underlying", underlying,
@@ -205,37 +284,169 @@ public class OptionArbitrageController {
                 "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
             ));
         }
-        List<String> targets = "ALL".equalsIgnoreCase(underlying)
-            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
-            : List.of(underlying);
-        Map<String, String> spotKeys = Map.of(
-            "NIFTY", "NSE:NIFTY 50",
-            "BANKNIFTY", "NSE:NIFTY BANK",
-            "MIDCPNIFTY", "NSE:NIFTY MID SELECT",
-            "FINNIFTY", "NSE:NIFTY FIN SERVICE"
-        );
-        List<Map<String, Object>> allOpps = new ArrayList<>();
-        for (String u : targets) {
-            try {
-                String spotKey = spotKeys.getOrDefault(u, "NSE:NIFTY 50");
-                String futKey = FuturesKeyResolver.resolveFuturesKey(u, spotFetcher, spotKey);
-                double[] spotFut = spotFetcher.getSpotAndFutures(spotKey, futKey);
-                double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
-                double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : spot;
-                if (spot <= 0) continue;
-                List<Map<String, Object>> opps = calendarSpreadService.scanCalendarSpreads(u, spot, fut);
-                allOpps.addAll(opps);
-            } catch (Exception e) {
-                log.error("Calendar scan error for {}: {}", u, e.getMessage());
-            }
+        List<Map<String, Object>> opps = verticalSpreadService.scanVerticalSpread(underlying);
+        if (opps != null && !opps.isEmpty()) {
+            try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from vertical-spread scan failed: {}", e.getMessage()); }
         }
+        markExistingPositions(opps);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
         resp.put("marketClosed", false);
-        resp.put("opportunities", allOpps);
-        resp.put("count", allOpps.size());
+        resp.put("opportunities", opps);
+        resp.put("count", opps.size());
         return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/vertical-spread/candidates")
+    public ResponseEntity<Map<String, Object>> scanVerticalCandidates(@RequestParam(defaultValue = "ALL") String underlying,
+                                                                         @RequestParam(defaultValue = "0.35") double maxCostRatio,
+                                                                         @RequestParam(defaultValue = "false") boolean force) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "candidates", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
+        List<Map<String, Object>> candidates = verticalSpreadService.scanCandidates(underlying, maxCostRatio);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
+        resp.put("candidates", candidates);
+        resp.put("count", candidates.size());
+        resp.put("note", "Discovery/evaluation tool -- these are NOT arbitrage and have no backtested win rate.");
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/butterfly-spread/scan")
+    public ResponseEntity<Map<String, Object>> scanButterflySpread(@RequestParam(defaultValue = "ALL") String underlying,
+                                                                     @RequestParam(defaultValue = "false") boolean force) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
+        List<Map<String, Object>> opps = butterflySpreadService.scanButterflySpread(underlying);
+        if (opps != null && !opps.isEmpty()) {
+            try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from butterfly-spread scan failed: {}", e.getMessage()); }
+        }
+        markExistingPositions(opps);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
+        resp.put("opportunities", opps);
+        resp.put("count", opps.size());
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/butterfly-spread/candidates")
+    public ResponseEntity<Map<String, Object>> scanButterflyCandidates(@RequestParam(defaultValue = "ALL") String underlying,
+                                                                          @RequestParam(defaultValue = "0.35") double maxCostRatio,
+                                                                          @RequestParam(defaultValue = "false") boolean force) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "candidates", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
+        List<Map<String, Object>> candidates = butterflySpreadService.scanCandidates(underlying, maxCostRatio);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
+        resp.put("candidates", candidates);
+        resp.put("count", candidates.size());
+        resp.put("note", "Discovery/evaluation tool -- these are NOT arbitrage and have no backtested win rate.");
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/condor-spread/scan")
+    public ResponseEntity<Map<String, Object>> scanCondorSpread(@RequestParam(defaultValue = "ALL") String underlying,
+                                                                  @RequestParam(defaultValue = "false") boolean force) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
+        List<Map<String, Object>> opps = condorSpreadService.scanCondorSpread(underlying);
+        if (opps != null && !opps.isEmpty()) {
+            try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from condor-spread scan failed: {}", e.getMessage()); }
+        }
+        markExistingPositions(opps);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
+        resp.put("opportunities", opps);
+        resp.put("count", opps.size());
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/condor-spread/candidates")
+    public ResponseEntity<Map<String, Object>> scanCondorCandidates(@RequestParam(defaultValue = "ALL") String underlying,
+                                                                        @RequestParam(defaultValue = "0.35") double maxCostRatio,
+                                                                        @RequestParam(defaultValue = "false") boolean force) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "candidates", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
+        List<Map<String, Object>> candidates = condorSpreadService.scanCandidates(underlying, maxCostRatio);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
+        resp.put("candidates", candidates);
+        resp.put("count", candidates.size());
+        resp.put("note", "Discovery/evaluation tool -- these are NOT arbitrage and have no backtested win rate.");
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/calendar/scan")
+    public ResponseEntity<Map<String, Object>> scanCalendarSpread(
+            @RequestParam(defaultValue = "ALL") String underlying) {
+        // Disabled: CalendarSpreadService's "expected carry" benchmark has no basis in option
+        // pricing theory (real time-value comes from vega/theta, not futures cost-of-carry),
+        // so its reported "edge" does not represent a genuine arbitrage opportunity. Re-enable
+        // only after the pricing model is rebuilt and the strategy is honestly relabeled.
+        return ResponseEntity.ok(Map.of(
+            "timestamp", System.currentTimeMillis(),
+            "underlying", underlying,
+            "disabled", true,
+            "opportunities", Collections.emptyList(),
+            "count", 0,
+            "reason", "Calendar Spread is temporarily disabled pending a pricing model review."
+        ));
     }
 
     @GetMapping("/iron-condor/scan")
@@ -345,9 +556,24 @@ public class OptionArbitrageController {
             double maxLoss = (double) step - credit;
             if (maxLoss <= 0) continue;
             double riskReward = credit / maxLoss;
-            double netEdge = credit * lotSize - 200.0;
 
-            if (riskReward >= 0.2) {
+            // Real fee schedule (STT/brokerage/exchange/SEBI/GST/stamp) instead of a flat
+            // guess -- was previously a fictional flat Rs 200 regardless of premium/lot size.
+            double sttPutSell = psBid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
+            double sttPutBuy = pbAsk * lotSize * ArbitrageCosts.STT_OPTION_BUY;
+            double sttCallSell = csBid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
+            double sttCallBuy = cbAsk * lotSize * ArbitrageCosts.STT_OPTION_BUY;
+            double stt = sttPutSell + sttPutBuy + sttCallSell + sttCallBuy;
+            double brokerage = ArbitrageCosts.PER_LEG_BROKERAGE * 4;
+            double turnover = (psBid + pbAsk + csBid + cbAsk) * lotSize;
+            double exchange = turnover * ArbitrageCosts.EXCHANGE_RATE;
+            double sebi = turnover * ArbitrageCosts.SEBI_RATE;
+            double gst = (brokerage + exchange + sebi) * ArbitrageCosts.GST_RATE;
+            double stamp = turnover * ArbitrageCosts.STAMP_RATE;
+            double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
+            double netEdge = credit * lotSize - totalCosts;
+
+            if (riskReward >= 0.2 && netEdge > 0) {
                 Map<String, Object> opp = new LinkedHashMap<>();
                 opp.put("type", "IRON_CONDOR");
                 opp.put("underlying", underlying);
@@ -358,16 +584,30 @@ public class OptionArbitrageController {
                 opp.put("credit", Math.round(credit * 100.0) / 100.0);
                 opp.put("maxLoss", Math.round(maxLoss * 100.0) / 100.0);
                 opp.put("riskReward", Math.round(riskReward * 100.0) / 100.0);
+                opp.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
                 opp.put("edgeAfterCosts", Math.round(netEdge * 10.0) / 10.0);
                 opp.put("expiry", expiry.toString());
                 opp.put("lotSize", lotSize);
                 opp.put("spotPrice", spot);
                 opp.put("wingWidth", wingWidth * step);
                 opp.put("confidence", Math.min(95, 60 + riskReward * 100));
+                opp.put("legList", List.of(
+                    ironLeg(putSell, "PE", "SELL", 1, psBid), ironLeg(putBuy, "PE", "BUY", 1, pbAsk),
+                    ironLeg(callSell, "CE", "SELL", 1, csBid), ironLeg(callBuy, "CE", "BUY", 1, cbAsk)));
                 results.add(opp);
             }
         }
         return results;
+    }
+
+    private static Map<String, Object> ironLeg(int strike, String optionType, String side, int qty, double price) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("strike", strike);
+        m.put("optionType", optionType);
+        m.put("side", side);
+        m.put("qty", qty);
+        m.put("price", price);
+        return m;
     }
 
     @GetMapping("/cash-surge/scan")
@@ -376,9 +616,19 @@ public class OptionArbitrageController {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
-        resp.put("opportunities", Collections.emptyList());
-        resp.put("count", 0);
-        resp.put("message", "Cash surge scanner requires stock delivery data feed. Not available via NFO options.");
+        try {
+            List<Map<String, Object>> opps = cashScannerService.scanCashSurge();
+            resp.put("opportunities", opps);
+            resp.put("count", opps.size());
+            if (opps.isEmpty()) {
+                resp.put("message", "No delivery/volume surge setups in the latest EOD data.");
+            }
+        } catch (Exception e) {
+            log.error("Cash surge scan failed: {}", e.getMessage());
+            resp.put("opportunities", Collections.emptyList());
+            resp.put("count", 0);
+            resp.put("message", "Cash surge scan failed: " + e.getMessage());
+        }
         return ResponseEntity.ok(resp);
     }
 
@@ -387,9 +637,46 @@ public class OptionArbitrageController {
             @RequestParam(defaultValue = "ALL") String underlying) {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
-        resp.put("opportunities", Collections.emptyList());
-        resp.put("count", 0);
-        resp.put("message", "Cash momentum scanner is a stub. Implement with real stock data feed.");
+        try {
+            List<Map<String, Object>> opps = cashScannerService.scanCashSwing();
+            resp.put("opportunities", opps);
+            resp.put("count", opps.size());
+            if (opps.isEmpty()) {
+                resp.put("message", "No RSI 60-68 swing setups with sustained delivery accumulation right now.");
+            }
+        } catch (Exception e) {
+            log.error("Cash swing scan failed: {}", e.getMessage());
+            resp.put("opportunities", Collections.emptyList());
+            resp.put("count", 0);
+            resp.put("message", "Cash swing scan failed: " + e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping(value = "/cash-trade/execute", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> executeCashTrade(@RequestBody Map<String, Object> body) {
+        String symbol = (String) body.get("symbol");
+        String strategyType = (String) body.getOrDefault("strategyType", "CASH_SURGE");
+        double targetPrice = body.get("targetPrice") instanceof Number n ? n.doubleValue() : 0;
+        double stopLossPrice = body.get("stopLossPrice") instanceof Number n ? n.doubleValue() : 0;
+        String broker = (String) body.getOrDefault("broker", "PAPER");
+        Map<String, Object> result = cashExecutionService.execute(symbol, strategyType, targetPrice, stopLossPrice, broker);
+        addAuditLog("CASH_TRADE", result.get("status") != null ? result.get("status").toString() : "ERROR",
+            "Cash trade " + symbol + " via " + broker + ": " + result.get("message"));
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/cash-positions")
+    public ResponseEntity<Map<String, Object>> getCashPositions() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        List<Map<String, Object>> positions = cashExecutionService.getOpenPositionsWithLivePnl();
+        resp.put("positions", positions);
+        resp.put("count", positions.size());
+        double totalPnl = positions.stream().mapToDouble(p -> {
+            Object pnl = p.get("currentPnl");
+            return pnl != null ? ((Number) pnl).doubleValue() : 0;
+        }).sum();
+        resp.put("totalPnl", Math.round(totalPnl));
         return ResponseEntity.ok(resp);
     }
 
@@ -617,6 +904,12 @@ public class OptionArbitrageController {
                         if (p.getCeSymbol() != null) symbols.add(p.getCeSymbol());
                         if (p.getPeSymbol() != null) symbols.add(p.getPeSymbol());
                         if (p.getFutSymbol() != null) symbols.add(p.getFutSymbol());
+                        if (p.getLegs() != null) {
+                            for (Map<String, Object> leg : p.getLegs()) {
+                                Object sym = leg.get("symbol");
+                                if (sym instanceof String s) symbols.add(s);
+                            }
+                        }
                     }
 
                     Map<String, OptionChainService.OptionQuote> quotes = Map.of();
@@ -625,6 +918,67 @@ public class OptionArbitrageController {
                     } catch (Exception e) {
                         log.debug("History live-pnl quote fetch failed: {}", e.getMessage());
                     }
+
+                    // Untraded RUNNING bid-parity signals have no LivePosition — simulate
+                    // mark-to-market P&L against live quotes and auto-exit once the edge target is hit.
+                    List<Long> missingIds = idList.stream()
+                        .filter(id -> !posByOpp.containsKey(id)).collect(Collectors.toList());
+                    Map<Long, OptionArbOpportunity> missingOppMap = new LinkedHashMap<>();
+                    if (!missingIds.isEmpty()) {
+                        for (OptionArbOpportunity o : oppRepo.findAllById(missingIds)) {
+                            missingOppMap.put(o.getId(), o);
+                        }
+                    }
+
+                    Map<String, String> spotKeyMap = Map.of(
+                        "NIFTY", "NSE:NIFTY 50", "BANKNIFTY", "NSE:NIFTY BANK",
+                        "MIDCPNIFTY", "NSE:NIFTY MID SELECT", "FINNIFTY", "NSE:NIFTY FIN SERVICE"
+                    );
+                    Map<Long, String> ceSymByOpp = new LinkedHashMap<>();
+                    Map<Long, String> peSymByOpp = new LinkedHashMap<>();
+                    List<String> bpSymbols = new ArrayList<>();
+                    for (OptionArbOpportunity o : missingOppMap.values()) {
+                        if ("RUNNING".equals(o.getStatus()) && "BID_PARITY".equals(o.getStrategyType())
+                                && o.getExpiryDate() != null && o.getStrike() != null) {
+                            try {
+                                String ceSym = optionChainService.buildNfoSymbol(o.getUnderlying(), o.getExpiryDate(), o.getStrike(), "CE");
+                                String peSym = optionChainService.buildNfoSymbol(o.getUnderlying(), o.getExpiryDate(), o.getStrike(), "PE");
+                                if (ceSym != null) { bpSymbols.add(ceSym); ceSymByOpp.put(o.getId(), ceSym); }
+                                if (peSym != null) { bpSymbols.add(peSym); peSymByOpp.put(o.getId(), peSym); }
+                            } catch (Exception ignored) {}
+                        }
+                    }
+
+                    // Untraded RUNNING Box/Vertical/Butterfly/Condor Spread signals -- same
+                    // mark-to-market simulation idea as Bid Parity above, generalized over
+                    // each opportunity's stored legList (no futures leg, 2-4 same-type legs).
+                    Set<String> multiLegTypes = Set.of("BOX_SPREAD", "VERTICAL_SPREAD", "BUTTERFLY_SPREAD", "CONDOR_SPREAD", "IRON_CONDOR");
+                    Map<Long, List<Map<String, Object>>> legSymbolsByOpp = new LinkedHashMap<>();
+                    for (OptionArbOpportunity o : missingOppMap.values()) {
+                        if ("RUNNING".equals(o.getStatus()) && multiLegTypes.contains(o.getStrategyType())
+                                && o.getExpiryDate() != null && o.getLegList() != null) {
+                            try {
+                                List<Map<String, Object>> resolvedLegs = new ArrayList<>();
+                                for (Map<String, Object> leg : o.getLegList()) {
+                                    int strike = ((Number) leg.get("strike")).intValue();
+                                    String optionType = (String) leg.get("optionType");
+                                    String sym = optionChainService.buildNfoSymbol(o.getUnderlying(), o.getExpiryDate(), strike, optionType);
+                                    Map<String, Object> resolved = new LinkedHashMap<>(leg);
+                                    resolved.put("symbol", sym);
+                                    resolvedLegs.add(resolved);
+                                    if (sym != null) bpSymbols.add(sym);
+                                }
+                                legSymbolsByOpp.put(o.getId(), resolvedLegs);
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                    Map<String, OptionChainService.OptionQuote> bpQuotes = Map.of();
+                    try {
+                        bpQuotes = bpSymbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(bpSymbols);
+                    } catch (Exception e) {
+                        log.debug("Bid parity live-pnl quote fetch failed: {}", e.getMessage());
+                    }
+                    Map<String, double[]> futLiveByUnderlying = new LinkedHashMap<>();
 
                     for (Long oppId : idList) {
                         LivePosition pos = posByOpp.get(oppId);
@@ -643,6 +997,24 @@ public class OptionArbitrageController {
                             if ("CLOSED".equals(pos.getStatus()) || "EXITED".equals(pos.getStatus())) {
                                 if (pos.getCurrentPnl() != null) {
                                     pnlMap.put(oppIdStr, Math.round(pos.getCurrentPnl().doubleValue()));
+                                } else if (pos.getLegs() != null && !pos.getLegs().isEmpty()) {
+                                    int lotSz = pos.getLotSize() != null ? pos.getLotSize() : OptionChainService.getLotSize(pos.getUnderlying());
+                                    int lotCount = pos.getLots() != null ? pos.getLots() : 1;
+                                    double pnl = 0;
+                                    for (Map<String, Object> leg : pos.getLegs()) {
+                                        double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
+                                        double exit = leg.get("exitPrice") instanceof Number n ? n.doubleValue() : 0;
+                                        if (entry <= 0 || exit <= 0) continue;
+                                        int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+                                        String side = (String) leg.get("side");
+                                        pnl += ("BUY".equals(side) ? (exit - entry) : (entry - exit)) * qtyMult;
+                                    }
+                                    pnl *= lotSz * lotCount;
+                                    pnlMap.put(oppIdStr, Math.round(pnl));
+                                    try {
+                                        pos.setCurrentPnl(BigDecimal.valueOf(pnl));
+                                        livePositionRepo.save(pos);
+                                    } catch (Exception ignored) {}
                                 } else if (pos.getCeExitPrice() != null || pos.getPeExitPrice() != null || pos.getFutExitPrice() != null) {
                                     // Compute from exit prices
                                     double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
@@ -674,6 +1046,9 @@ public class OptionArbitrageController {
                                 } else {
                                     pnlMap.put(oppIdStr, 0);
                                 }
+                            } else if (pos.getLegs() != null && !pos.getLegs().isEmpty()) {
+                                double pnl = autoExecService.computeMultiLegPnl(pos, quotes);
+                                pnlMap.put(oppIdStr, Math.round(pnl));
                             } else {
                                 double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
                                 if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
@@ -705,26 +1080,121 @@ public class OptionArbitrageController {
                         } else {
                             // No live_positions record — check opportunity status from DB
                             try {
-                                var oppOpt = oppRepo.findById(oppId);
-                                if (oppOpt.isPresent()) {
-                                    var opp = oppOpt.get();
+                                var opp = missingOppMap.get(oppId);
+                                if (opp != null) {
                                     String oppStatus = opp.getStatus() != null ? opp.getStatus() : "EXPIRED";
-                                    statusMap.put(oppIdStr, oppStatus);
 
                                     // For EXITED/CLOSED: use exitTime from live_positions or opportunity
                                     if ("EXITED".equals(oppStatus) || "CLOSED".equals(oppStatus)) {
+                                        statusMap.put(oppIdStr, oppStatus);
                                         // EXITED/CLOSED: actual P&L and exit time
                                         if (opp.getExitTime() != null) {
                                             exitTimeMap.put(oppIdStr, opp.getExitTime().toString());
                                         }
                                         pnlMap.put(oppIdStr, opp.getPnlAfterCosts() != null ? Math.round(opp.getPnlAfterCosts().doubleValue()) : 0);
                                     } else if ("EXPIRED".equals(oppStatus)) {
+                                        statusMap.put(oppIdStr, oppStatus);
                                         // EXPIRED: contract expired, never entered — show edge as potential
                                         if (opp.getExpiryDate() != null) {
                                             exitTimeMap.put(oppIdStr, opp.getExpiryDate().toString());
                                         }
                                         pnlMap.put(oppIdStr, opp.getEdgeAfterCosts() != null ? Math.round(opp.getEdgeAfterCosts().doubleValue()) : 0);
+                                    } else if ("RUNNING".equals(oppStatus) && "BID_PARITY".equals(opp.getStrategyType())) {
+                                        // RUNNING bid-parity signal, never traded — simulate live mark-to-market
+                                        // P&L against current quotes and auto-exit once edge target is hit.
+                                        String ceSym = ceSymByOpp.get(oppId);
+                                        String peSym = peSymByOpp.get(oppId);
+                                        double ceCurrent = (ceSym != null && bpQuotes.containsKey(ceSym)) ? bpQuotes.get(ceSym).lastPrice : 0;
+                                        double peCurrent = (peSym != null && bpQuotes.containsKey(peSym)) ? bpQuotes.get(peSym).lastPrice : 0;
+
+                                        double[] futSpotFut = futLiveByUnderlying.computeIfAbsent(opp.getUnderlying(), u -> {
+                                            try {
+                                                String spotKey = spotKeyMap.getOrDefault(u, "NSE:NIFTY 50");
+                                                String futKey = FuturesKeyResolver.resolveFuturesKey(u, spotFetcher, spotKey);
+                                                return spotFetcher.getSpotAndFutures(spotKey, futKey);
+                                            } catch (Exception e) {
+                                                return new double[]{0, 0};
+                                            }
+                                        });
+                                        double futCurrent = (futSpotFut != null && futSpotFut.length > 1) ? futSpotFut[1] : 0;
+
+                                        double ceEntry = opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() : 0;
+                                        double peEntry = opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() : 0;
+                                        double futEntry = opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() : 0;
+                                        int lotSz = OptionChainService.getLotSize(opp.getUnderlying());
+                                        String action = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
+
+                                        boolean havePrices = ceCurrent > 0 || peCurrent > 0 || futCurrent > 0;
+                                        double pnl = 0;
+                                        if (havePrices) {
+                                            if (action.contains("BUY CE +")) {
+                                                if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
+                                                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
+                                                if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
+                                            } else {
+                                                if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
+                                                if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                                                if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
+                                            }
+                                            pnl *= lotSz;
+                                        }
+
+                                        double edgeTarget = opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0;
+                                        if (havePrices && edgeTarget > 0 && pnl >= edgeTarget) {
+                                            opp.setStatus("EXITED");
+                                            opp.setExitTime(LocalDateTime.now());
+                                            opp.setCeExitPrice(BigDecimal.valueOf(ceCurrent));
+                                            opp.setPeExitPrice(BigDecimal.valueOf(peCurrent));
+                                            opp.setExitSpotPrice(BigDecimal.valueOf(futCurrent));
+                                            opp.setPnlPoints(BigDecimal.valueOf(lotSz > 0 ? pnl / lotSz : 0));
+                                            opp.setPnlAmount(BigDecimal.valueOf(pnl));
+                                            opp.setPnlAfterCosts(BigDecimal.valueOf(pnl));
+                                            try { oppRepo.save(opp); } catch (Exception ignored) {}
+                                            statusMap.put(oppIdStr, "EXITED");
+                                            exitTimeMap.put(oppIdStr, opp.getExitTime().toString());
+                                            pnlMap.put(oppIdStr, Math.round(pnl));
+                                        } else {
+                                            statusMap.put(oppIdStr, oppStatus);
+                                            pnlMap.put(oppIdStr, havePrices ? Math.round(pnl) : null);
+                                        }
+                                    } else if ("RUNNING".equals(oppStatus) && multiLegTypes.contains(opp.getStrategyType())
+                                            && legSymbolsByOpp.containsKey(oppId)) {
+                                        // RUNNING multi-leg spread signal, never traded — simulate live
+                                        // mark-to-market P&L against current quotes and auto-exit once
+                                        // the edge target is hit (same idea as BID_PARITY above).
+                                        List<Map<String, Object>> resolvedLegs = legSymbolsByOpp.get(oppId);
+                                        int lotSz = OptionChainService.getLotSize(opp.getUnderlying());
+                                        boolean havePrices = false;
+                                        double pnl = 0;
+                                        for (Map<String, Object> leg : resolvedLegs) {
+                                            String sym = (String) leg.get("symbol");
+                                            double current = (sym != null && bpQuotes.containsKey(sym)) ? bpQuotes.get(sym).lastPrice : 0;
+                                            double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
+                                            if (current <= 0 || entry <= 0) continue;
+                                            havePrices = true;
+                                            int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+                                            String side = (String) leg.get("side");
+                                            pnl += ("BUY".equals(side) ? (current - entry) : (entry - current)) * qtyMult;
+                                        }
+                                        pnl *= lotSz;
+
+                                        double edgeTarget = opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0;
+                                        if (havePrices && edgeTarget > 0 && pnl >= edgeTarget) {
+                                            opp.setStatus("EXITED");
+                                            opp.setExitTime(LocalDateTime.now());
+                                            opp.setPnlPoints(BigDecimal.valueOf(lotSz > 0 ? pnl / lotSz : 0));
+                                            opp.setPnlAmount(BigDecimal.valueOf(pnl));
+                                            opp.setPnlAfterCosts(BigDecimal.valueOf(pnl));
+                                            try { oppRepo.save(opp); } catch (Exception ignored) {}
+                                            statusMap.put(oppIdStr, "EXITED");
+                                            exitTimeMap.put(oppIdStr, opp.getExitTime().toString());
+                                            pnlMap.put(oppIdStr, Math.round(pnl));
+                                        } else {
+                                            statusMap.put(oppIdStr, oppStatus);
+                                            pnlMap.put(oppIdStr, havePrices ? Math.round(pnl) : null);
+                                        }
                                     } else {
+                                        statusMap.put(oppIdStr, oppStatus);
                                         // MISSED / other: never entered, no P&L, no exit
                                         pnlMap.put(oppIdStr, null);
                                     }
@@ -758,6 +1228,45 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(autoExecService.getSettings());
     }
 
+    @GetMapping("/candidate-history")
+    public ResponseEntity<Map<String, Object>> getCandidateHistory(
+            @RequestParam String strategyType,
+            @RequestParam(required = false) String underlying,
+            @RequestParam String startDate,
+            @RequestParam String endDate) {
+        LocalDateTime start = LocalDate.parse(startDate).atStartOfDay();
+        LocalDateTime end = LocalDate.parse(endDate).atTime(23, 59, 59);
+        String u = (underlying == null || underlying.isBlank() || "ALL".equalsIgnoreCase(underlying)) ? null : underlying;
+        List<CandidateSnapshot> rows = candidateSnapshotRepo.findInRange(strategyType, u, start, end);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("items", rows);
+        resp.put("count", rows.size());
+        resp.put("note", "Periodic snapshots (every 15 min, market hours) of the Candidates discovery scan -- count + top candidate per underlying, not every candidate shown.");
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/auto-roll/pending")
+    public ResponseEntity<Map<String, Object>> getPendingRolls() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("pending", autoRollService.listPending());
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/auto-roll/{id}/confirm")
+    public ResponseEntity<Map<String, Object>> confirmRoll(@PathVariable Long id) {
+        Map<String, Object> result = autoRollService.confirmRoll(id);
+        addAuditLog("AUTO_ROLL", result.get("status") != null ? result.get("status").toString() : "ERROR",
+            "Roll #" + id + " confirmed: " + result.get("message"));
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/auto-roll/{id}/dismiss")
+    public ResponseEntity<Map<String, Object>> dismissRoll(@PathVariable Long id) {
+        Map<String, Object> result = autoRollService.dismissRoll(id);
+        addAuditLog("AUTO_ROLL", "INFO", "Roll #" + id + " dismissed");
+        return ResponseEntity.ok(result);
+    }
+
     @PostMapping("/auto-execute/settings")
     public ResponseEntity<Map<String, Object>> updateSetting(@RequestParam String key, @RequestParam String value) {
         try {
@@ -784,10 +1293,238 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(autoExecService.getExecLogs());
     }
 
+    /**
+     * Real positions straight from the broker's own portfolio API -- our own live_positions
+     * table is only as accurate as our order-tracking logic; the user asked for something that
+     * shows exactly what Zerodha itself reports as held, to cross-check against it directly
+     * rather than trust our DB alone.
+     */
+    @GetMapping("/broker-positions")
+    public ResponseEntity<Map<String, Object>> getBrokerPositions(@RequestParam(defaultValue = "ZERODHA") String broker) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        if ("PAPER".equalsIgnoreCase(broker)) {
+            resp.put("broker", broker);
+            resp.put("positions", List.of());
+            resp.put("note", "PAPER has no real broker positions to reconcile against.");
+            return ResponseEntity.ok(resp);
+        }
+        try {
+            List<com.stokr.broker.BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");
+            if (accounts.isEmpty()) {
+                resp.put("broker", broker);
+                resp.put("positions", List.of());
+                resp.put("error", "No active " + broker + " account found");
+                return ResponseEntity.ok(resp);
+            }
+            com.stokr.broker.BrokerAccount account = accounts.get(0);
+            com.stokr.broker.BrokerAdapter adapter = brokerService.getAdapter(broker);
+            List<com.stokr.broker.BrokerPosition> positions = adapter.getPositions(account.getAccessToken());
+            resp.put("broker", broker);
+            resp.put("positions", positions);
+            resp.put("count", positions.size());
+            resp.put("fetchedAt", System.currentTimeMillis());
+        } catch (Exception e) {
+            log.warn("Broker positions fetch failed for {}: {}", broker, e.getMessage());
+            resp.put("broker", broker);
+            resp.put("positions", List.of());
+            resp.put("error", "Fetch failed: " + e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    /**
+     * Flattens every position into individual leg-level order rows -- Zerodha's own Orders page
+     * shows one row per actual order (not per position), and this platform never had an
+     * equivalent: the only order-level visibility was buried inside each position's expanded
+     * breakdown. Emits one row per leg's entry order, plus a second synthetic row for the exit
+     * once a position is closed (we don't persist a separate order id/status for the closing
+     * leg today, only its fill price, so that row's status is inferred as COMPLETE from the
+     * exit price being present -- everything else here reflects a real recorded order state).
+     */
+    @GetMapping("/orders")
+    public ResponseEntity<Map<String, Object>> getOrders(@RequestParam(required = false) String status,
+                                                            @RequestParam(defaultValue = "200") int limit) {
+        List<LivePosition> positions = livePositionRepo.findAllByOrderByEnteredAtDesc();
+        List<Map<String, Object>> rows = new ArrayList<>();
+
+        for (LivePosition p : positions) {
+            String broker = p.getBroker() != null ? p.getBroker() : "PAPER";
+            String product = "PAPER".equalsIgnoreCase(broker) ? "PAPER" : "NRML";
+            boolean isMultiLeg = p.getLegs() != null && !p.getLegs().isEmpty();
+
+            if (isMultiLeg) {
+                for (Map<String, Object> leg : p.getLegs()) {
+                    String legStatus = leg.get("status") instanceof String s && !s.isBlank() ? s : mapPositionStatus(p.getStatus());
+                    rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), (String) leg.get("symbol"),
+                            (String) leg.get("side"), toQty(leg.get("qty"), p.getLotSize(), p.getLots()),
+                            leg.get("price"), product, broker, legStatus, (String) leg.get("orderId"), p.getErrorMessage()));
+                    Object exitPrice = leg.get("exitPrice");
+                    if (exitPrice != null && p.getExitedAt() != null) {
+                        String closeSide = "BUY".equals(leg.get("side")) ? "SELL" : "BUY";
+                        rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), (String) leg.get("symbol"),
+                                closeSide, toQty(leg.get("qty"), p.getLotSize(), p.getLots()),
+                                exitPrice, product, broker, "COMPLETE", null));
+                    }
+                }
+            } else {
+                String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
+                boolean buyCe = !action.contains("SELL CE +");
+                int qty = (p.getLotSize() != null ? p.getLotSize() : 1) * (p.getLots() != null ? p.getLots() : 1);
+                String legStatus = mapPositionStatus(p.getStatus());
+                if (p.getCeSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getCeSymbol(),
+                        buyCe ? "BUY" : "SELL", qty, p.getCeEntryPrice(), product, broker, legStatus, p.getCeOrderId(), p.getErrorMessage()));
+                if (p.getPeSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getPeSymbol(),
+                        buyCe ? "SELL" : "BUY", qty, p.getPeEntryPrice(), product, broker, legStatus, p.getPeOrderId(), p.getErrorMessage()));
+                if (p.getFutSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getFutSymbol(),
+                        buyCe ? "BUY" : "SELL", qty, p.getFutEntryPrice(), product, broker, legStatus, p.getFutOrderId(), p.getErrorMessage()));
+                if (p.getExitedAt() != null && (p.getCeExitPrice() != null || p.getPeExitPrice() != null || p.getFutExitPrice() != null)) {
+                    if (p.getCeSymbol() != null && p.getCeExitPrice() != null) rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), p.getCeSymbol(),
+                            buyCe ? "SELL" : "BUY", qty, p.getCeExitPrice(), product, broker, "COMPLETE", null));
+                    if (p.getPeSymbol() != null && p.getPeExitPrice() != null) rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), p.getPeSymbol(),
+                            buyCe ? "BUY" : "SELL", qty, p.getPeExitPrice(), product, broker, "COMPLETE", null));
+                    if (p.getFutSymbol() != null && p.getFutExitPrice() != null) rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), p.getFutSymbol(),
+                            buyCe ? "SELL" : "BUY", qty, p.getFutExitPrice(), product, broker, "COMPLETE", null));
+                }
+            }
+        }
+
+        rows.sort((a, b) -> {
+            String ta = (String) a.get("time"), tb = (String) b.get("time");
+            if (ta == null || tb == null) return 0;
+            return tb.compareTo(ta);
+        });
+
+        if (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status)) {
+            rows = rows.stream().filter(r -> status.equalsIgnoreCase((String) r.get("status"))).collect(Collectors.toList());
+        }
+        if (rows.size() > limit) rows = rows.subList(0, limit);
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("orders", rows);
+        resp.put("count", rows.size());
+        return ResponseEntity.ok(resp);
+    }
+
+    private String mapPositionStatus(String positionStatus) {
+        if (positionStatus == null) return "UNKNOWN";
+        return switch (positionStatus) {
+            case "OPEN", "CLOSED", "EXITED", "PARTIAL" -> "COMPLETE";
+            case "FAILED", "REJECTED" -> "REJECTED";
+            case "EXECUTING" -> "OPEN";
+            default -> positionStatus;
+        };
+    }
+
+    private int toQty(Object qtyMult, Integer lotSize, Integer lots) {
+        int mult = qtyMult instanceof Number n ? n.intValue() : 1;
+        int ls = lotSize != null ? lotSize : 1;
+        int lt = lots != null ? lots : 1;
+        return mult * ls * lt;
+    }
+
+    private Map<String, Object> orderRow(LocalDateTime time, String underlying, String symbol, String side,
+                                          int qty, Object price, String product, String broker, String status, String orderId) {
+        return orderRow(time, underlying, symbol, side, qty, price, product, broker, status, orderId, null);
+    }
+
+    private Map<String, Object> orderRow(LocalDateTime time, String underlying, String symbol, String side,
+                                          int qty, Object price, String product, String broker, String status,
+                                          String orderId, String reason) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("time", time != null ? time.toString() : null);
+        row.put("underlying", underlying);
+        row.put("symbol", symbol);
+        row.put("side", side);
+        row.put("qty", qty);
+        double priceVal = price instanceof Number n ? n.doubleValue() : (price instanceof BigDecimal bd ? bd.doubleValue() : 0);
+        row.put("price", Math.round(priceVal * 100.0) / 100.0);
+        row.put("product", product);
+        row.put("broker", broker);
+        row.put("status", status);
+        row.put("orderId", orderId);
+        // The broker's real rejection text (e.g. Zerodha's "could not be converted to AMO",
+        // "quantity should be multiple of 30") -- shown only for REJECTED rows since that's
+        // where "why" actually matters; a raw status pill alone forces the user to go dig
+        // through Auto-Exec logs or SSH into the server to find out what Zerodha actually said.
+        if ("REJECTED".equalsIgnoreCase(status) && reason != null && !reason.isBlank()) {
+            row.put("reason", reason);
+        }
+        return row;
+    }
+
+    /**
+     * Cross-checks every OPEN live (non-paper) position against the broker's actual portfolio
+     * before showing it as "live" -- a position that was closed manually at the broker (outside
+     * this app) or auto-squared-off by broker RMS otherwise sits in our DB as OPEN forever,
+     * with nothing to ever notice and correct it. Any leg symbol with a real nonzero quantity
+     * at the broker means the position is genuinely still held; if NONE of a position's legs
+     * show up, it's stale -- auto-close it here instead of showing phantom P&L on a position
+     * that doesn't exist anymore. PAPER positions are untouched (no broker to check against).
+     */
+    private List<LivePosition> reconcileAgainstBroker(List<LivePosition> openPositions) {
+        Set<String> liveBrokers = openPositions.stream()
+                .map(LivePosition::getBroker)
+                .filter(b -> b != null && !"PAPER".equalsIgnoreCase(b))
+                .collect(Collectors.toSet());
+        if (liveBrokers.isEmpty()) return openPositions;
+
+        Map<String, Set<String>> heldSymbolsByBroker = new HashMap<>();
+        for (String broker : liveBrokers) {
+            try {
+                List<com.stokr.broker.BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");
+                if (accounts.isEmpty()) continue;
+                com.stokr.broker.BrokerAdapter adapter = brokerService.getAdapter(broker);
+                List<com.stokr.broker.BrokerPosition> real = adapter.getPositions(accounts.get(0).getAccessToken());
+                Set<String> held = real.stream()
+                        .filter(p -> p.quantity() != 0)
+                        .map(com.stokr.broker.BrokerPosition::symbol)
+                        .collect(Collectors.toSet());
+                heldSymbolsByBroker.put(broker, held);
+            } catch (Exception e) {
+                log.debug("Reconciliation fetch failed for {}, skipping stale-check this cycle: {}", broker, e.getMessage());
+            }
+        }
+        if (heldSymbolsByBroker.isEmpty()) return openPositions;
+
+        List<LivePosition> stillOpen = new ArrayList<>();
+        for (LivePosition p : openPositions) {
+            String broker = p.getBroker();
+            if (broker == null || "PAPER".equalsIgnoreCase(broker) || !heldSymbolsByBroker.containsKey(broker)) {
+                stillOpen.add(p);
+                continue;
+            }
+            Set<String> held = heldSymbolsByBroker.get(broker);
+            List<String> legSymbols = new ArrayList<>();
+            if (p.getLegs() != null) {
+                for (Map<String, Object> leg : p.getLegs()) {
+                    Object sym = leg.get("symbol");
+                    if (sym instanceof String s) legSymbols.add(s);
+                }
+            } else {
+                if (p.getCeSymbol() != null) legSymbols.add(p.getCeSymbol());
+                if (p.getPeSymbol() != null) legSymbols.add(p.getPeSymbol());
+                if (p.getFutSymbol() != null) legSymbols.add(p.getFutSymbol());
+            }
+            boolean anyHeld = legSymbols.stream().anyMatch(held::contains);
+            if (anyHeld || legSymbols.isEmpty()) {
+                stillOpen.add(p);
+            } else {
+                p.setStatus("CLOSED");
+                p.setExitedAt(LocalDateTime.now());
+                p.setErrorMessage("Auto-corrected: broker showed no matching position (likely closed manually outside the app)");
+                livePositionRepo.save(p);
+                log.info("Reconciliation: auto-closed stale position {} ({} {}) -- broker has none of {}",
+                        p.getId(), p.getUnderlying(), p.getStrike(), legSymbols);
+            }
+        }
+        return stillOpen;
+    }
+
     @GetMapping("/live-positions")
     public ResponseEntity<Map<String, Object>> getLivePositions() {
         Map<String, Object> resp = new LinkedHashMap<>();
         List<LivePosition> openPositions = livePositionRepo.findAllOpen();
+        openPositions = reconcileAgainstBroker(openPositions);
 
         Map<String, OptionChainService.OptionQuote> allQuotes;
         try {
@@ -796,6 +1533,12 @@ public class OptionArbitrageController {
                 if (p.getCeSymbol() != null) symbols.add(p.getCeSymbol());
                 if (p.getPeSymbol() != null) symbols.add(p.getPeSymbol());
                 if (p.getFutSymbol() != null) symbols.add(p.getFutSymbol());
+                if (p.getLegs() != null) {
+                    for (Map<String, Object> leg : p.getLegs()) {
+                        Object sym = leg.get("symbol");
+                        if (sym instanceof String s) symbols.add(s);
+                    }
+                }
             }
             allQuotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
         } catch (Exception e) {
@@ -810,46 +1553,56 @@ public class OptionArbitrageController {
 
         List<Map<String, Object>> posList = openPositions.stream().map(p -> {
             Map<String, Object> map = p.toMap();
-
-            double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
-            if (p.getCeSymbol() != null && quotes.containsKey(p.getCeSymbol())) ceCurrent = quotes.get(p.getCeSymbol()).lastPrice;
-            if (p.getPeSymbol() != null && quotes.containsKey(p.getPeSymbol())) peCurrent = quotes.get(p.getPeSymbol()).lastPrice;
-            if (p.getFutSymbol() != null && quotes.containsKey(p.getFutSymbol())) futCurrent = quotes.get(p.getFutSymbol()).lastPrice;
-
-            double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
-            double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
-            double futEntry = p.getFutEntryPrice() != null ? p.getFutEntryPrice().doubleValue() : 0;
+            boolean isMultiLeg = p.getLegs() != null && !p.getLegs().isEmpty();
             int lotSize = p.getLotSize() != null ? p.getLotSize() : getLotSize(p.getUnderlying());
             int lots = p.getLots() != null ? p.getLots() : 1;
 
-            double pnl = 0;
-            String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
-            if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
-                if (action.contains("BUY CE +")) {
-                    if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
-                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
-                } else if (action.contains("SELL CE +")) {
-                    if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
-                    if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
-                } else {
-                    if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
-                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
+            double pnl;
+            if (isMultiLeg) {
+                pnl = autoExecService.computeMultiLegPnl(p, quotes);
+                map.put("ceCurrent", 0);
+                map.put("peCurrent", 0);
+                map.put("futCurrent", 0);
+            } else {
+                double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
+                if (p.getCeSymbol() != null && quotes.containsKey(p.getCeSymbol())) ceCurrent = quotes.get(p.getCeSymbol()).lastPrice;
+                if (p.getPeSymbol() != null && quotes.containsKey(p.getPeSymbol())) peCurrent = quotes.get(p.getPeSymbol()).lastPrice;
+                if (p.getFutSymbol() != null && quotes.containsKey(p.getFutSymbol())) futCurrent = quotes.get(p.getFutSymbol()).lastPrice;
+
+                double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
+                double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
+                double futEntry = p.getFutEntryPrice() != null ? p.getFutEntryPrice().doubleValue() : 0;
+
+                double legacyPnl = 0;
+                String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
+                if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
+                    if (action.contains("BUY CE +")) {
+                        if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceCurrent - ceEntry;
+                        if (peCurrent > 0 && peEntry > 0) legacyPnl += peEntry - peCurrent;
+                        if (futCurrent > 0 && futEntry > 0) legacyPnl += futEntry - futCurrent;
+                    } else if (action.contains("SELL CE +")) {
+                        if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceEntry - ceCurrent;
+                        if (peCurrent > 0 && peEntry > 0) legacyPnl += peCurrent - peEntry;
+                        if (futCurrent > 0 && futEntry > 0) legacyPnl += futCurrent - futEntry;
+                    } else {
+                        if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceCurrent - ceEntry;
+                        if (peCurrent > 0 && peEntry > 0) legacyPnl += peEntry - peCurrent;
+                        if (futCurrent > 0 && futEntry > 0) legacyPnl += futEntry - futCurrent;
+                    }
                 }
+                pnl = legacyPnl * lotSize * lots;
+                map.put("ceCurrent", ceCurrent);
+                map.put("peCurrent", peCurrent);
+                map.put("futCurrent", futCurrent);
             }
-            pnl *= lotSize * lots;
             map.put("currentPnl", Math.round(pnl));
-            map.put("ceCurrent", ceCurrent);
-            map.put("peCurrent", peCurrent);
-            map.put("futCurrent", futCurrent);
 
             double target = p.getTargetEdge() != null ? p.getTargetEdge().doubleValue() : 0;
             double pnlPerLot = lots > 0 ? Math.abs(pnl) / lots : 0;
             double edgeCaptured = target > 0 ? Math.min(100, Math.round(pnlPerLot / target * 100)) : 0;
             map.put("edgeCaptured", edgeCaptured);
             map.put("marketOpen", marketOpen);
+            map.put("isMultiLeg", isMultiLeg);
 
             return map;
         }).toList();
@@ -869,6 +1622,15 @@ public class OptionArbitrageController {
     public ResponseEntity<Map<String, Object>> rolloverPosition(@PathVariable Long positionId) {
         Map<String, Object> result = autoExecService.rollPosition(positionId);
         if (result.containsKey("error")) {
+            return ResponseEntity.badRequest().body(result);
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/positions/{positionId}/exit")
+    public ResponseEntity<Map<String, Object>> exitPosition(@PathVariable Long positionId) {
+        Map<String, Object> result = autoExecService.manualExitPosition(positionId);
+        if ("ERROR".equals(result.get("status"))) {
             return ResponseEntity.badRequest().body(result);
         }
         return ResponseEntity.ok(result);
@@ -908,6 +1670,12 @@ public class OptionArbitrageController {
                 if (p.getCeSymbol() != null) symbols.add(p.getCeSymbol());
                 if (p.getPeSymbol() != null) symbols.add(p.getPeSymbol());
                 if (p.getFutSymbol() != null) symbols.add(p.getFutSymbol());
+                if (p.getLegs() != null) {
+                    for (Map<String, Object> leg : p.getLegs()) {
+                        Object sym = leg.get("symbol");
+                        if (sym instanceof String s) symbols.add(s);
+                    }
+                }
             }
         }
         Map<String, OptionChainService.OptionQuote> quotes = Map.of();
@@ -924,11 +1692,22 @@ public class OptionArbitrageController {
             String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
             int lotSize = p.getLotSize() != null ? p.getLotSize() : getLotSize(p.getUnderlying());
             int lots = p.getLots() != null ? p.getLots() : 1;
+            boolean isMultiLeg = p.getLegs() != null && !p.getLegs().isEmpty();
 
             if ("CLOSED".equals(p.getStatus()) || "EXITED".equals(p.getStatus())) {
                 // Use stored P&L or compute from exit prices
                 if (p.getCurrentPnl() != null) {
                     pnl = p.getCurrentPnl().doubleValue();
+                } else if (isMultiLeg) {
+                    for (Map<String, Object> leg : p.getLegs()) {
+                        double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
+                        double exit = leg.get("exitPrice") instanceof Number n ? n.doubleValue() : 0;
+                        if (entry <= 0 || exit <= 0) continue;
+                        int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+                        String side = (String) leg.get("side");
+                        pnl += ("BUY".equals(side) ? (exit - entry) : (entry - exit)) * qtyMult;
+                    }
+                    pnl *= lotSize * lots;
                 } else if (p.getCeExitPrice() != null || p.getPeExitPrice() != null || p.getFutExitPrice() != null) {
                     double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
                     double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
@@ -938,15 +1717,20 @@ public class OptionArbitrageController {
                     double futExit = p.getFutExitPrice() != null ? p.getFutExitPrice().doubleValue() : 0;
                     if (action.contains("BUY CE +")) {
                         if (ceExit > 0 && ceEntry > 0) pnl += ceExit - ceEntry;
-                        if (peExit > 0 && peEntry > 0) pnl += peExit - peEntry;
+                        if (peExit > 0 && peEntry > 0) pnl += peEntry - peExit;
                         if (futExit > 0 && futEntry > 0) pnl += futEntry - futExit;
                     } else {
                         if (ceExit > 0 && ceEntry > 0) pnl += ceEntry - ceExit;
-                        if (peExit > 0 && peEntry > 0) pnl += peEntry - peExit;
+                        if (peExit > 0 && peEntry > 0) pnl += peExit - peEntry;
                         if (futExit > 0 && futEntry > 0) pnl += futExit - futEntry;
                     }
                     pnl *= lotSize * lots;
                 }
+            } else if (isMultiLeg) {
+                pnl = autoExecService.computeMultiLegPnl(p, q);
+                m.put("ceCurrent", 0);
+                m.put("peCurrent", 0);
+                m.put("futCurrent", 0);
             } else {
                 // OPEN — compute from live quotes
                 double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
@@ -995,34 +1779,27 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(resp);
     }
 
+    /** Same fix as OptionArbAutoExecService.getLotSize -- this was its own hardcoded switch
+     *  (NIFTY=25, BANKNIFTY=15, ...) independent of OptionChainService's dynamic Zerodha-fetched
+     *  values, so it kept using stale numbers after the dynamic fetch was added elsewhere. */
     private int getLotSize(String underlying) {
-        return switch (underlying) {
-            case "NIFTY" -> 25;
-            case "BANKNIFTY" -> 15;
-            case "MIDCPNIFTY" -> 50;
-            case "FINNIFTY" -> 25;
-            default -> 25;
-        };
+        return optionChainService.getLotSize(underlying);
     }
 
     private double recalculateTargetEdge(double ceEntry, double peEntry, double futEntry, int strike, String action, String underlying) {
+        return recalculateTargetEdge(ceEntry, peEntry, futEntry, strike, action, underlying, 0);
+    }
+
+    private double recalculateTargetEdge(double ceEntry, double peEntry, double futEntry, int strike, String action, String underlying, double daysToExpiry) {
         if (ceEntry <= 0 || peEntry <= 0 || futEntry <= 0) return 0;
 
         int lotSize = getLotSize(underlying);
-        double synthetic = ceEntry - peEntry + strike;
+        double discountedStrike = ArbitrageCosts.discountedStrike(strike, daysToExpiry);
+        double synthetic = ceEntry - peEntry + discountedStrike;
         double parityDev = Math.abs(futEntry - synthetic);
         double grossEdge = parityDev * lotSize;
 
-        double brokerage = 120.0;
-        double stt = (peEntry * lotSize * 0.00125) + (futEntry * lotSize * 0.00025);
-        double totalTurnover = (ceEntry + peEntry + futEntry) * lotSize * 2;
-        double exchange = totalTurnover * 0.0000345;
-        double sebi = totalTurnover * 0.000001;
-        double gst = (brokerage + exchange + sebi) * 0.18;
-        double stamp = (ceEntry + peEntry + futEntry) * lotSize * 0.00005;
-        double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
-
-        return Math.max(0, grossEdge - totalCosts);
+        return ArbitrageCosts.netEdge(ceEntry, peEntry, futEntry, lotSize, grossEdge, action);
     }
 
     @GetMapping("/auto-execute/execute")
@@ -1051,10 +1828,10 @@ public class OptionArbitrageController {
                 if (opt.isPresent()) {
                     opp = opt.get();
                     String currentStatus = opp.getStatus();
-                    if ("CLOSED".equals(currentStatus) || "EXPIRED".equals(currentStatus)) {
+                    if ("CLOSED".equals(currentStatus) || "EXPIRED".equals(currentStatus) || "EXITED".equals(currentStatus)) {
                         resp.put("status", "ERROR");
                         resp.put("message", "Trade already " + currentStatus);
-                        return ResponseEntity.badRequest().body(resp);
+                        return ResponseEntity.ok(resp);
                     }
                 }
             }
@@ -1093,13 +1870,110 @@ public class OptionArbitrageController {
                     .expiryDate(expiry)
                     .status("RUNNING")
                     .build();
+                Object legListObj = body.get("legList");
+                if (legListObj instanceof List<?> ll) {
+                    try {
+                        @SuppressWarnings("unchecked")
+                        List<Map<String, Object>> cast = (List<Map<String, Object>>) ll;
+                        opp.setLegList(cast);
+                    } catch (Exception ignored) {}
+                }
                 opp = historyService.getRepository().save(opp);
                 log.info("Created opportunity from scan data: id={}", opp.getId());
             }
 
-            // Fetch live CE/PE prices as entry prices
-            double ceLive = 0, peLive = 0;
+            int lots = body.get("lots") instanceof Number n ? Math.max(1, n.intValue()) : 1;
+            String broker = (String) body.getOrDefault("broker", "PAPER");
+            List<Map<String, Object>> legs = opp.getLegList();
+            boolean isMultiLeg = legs != null && !legs.isEmpty();
+
+            if (broker != null && !broker.isBlank() && !"PAPER".equalsIgnoreCase(broker)) {
+                // Real broker selected -- place an actual order via the same engine auto-exec
+                // uses, dispatching on legList presence for the correct leg shape.
+                Map<String, Object> liveResult = autoExecService.manualExecuteLive(opp, lots, broker);
+                resp.putAll(liveResult);
+                addAuditLog("MANUAL_LIVE_TRADE", resp.get("status") != null ? resp.get("status").toString() : "ERROR",
+                    "Manual LIVE trade via " + broker + " for " + opp.getUnderlying() + " " + opp.getStrike()
+                    + ": " + resp.get("message"));
+                return ResponseEntity.ok(resp);
+            }
+
+            // PAPER: simulate a fill using live quotes and record it directly (no broker call).
+            opp.setStatus("RUNNING");
+            historyService.getRepository().save(opp);
+
             try {
+                // Paper positions gated against paper count, not mixed with live -- opening
+                // a paper trade shouldn't be blocked by real live positions or vice versa.
+                long openCount = livePositionRepo.countOpenPaper();
+                int maxOpen = ((Number) autoExecService.getSettings().getOrDefault("maxOpenPositions", 1)).intValue();
+                if (openCount >= maxOpen) {
+                    resp.put("status", "ERROR");
+                    resp.put("message", "Already have " + openCount + "/" + maxOpen + " open positions. Close one first or raise Max Open Positions in Auto-Trade settings.");
+                    return ResponseEntity.badRequest().body(resp);
+                }
+                int lotSize = getLotSize(opp.getUnderlying());
+
+                if (isMultiLeg) {
+                    List<String> symbols = new ArrayList<>();
+                    List<Map<String, Object>> resolvedLegs = new ArrayList<>();
+                    for (Map<String, Object> leg : legs) {
+                        int strike = ((Number) leg.get("strike")).intValue();
+                        String optionType = (String) leg.get("optionType");
+                        String sym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), strike, optionType);
+                        Map<String, Object> resolved = new LinkedHashMap<>(leg);
+                        resolved.put("symbol", sym);
+                        resolvedLegs.add(resolved);
+                        if (sym != null) symbols.add(sym);
+                    }
+                    Map<String, OptionChainService.OptionQuote> legQuotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
+                    double entryCost = 0;
+                    for (Map<String, Object> leg : resolvedLegs) {
+                        String sym = (String) leg.get("symbol");
+                        double live = (sym != null && legQuotes.containsKey(sym) && legQuotes.get(sym).lastPrice > 0)
+                            ? legQuotes.get(sym).lastPrice
+                            : (leg.get("price") instanceof Number n ? n.doubleValue() : 0);
+                        leg.put("price", live);
+                        int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+                        boolean isBuy = "BUY".equals(leg.get("side"));
+                        entryCost += (isBuy ? live : -live) * qtyMult;
+                    }
+                    entryCost = Math.abs(entryCost) * lotSize * lots;
+
+                    LivePosition livePos = LivePosition.builder()
+                        .userId(1L)
+                        .broker("PAPER")
+                        .opportunityId(opp.getId())
+                        .underlying(opp.getUnderlying())
+                        .strike(opp.getStrike())
+                        .action(opp.getAction())
+                        .strategyType(opp.getStrategyType())
+                        .lots(lots)
+                        .lotSize(lotSize)
+                        .targetEdge(opp.getEdgeAfterCosts())
+                        .entryCost(BigDecimal.valueOf(entryCost))
+                        .status("OPEN")
+                        .enteredAt(LocalDateTime.now())
+                        .createdAt(LocalDateTime.now())
+                        .build();
+                    livePos.setLegs(resolvedLegs);
+                    livePositionRepo.save(livePos);
+                    resp.put("livePositionId", livePos.getId());
+
+                    addAuditLog("PAPER_TRADE", "SUCCESS",
+                        "Entered " + opp.getUnderlying() + " " + opp.getAction() + " (" + resolvedLegs.size() + "-leg, PAPER)");
+                    resp.put("status", "SUCCESS");
+                    resp.put("opportunityId", opp.getId());
+                    resp.put("underlying", opp.getUnderlying());
+                    resp.put("strike", opp.getStrike());
+                    resp.put("action", opp.getAction());
+                    resp.put("tradeStatus", "RUNNING");
+                    resp.put("message", opp.getUnderlying() + " " + opp.getAction() + " entered as PAPER trade (" + resolvedLegs.size() + " legs)");
+                    return ResponseEntity.ok(resp);
+                }
+
+                // Legacy single-strike CE+PE+FUT shape (Bid Parity / normal parity)
+                double ceLive = 0, peLive = 0;
                 if (opp.getExpiryDate() != null && opp.getStrike() != null) {
                     String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
                     String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
@@ -1107,26 +1981,10 @@ public class OptionArbitrageController {
                     if (quotes.containsKey(ceSymbol) && quotes.get(ceSymbol).lastPrice > 0) ceLive = quotes.get(ceSymbol).lastPrice;
                     if (quotes.containsKey(peSymbol) && quotes.get(peSymbol).lastPrice > 0) peLive = quotes.get(peSymbol).lastPrice;
                 }
-            } catch (Exception e) {
-                log.warn("Could not fetch live prices for entry: {}", e.getMessage());
-            }
+                if (ceLive > 0) opp.setCeEntryPrice(BigDecimal.valueOf(ceLive));
+                if (peLive > 0) opp.setPeEntryPrice(BigDecimal.valueOf(peLive));
+                historyService.getRepository().save(opp);
 
-            // Update entry prices with live quotes
-            if (ceLive > 0) opp.setCeEntryPrice(BigDecimal.valueOf(ceLive));
-            if (peLive > 0) opp.setPeEntryPrice(BigDecimal.valueOf(peLive));
-
-            // Update status to RUNNING
-            opp.setStatus("RUNNING");
-
-            historyService.getRepository().save(opp);
-
-            // Create a LivePosition so it shows in Live Positions section
-            try {
-                long openCount = livePositionRepo.countAllOpen();
-                if (openCount >= 1) {
-                    return ResponseEntity.badRequest().body(Map.of("error", "Already have 1 open position. Close it first."));
-                }
-                int lotSize = getLotSize(opp.getUnderlying());
                 String futSymbol = opp.getExpiryDate() != null
                     ? optionChainService.buildNfoFutSymbol(opp.getUnderlying(), opp.getExpiryDate()) : null;
                 double futLive = 0;
@@ -1141,12 +1999,13 @@ public class OptionArbitrageController {
 
                 LivePosition livePos = LivePosition.builder()
                     .userId(1L)
+                    .broker("PAPER")
                     .opportunityId(opp.getId())
                     .underlying(opp.getUnderlying())
                     .strike(opp.getStrike())
                     .action(opp.getAction())
                     .strategyType(opp.getStrategyType())
-                    .lots(1)
+                    .lots(lots)
                     .lotSize(lotSize)
                     .ceEntryPrice(ceLive > 0 ? BigDecimal.valueOf(ceLive) : null)
                     .peEntryPrice(peLive > 0 ? BigDecimal.valueOf(peLive) : null)
@@ -1155,7 +2014,8 @@ public class OptionArbitrageController {
                     .ceSymbol(optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE"))
                     .peSymbol(optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE"))
                     .targetEdge(BigDecimal.valueOf(recalculateTargetEdge(
-                        ceLive, peLive, futLive, opp.getStrike(), opp.getAction(), opp.getUnderlying())))
+                        ceLive, peLive, futLive, opp.getStrike(), opp.getAction(), opp.getUnderlying(),
+                        opp.getExpiryDate() != null ? java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), opp.getExpiryDate()) : 0)))
                     .entryCost(BigDecimal.valueOf((ceLive + peLive + futLive) * lotSize))
                     .status("OPEN")
                     .enteredAt(LocalDateTime.now())
@@ -1163,26 +2023,28 @@ public class OptionArbitrageController {
                     .build();
                 livePositionRepo.save(livePos);
                 resp.put("livePositionId", livePos.getId());
+
+                addAuditLog("PAPER_TRADE", "SUCCESS",
+                    "Entered " + opp.getUnderlying() + " " + opp.getStrike() + " " + opp.getAction()
+                    + " | CE=" + String.format("%.1f", ceLive) + " PE=" + String.format("%.1f", peLive));
+
+                resp.put("status", "SUCCESS");
+                resp.put("opportunityId", opp.getId());
+                resp.put("underlying", opp.getUnderlying());
+                resp.put("strike", opp.getStrike());
+                resp.put("action", opp.getAction());
+                resp.put("ceEntryPrice", ceLive);
+                resp.put("peEntryPrice", peLive);
+                resp.put("tradeStatus", "RUNNING");
+                resp.put("message", opp.getUnderlying() + " " + opp.getStrike() + " entered as PAPER trade");
             } catch (Exception e) {
                 log.warn("Failed to create live position: {}", e.getMessage());
+                resp.put("status", "ERROR");
+                resp.put("message", "Failed to record paper trade: " + e.getMessage());
             }
 
-            addAuditLog("PAPER_TRADE", "SUCCESS",
-                "Entered " + opp.getUnderlying() + " " + opp.getStrike() + " " + opp.getAction()
-                + " | CE=" + String.format("%.1f", ceLive) + " PE=" + String.format("%.1f", peLive));
-
-            resp.put("status", "SUCCESS");
-            resp.put("opportunityId", opp.getId());
-            resp.put("underlying", opp.getUnderlying());
-            resp.put("strike", opp.getStrike());
-            resp.put("action", opp.getAction());
-            resp.put("ceEntryPrice", ceLive);
-            resp.put("peEntryPrice", peLive);
-            resp.put("tradeStatus", "RUNNING");
-            resp.put("message", opp.getUnderlying() + " " + opp.getStrike() + " entered as PAPER trade");
-
         } catch (Exception e) {
-            log.error("Paper trade execution failed: {}", e.getMessage(), e);
+            log.error("Trade execution failed: {}", e.getMessage(), e);
             resp.put("status", "ERROR");
             resp.put("message", "Execution failed: " + e.getMessage());
         }

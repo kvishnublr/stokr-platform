@@ -19,6 +19,11 @@ public class LivePosition {
 
     private Long userId;
 
+    /** "PAPER" or the live broker name (e.g. "NAVIA", "ZERODHA") this position was actually
+     *  entered through -- lets the Live Positions view tell real orders apart from paper
+     *  ones even after the execution broker dropdown is switched to something else. */
+    private String broker;
+
     private Long opportunityId;
 
     private String underlying;
@@ -62,14 +67,44 @@ public class LivePosition {
     @Column(columnDefinition = "TEXT")
     private String errorMessage;
 
+    /**
+     * Structured legs for non-CE+PE+FUT positions (Box/Vertical/Butterfly/Condor/Iron Condor
+     * spreads). Each entry: {symbol, strike, optionType, side, qty, entryPrice, exitPrice,
+     * orderId}. Null means the legacy ceSymbol/peSymbol/futSymbol fields above are used.
+     */
+    @Column(columnDefinition = "TEXT")
+    private String legsJson;
+
     private LocalDateTime enteredAt;
     private LocalDateTime exitedAt;
     private LocalDateTime createdAt;
 
     @Transient
+    public java.util.List<java.util.Map<String, Object>> getLegs() {
+        if (legsJson == null || legsJson.isEmpty()) return null;
+        try {
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            var typeRef = new com.fasterxml.jackson.core.type.TypeReference<java.util.List<java.util.Map<String, Object>>>() {};
+            return mapper.readValue(legsJson, typeRef);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public void setLegs(java.util.List<java.util.Map<String, Object>> legs) {
+        try {
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            this.legsJson = (legs == null || legs.isEmpty()) ? null : mapper.writeValueAsString(legs);
+        } catch (Exception e) {
+            this.legsJson = null;
+        }
+    }
+
+    @Transient
     public java.util.Map<String, Object> toMap() {
         java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("id", id);
+        map.put("broker", broker);
         map.put("opportunityId", opportunityId);
         map.put("underlying", underlying);
         map.put("strike", strike);
@@ -92,6 +127,8 @@ public class LivePosition {
         map.put("peOrderId", peOrderId);
         map.put("futOrderId", futOrderId);
         map.put("errorMessage", errorMessage);
+        var legs2 = getLegs();
+        if (legs2 != null) map.put("legList", legs2);
         map.put("enteredAt", enteredAt != null ? enteredAt.toString() : null);
         map.put("exitedAt", exitedAt != null ? exitedAt.toString() : null);
         map.put("createdAt", createdAt != null ? createdAt.toString() : null);

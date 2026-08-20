@@ -2,6 +2,7 @@ package com.stokr.arbitrage;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -21,9 +22,20 @@ public class BidParityService {
 
     private static final double RISK_FREE_RATE = 0.065;
     private static final double MIN_PARITY_DEVIATION_BID = 1.5;
-    private static final double MIN_EDGE_AFTER_COSTS = 800.0;
+    private static final double MIN_EDGE_AFTER_COSTS = 300.0;
     private static final int MIN_VOLUME = 500;
     private static final int MIN_OI = 2000;
+
+    /**
+     * Last known-good futures price per underlying, used to sanity-check freshly resolved
+     * fut prices. FuturesKeyResolver can occasionally resolve to the wrong contract month
+     * (e.g. next month instead of the current one) on a transient quote-fetch blip -- since
+     * different months trade at genuinely different levels, that produces a fake ~1%+ "parity
+     * deviation" against same-month options that isn't real mispricing. A sudden implausible
+     * jump vs the last reading is a strong signal of exactly that, not a real market move.
+     */
+    private final Map<String, Double> lastValidFut = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final double MAX_FUT_JUMP_PCT = 0.02;
 
     private static final Map<String, double[]> DTE_RANGES = Map.of(
         "NIFTY", new double[]{0.0, 60.0},
@@ -54,6 +66,20 @@ public class BidParityService {
         this.spotPriceFetcher = spotPriceFetcher;
     }
 
+    /**
+     * Continuous background scan so opportunities are detected as soon as they appear,
+     * not only when someone happens to have the dashboard open. Same 15s cadence used
+     * elsewhere in this codebase for market data (see ActiveSymbolPoller).
+     */
+    @Scheduled(cron = "0/15 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void scheduledScan() {
+        try {
+            scanBidParity("ALL");
+        } catch (Exception e) {
+            log.error("Scheduled bid parity scan failed: {}", e.getMessage(), e);
+        }
+    }
+
     public List<Map<String, Object>> scanBidParity(String underlying) {
         List<String> targets = "ALL".equalsIgnoreCase(underlying)
             ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
@@ -76,7 +102,7 @@ public class BidParityService {
         return results;
     }
 
-    private List<Map<String, Object>> scanBidParitySingle(String underlying) {
+    public List<Map<String, Object>> scanBidParitySingle(String underlying) {
         List<Map<String, Object>> results = new ArrayList<>();
 
         String spotKey = CONFIGS_SPOT.getOrDefault(underlying, "NSE:NIFTY 50");
@@ -90,6 +116,17 @@ public class BidParityService {
         double[] spotFut = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
         double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
         double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : spot;
+
+        Double lastFut = lastValidFut.get(underlying);
+        if (lastFut != null && lastFut > 0 && fut > 0) {
+            double jumpPct = Math.abs(fut - lastFut) / lastFut;
+            if (jumpPct > MAX_FUT_JUMP_PCT) {
+                log.warn("Rejecting implausible fut jump for {}: last={} new={} ({}%) -- likely wrong contract month resolved, using last known-good value",
+                    underlying, lastFut, fut, Math.round(jumpPct * 10000.0) / 100.0);
+                fut = lastFut;
+            }
+        }
+        if (fut > 0) lastValidFut.put(underlying, fut);
 
         if (spot <= 0 && fut > 0) spot = fut;
         if (fut <= 0 && spot > 0) fut = spot;
@@ -139,23 +176,35 @@ public class BidParityService {
             OptionChainService.OptionQuote ceQuote = (ceSym != null) ? quotes.get(ceSym) : null;
             OptionChainService.OptionQuote peQuote = (peSym != null) ? quotes.get(peSym) : null;
 
-            if (ceQuote == null || peQuote == null) continue;
-            if (ceQuote.lastPrice <= 0 || peQuote.lastPrice <= 0) continue;
-            if (ceQuote.bid <= 0 || peQuote.bid <= 0) continue;
-            if (ceQuote.ask <= 0 || peQuote.ask <= 0) continue;
-            if (ceQuote.volume < MIN_VOLUME || peQuote.volume < MIN_VOLUME) continue;
-            if (ceQuote.openInterest < MIN_OI || peQuote.openInterest < MIN_OI) continue;
+            if (ceQuote == null || peQuote == null) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} null quotes ce={} pe={}", underlying, strike, ceQuote!=null, peQuote!=null); continue; }
+            if (ceQuote.lastPrice <= 0 || peQuote.lastPrice <= 0) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} zero price CE={} PE={}", underlying, strike, ceQuote.lastPrice, peQuote.lastPrice); continue; }
+            if (ceQuote.bid <= 0 || peQuote.bid <= 0) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} zero bid CE_bid={} PE_bid={}", underlying, strike, ceQuote.bid, peQuote.bid); continue; }
+            if (ceQuote.ask <= 0 || peQuote.ask <= 0) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} zero ask CE_ask={} PE_ask={}", underlying, strike, ceQuote.ask, peQuote.ask); continue; }
+            if (ceQuote.volume < MIN_VOLUME || peQuote.volume < MIN_VOLUME) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} low volume CE={} PE={} min={}", underlying, strike, ceQuote.volume, peQuote.volume, MIN_VOLUME); continue; }
+            if (ceQuote.openInterest < MIN_OI || peQuote.openInterest < MIN_OI) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} low OI CE={} PE={} min={}", underlying, strike, ceQuote.openInterest, peQuote.openInterest, MIN_OI); continue; }
 
+            // Convergent (SELL CE + BUY PE + BUY FUT) actually sells the call at its bid and
+            // buys the put at its ask -- the synthetic price used to decide whether this is
+            // profitable must be priced the same way, or it's comparing against a synthetic
+            // that isn't actually achievable at real market prices.
             double synthetic1 = BlackScholesCalculator.syntheticFutures(
-                ceQuote.ask, peQuote.bid, strike, RISK_FREE_RATE, yearsToExpiry);
+                ceQuote.bid, peQuote.ask, strike, RISK_FREE_RATE, yearsToExpiry);
             double parityDev1 = synthetic1 - fut;
 
+            // Reversal (BUY CE + SELL PE + SELL FUT) buys the call at its ask and sells the
+            // put at its bid -- same reasoning, mirrored.
             double synthetic2 = BlackScholesCalculator.syntheticFutures(
-                ceQuote.bid, peQuote.ask, strike, RISK_FREE_RATE, yearsToExpiry);
+                ceQuote.ask, peQuote.bid, strike, RISK_FREE_RATE, yearsToExpiry);
             double parityDev2 = fut - synthetic2;
 
             boolean isConvergent = parityDev1 >= MIN_PARITY_DEVIATION_BID;
             boolean isReversal = parityDev2 >= MIN_PARITY_DEVIATION_BID;
+
+            if (strike == atmStrike) {
+                log.info("PARITY_DEV {}: K={} CE={}/{} PE={}/{} FUT={} synth1={} dev1={} synth2={} dev2={} (min={})",
+                    underlying, strike, ceQuote.bid, ceQuote.ask, peQuote.bid, peQuote.ask, fut,
+                    synthetic1, parityDev1, synthetic2, parityDev2, MIN_PARITY_DEVIATION_BID);
+            }
 
             if (!isConvergent && !isReversal) continue;
 
@@ -176,7 +225,10 @@ public class BidParityService {
             }
 
             double grossEdge = edgePoints * lotSize;
-            double edgeAfterCosts = calculateEdgeCosts(ceQuote.lastPrice, peQuote.lastPrice, fut, lotSize, grossEdge);
+            double edgeAfterCosts = calculateEdgeCosts(ceQuote.lastPrice, peQuote.lastPrice, fut, lotSize, grossEdge, action);
+
+            log.info("PARITY_EDGE {}: K={} action={} edgePts={} grossEdge={} afterCosts={} (min={})",
+                underlying, strike, action, edgePoints, grossEdge, edgeAfterCosts, MIN_EDGE_AFTER_COSTS);
 
             if (edgeAfterCosts < MIN_EDGE_AFTER_COSTS) continue;
 
@@ -212,6 +264,11 @@ public class BidParityService {
             map.put("grossEdge", Math.round(grossEdge * 100.0) / 100.0);
             map.put("daysToExpiry", daysToExpiry);
             map.put("expiryDate", expiry.toString());
+            ArbitrageCosts.CostResult costs = ArbitrageCosts.calculate(
+                    ceQuote.lastPrice, peQuote.lastPrice, fut, lotSize, grossEdge, action);
+            double totalCosts = costs.breakdown().getOrDefault("totalCosts", 0.0);
+            edgeAfterCosts = Math.max(0, grossEdge - totalCosts);
+
             map.put("lotSize", lotSize);
             map.put("confidence", Math.min(99.0, 70.0 + edgePoints * 1.5));
             map.put("guaranteedFill", true);
@@ -220,24 +277,7 @@ public class BidParityService {
             map.put("scanTime", java.time.LocalDateTime.now().toString());
             map.put("detectedAt", java.time.LocalDateTime.now().toString());
 
-            double stt = (peQuote.lastPrice * lotSize * 0.00125) + (fut * lotSize * 0.00025);
-            double brokerage = 120.0;
-            double totalTurnover = (ceQuote.lastPrice + peQuote.lastPrice + fut) * lotSize * 2;
-            double exchange = totalTurnover * 0.0000345;
-            double sebi = totalTurnover * 0.000001;
-            double gst = (brokerage + exchange + sebi) * 0.18;
-            double stamp = (ceQuote.lastPrice + peQuote.lastPrice + fut) * lotSize * 0.00005;
-            double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
-
-            Map<String, Double> costBreakdown = new LinkedHashMap<>();
-            costBreakdown.put("grossEdge", Math.round(grossEdge * 100.0) / 100.0);
-            costBreakdown.put("stt", Math.round(stt * 100.0) / 100.0);
-            costBreakdown.put("brokerage", brokerage);
-            costBreakdown.put("exchange", Math.round(exchange * 100.0) / 100.0);
-            costBreakdown.put("sebi", Math.round(sebi * 100.0) / 100.0);
-            costBreakdown.put("gst", Math.round(gst * 100.0) / 100.0);
-            costBreakdown.put("stamp", Math.round(stamp * 100.0) / 100.0);
-            costBreakdown.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
+            Map<String, Double> costBreakdown = new LinkedHashMap<>(costs.breakdown());
             costBreakdown.put("netEdge", Math.round(edgeAfterCosts * 100.0) / 100.0);
             costBreakdown.put("lotSize", (double) lotSize);
             map.put("costBreakdown", costBreakdown);
@@ -278,22 +318,7 @@ public class BidParityService {
         return results;
     }
 
-    private double calculateEdgeCosts(double cePrice, double pePrice, double futPrice, int lotSize, double grossEdge) {
-        if (cePrice <= 0 || pePrice <= 0 || futPrice <= 0 || lotSize <= 0) return 0;
-
-        double ceTurnover = cePrice * lotSize * 2;
-        double peTurnover = pePrice * lotSize * 2;
-        double futTurnover = futPrice * lotSize * 2;
-        double totalTurnover = ceTurnover + peTurnover + futTurnover;
-
-        double brokerage = 120.0;
-        double stt = (pePrice * lotSize * 0.00125) + (futPrice * lotSize * 0.00025);
-        double exchange = totalTurnover * 0.0000345;
-        double sebi = totalTurnover * 0.000001;
-        double gst = (brokerage + exchange + sebi) * 0.18;
-        double stamp = (cePrice + pePrice + futPrice) * lotSize * 0.00005;
-        double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
-
-        return Math.max(0, grossEdge - totalCosts);
+    private double calculateEdgeCosts(double cePrice, double pePrice, double futPrice, int lotSize, double grossEdge, String action) {
+        return ArbitrageCosts.netEdge(cePrice, pePrice, futPrice, lotSize, grossEdge, action);
     }
 }
