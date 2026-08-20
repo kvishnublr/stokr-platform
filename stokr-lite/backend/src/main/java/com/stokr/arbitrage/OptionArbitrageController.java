@@ -1439,10 +1439,79 @@ public class OptionArbitrageController {
         return row;
     }
 
+    /**
+     * Cross-checks every OPEN live (non-paper) position against the broker's actual portfolio
+     * before showing it as "live" -- a position that was closed manually at the broker (outside
+     * this app) or auto-squared-off by broker RMS otherwise sits in our DB as OPEN forever,
+     * with nothing to ever notice and correct it. Any leg symbol with a real nonzero quantity
+     * at the broker means the position is genuinely still held; if NONE of a position's legs
+     * show up, it's stale -- auto-close it here instead of showing phantom P&L on a position
+     * that doesn't exist anymore. PAPER positions are untouched (no broker to check against).
+     */
+    private List<LivePosition> reconcileAgainstBroker(List<LivePosition> openPositions) {
+        Set<String> liveBrokers = openPositions.stream()
+                .map(LivePosition::getBroker)
+                .filter(b -> b != null && !"PAPER".equalsIgnoreCase(b))
+                .collect(Collectors.toSet());
+        if (liveBrokers.isEmpty()) return openPositions;
+
+        Map<String, Set<String>> heldSymbolsByBroker = new HashMap<>();
+        for (String broker : liveBrokers) {
+            try {
+                List<com.stokr.broker.BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");
+                if (accounts.isEmpty()) continue;
+                com.stokr.broker.BrokerAdapter adapter = brokerService.getAdapter(broker);
+                List<com.stokr.broker.BrokerPosition> real = adapter.getPositions(accounts.get(0).getAccessToken());
+                Set<String> held = real.stream()
+                        .filter(p -> p.quantity() != 0)
+                        .map(com.stokr.broker.BrokerPosition::symbol)
+                        .collect(Collectors.toSet());
+                heldSymbolsByBroker.put(broker, held);
+            } catch (Exception e) {
+                log.debug("Reconciliation fetch failed for {}, skipping stale-check this cycle: {}", broker, e.getMessage());
+            }
+        }
+        if (heldSymbolsByBroker.isEmpty()) return openPositions;
+
+        List<LivePosition> stillOpen = new ArrayList<>();
+        for (LivePosition p : openPositions) {
+            String broker = p.getBroker();
+            if (broker == null || "PAPER".equalsIgnoreCase(broker) || !heldSymbolsByBroker.containsKey(broker)) {
+                stillOpen.add(p);
+                continue;
+            }
+            Set<String> held = heldSymbolsByBroker.get(broker);
+            List<String> legSymbols = new ArrayList<>();
+            if (p.getLegs() != null) {
+                for (Map<String, Object> leg : p.getLegs()) {
+                    Object sym = leg.get("symbol");
+                    if (sym instanceof String s) legSymbols.add(s);
+                }
+            } else {
+                if (p.getCeSymbol() != null) legSymbols.add(p.getCeSymbol());
+                if (p.getPeSymbol() != null) legSymbols.add(p.getPeSymbol());
+                if (p.getFutSymbol() != null) legSymbols.add(p.getFutSymbol());
+            }
+            boolean anyHeld = legSymbols.stream().anyMatch(held::contains);
+            if (anyHeld || legSymbols.isEmpty()) {
+                stillOpen.add(p);
+            } else {
+                p.setStatus("CLOSED");
+                p.setExitedAt(LocalDateTime.now());
+                p.setErrorMessage("Auto-corrected: broker showed no matching position (likely closed manually outside the app)");
+                livePositionRepo.save(p);
+                log.info("Reconciliation: auto-closed stale position {} ({} {}) -- broker has none of {}",
+                        p.getId(), p.getUnderlying(), p.getStrike(), legSymbols);
+            }
+        }
+        return stillOpen;
+    }
+
     @GetMapping("/live-positions")
     public ResponseEntity<Map<String, Object>> getLivePositions() {
         Map<String, Object> resp = new LinkedHashMap<>();
         List<LivePosition> openPositions = livePositionRepo.findAllOpen();
+        openPositions = reconcileAgainstBroker(openPositions);
 
         Map<String, OptionChainService.OptionQuote> allQuotes;
         try {
