@@ -1878,6 +1878,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                                   {Object.entries(opp.costBreakdown).map(([k,v]) => <span key={k}>{k}: ₹{v}</span>)}
                                 </div>
                               )}
+                              <ArbitrageSignalPayoffChart opp={opp} />
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-amber-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   ⚡ Submit ({executionBroker})
@@ -3117,15 +3118,21 @@ function ArbitrageSignalPayoffChart({ opp }) {
     // own intrinsic value at settlement x, signed by side and scaled by its qty multiplier.
     // This replaced a version hardcoded to 3-leg CE-only butterflies (regex-parsed from the
     // action string), which silently produced nothing for box spreads or any PE leg.
-    const strikes = [...new Set(opp.legList.map(l => Number(l.strike)).filter(n => !isNaN(n)))].sort((a, b) => a - b);
-    if (strikes.length < 2) return null;
-    const k1 = strikes[0], k2 = strikes[strikes.length - 1];
+    // A FUT leg (Bid Parity's conversion/reversal) has no strike -- its payoff is linear in
+    // settlement price (x itself, signed), not an option's capped intrinsic value.
+    const optionStrikes = [...new Set(opp.legList.filter(l => String(l.optionType).toUpperCase() !== 'FUT')
+      .map(l => Number(l.strike)).filter(n => !isNaN(n)))].sort((a, b) => a - b);
+    if (optionStrikes.length === 0) return null;
+    const k1 = optionStrikes[0], k2 = optionStrikes[optionStrikes.length - 1];
+    // Bid Parity has a single strike (same K for both CE and PE) -- fall back to a sensible
+    // range around it since there's no wing-to-wing width to pad from.
+    const refPrice = opp.spotPrice || opp.futuresPrice || k1;
 
     const cost = opp.legList.reduce((s, leg) => {
       const sign = leg.side === 'BUY' ? 1 : -1;
       return s + sign * (Number(leg.price) || 0) * (Number(leg.qty) || 1);
     }, 0);
-    const width = k2 - k1;
+    const width = k2 > k1 ? k2 - k1 : Math.max(refPrice * 0.03, 1);
     const lo = k1 - Math.max(width, 1) * 0.4, hi = k2 + Math.max(width, 1) * 0.4;
     const steps = 150;
     const points = [];
@@ -3133,10 +3140,12 @@ function ArbitrageSignalPayoffChart({ opp }) {
     for (let i = 0; i <= steps; i++) {
       const x = lo + (hi - lo) * i / steps;
       const payoff = opp.legList.reduce((sum, leg) => {
-        const strike = Number(leg.strike);
-        const isPe = String(leg.optionType).toUpperCase() === 'PE';
-        const intrinsic = isPe ? Math.max(strike - x, 0) : Math.max(x - strike, 0);
+        const optType = String(leg.optionType).toUpperCase();
         const sign = leg.side === 'BUY' ? 1 : -1;
+        if (optType === 'FUT') return sum + sign * x * (Number(leg.qty) || 1);
+        const strike = Number(leg.strike);
+        const isPe = optType === 'PE';
+        const intrinsic = isPe ? Math.max(strike - x, 0) : Math.max(x - strike, 0);
         return sum + sign * intrinsic * (Number(leg.qty) || 1);
       }, 0);
       const pnl = payoff - cost;

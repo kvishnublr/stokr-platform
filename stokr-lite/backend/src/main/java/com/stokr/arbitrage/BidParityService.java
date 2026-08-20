@@ -292,6 +292,23 @@ public class BidParityService {
             costBreakdown.put("lotSize", (double) lotSize);
             map.put("costBreakdown", costBreakdown);
 
+            // legList lets the frontend payoff chart render this like every other multi-leg
+            // strategy -- conversion/reversal is delta-neutral by put-call-parity construction,
+            // so its "payoff at expiry" chart is expected to come out flat (same idea as a box
+            // spread), which is itself useful confirmation that the detected mispricing really
+            // is model-free arbitrage rather than a directional bet. The FUT leg has no strike
+            // (payoff is linear in settlement price, not capped like an option's intrinsic
+            // value) -- the frontend chart handles optionType="FUT" as that special case.
+            String ceSide = isConvergent ? "SELL" : "BUY";
+            String peSide = isConvergent ? "BUY" : "SELL";
+            String futSide = isConvergent ? "BUY" : "SELL";
+            List<Map<String, Object>> legList = List.of(
+                Map.of("strike", strike, "optionType", "CE", "side", ceSide, "qty", 1, "price", ceEntryFill),
+                Map.of("strike", strike, "optionType", "PE", "side", peSide, "qty", 1, "price", peEntryFill),
+                Map.of("strike", 0, "optionType", "FUT", "side", futSide, "qty", 1, "price", fut)
+            );
+            map.put("legList", legList);
+
             results.add(map);
 
             ArbitrageOpportunity opp = new ArbitrageOpportunity();
@@ -300,6 +317,12 @@ public class BidParityService {
             opp.strike = strike;
             opp.action = action;
             opp.legs = legs;
+            // Deliberately NOT opp.legList = legList here -- unlike the other multi-leg
+            // strategies, Bid Parity's execution path (manualExecuteLive/paper trade) branches
+            // on legList presence to decide MULTI-LEG vs LEGACY CE+PE+FUT executor, and the
+            // multi-leg executor has no concept of a futures leg (it only builds NFO option
+            // symbols). Persisting legList here would silently misroute every bid-parity trade
+            // into the wrong executor. legList stays map-only, display-only, for this strategy.
             opp.spotPrice = spot;
             opp.futuresPrice = fut;
             // Persisted as ce_entry_price/pe_entry_price and used for all later P&L tracking --
