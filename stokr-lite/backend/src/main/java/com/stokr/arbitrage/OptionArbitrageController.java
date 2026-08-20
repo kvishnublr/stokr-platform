@@ -1490,27 +1490,38 @@ public class OptionArbitrageController {
                         String closeSide = "BUY".equals(leg.get("side")) ? "SELL" : "BUY";
                         rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), (String) leg.get("symbol"),
                                 closeSide, toQty(leg.get("qty"), p.getLotSize(), p.getLots()),
-                                exitPrice, product, broker, "COMPLETE", null));
+                                exitPrice, product, broker, "COMPLETE", null, null, "EXIT"));
                     }
                 }
             } else {
                 String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
                 boolean buyCe = !action.contains("SELL CE +");
+                // In BOTH conversion (SELL CE + BUY PE + BUY FUT) and reversal (BUY CE +
+                // SELL PE + SELL FUT), the futures leg is always OPPOSITE the CE leg -- that's
+                // what makes the structure delta-neutral. This previously assigned FUT the SAME
+                // side as CE, so every futures row on this page showed the wrong direction
+                // (e.g. "BUY FUT + SELL CE + BUY PE" rendered its futures leg as SELL).
+                String ceSide = buyCe ? "BUY" : "SELL";
+                String peSide = buyCe ? "SELL" : "BUY";
+                String futSide = buyCe ? "SELL" : "BUY";
+                String ceClose = buyCe ? "SELL" : "BUY";
+                String peClose = buyCe ? "BUY" : "SELL";
+                String futClose = buyCe ? "BUY" : "SELL";
                 int qty = (p.getLotSize() != null ? p.getLotSize() : 1) * (p.getLots() != null ? p.getLots() : 1);
                 String legStatus = mapPositionStatus(p.getStatus());
                 if (p.getCeSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getCeSymbol(),
-                        buyCe ? "BUY" : "SELL", qty, p.getCeEntryPrice(), product, broker, legStatus, p.getCeOrderId(), p.getErrorMessage()));
+                        ceSide, qty, p.getCeEntryPrice(), product, broker, legStatus, p.getCeOrderId(), p.getErrorMessage()));
                 if (p.getPeSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getPeSymbol(),
-                        buyCe ? "SELL" : "BUY", qty, p.getPeEntryPrice(), product, broker, legStatus, p.getPeOrderId(), p.getErrorMessage()));
+                        peSide, qty, p.getPeEntryPrice(), product, broker, legStatus, p.getPeOrderId(), p.getErrorMessage()));
                 if (p.getFutSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getFutSymbol(),
-                        buyCe ? "BUY" : "SELL", qty, p.getFutEntryPrice(), product, broker, legStatus, p.getFutOrderId(), p.getErrorMessage()));
+                        futSide, qty, p.getFutEntryPrice(), product, broker, legStatus, p.getFutOrderId(), p.getErrorMessage()));
                 if (p.getExitedAt() != null && (p.getCeExitPrice() != null || p.getPeExitPrice() != null || p.getFutExitPrice() != null)) {
                     if (p.getCeSymbol() != null && p.getCeExitPrice() != null) rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), p.getCeSymbol(),
-                            buyCe ? "SELL" : "BUY", qty, p.getCeExitPrice(), product, broker, "COMPLETE", null));
+                            ceClose, qty, p.getCeExitPrice(), product, broker, "COMPLETE", null, null, "EXIT"));
                     if (p.getPeSymbol() != null && p.getPeExitPrice() != null) rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), p.getPeSymbol(),
-                            buyCe ? "BUY" : "SELL", qty, p.getPeExitPrice(), product, broker, "COMPLETE", null));
+                            peClose, qty, p.getPeExitPrice(), product, broker, "COMPLETE", null, null, "EXIT"));
                     if (p.getFutSymbol() != null && p.getFutExitPrice() != null) rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), p.getFutSymbol(),
-                            buyCe ? "SELL" : "BUY", qty, p.getFutExitPrice(), product, broker, "COMPLETE", null));
+                            futClose, qty, p.getFutExitPrice(), product, broker, "COMPLETE", null, null, "EXIT"));
                 }
             }
         }
@@ -1551,14 +1562,25 @@ public class OptionArbitrageController {
 
     private Map<String, Object> orderRow(LocalDateTime time, String underlying, String symbol, String side,
                                           int qty, Object price, String product, String broker, String status, String orderId) {
-        return orderRow(time, underlying, symbol, side, qty, price, product, broker, status, orderId, null);
+        return orderRow(time, underlying, symbol, side, qty, price, product, broker, status, orderId, null, "ENTRY");
     }
 
     private Map<String, Object> orderRow(LocalDateTime time, String underlying, String symbol, String side,
                                           int qty, Object price, String product, String broker, String status,
                                           String orderId, String reason) {
+        return orderRow(time, underlying, symbol, side, qty, price, product, broker, status, orderId, reason, "ENTRY");
+    }
+
+    private Map<String, Object> orderRow(LocalDateTime time, String underlying, String symbol, String side,
+                                          int qty, Object price, String product, String broker, String status,
+                                          String orderId, String reason, String kind) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("time", time != null ? time.toString() : null);
+        // ENTRY vs EXIT: a position CLOSE emits its own leg rows, previously indistinguishable
+        // from an opening order -- so closing a position after hours looked exactly like the
+        // platform had opened brand-new trades post-market. The side is already flipped for an
+        // exit (closing a BUY shows as SELL), which made it read even more like a real new order.
+        row.put("kind", kind);
         row.put("underlying", underlying);
         row.put("symbol", symbol);
         row.put("side", side);

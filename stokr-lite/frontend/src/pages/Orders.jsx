@@ -87,6 +87,7 @@ export default function Orders() {
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-tight font-bold text-[11px]">
                 <tr>
                   <th className="px-4 py-3">Time</th>
+                  <th className="px-4 py-3">Leg</th>
                   <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Instrument</th>
                   <th className="px-4 py-3">Product</th>
@@ -101,6 +102,12 @@ export default function Orders() {
                 {orders.map((o, i) => (
                   <tr key={i} className={`hover:bg-slate-50 ${o.reason ? 'bg-rose-50/30' : ''}`}>
                     <td className="px-4 py-2.5 font-mono text-[11px] text-slate-500">{fmtTime(o.time)}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${o.kind === 'EXIT' ? 'bg-slate-100 text-slate-600 border-slate-300' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}
+                        title={o.kind === 'EXIT' ? 'Closing order for an existing position — not a new trade' : 'Opening order for a new position'}>
+                        {o.kind === 'EXIT' ? '⏹ EXIT' : '▶ ENTRY'}
+                      </span>
+                    </td>
                     <td className="px-4 py-2.5">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${o.side === 'BUY' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-rose-50 text-rose-600 border-rose-200'}`}>
                         {o.side}
