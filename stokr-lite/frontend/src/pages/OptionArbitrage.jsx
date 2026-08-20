@@ -465,9 +465,8 @@ export default function OptionArbitrage() {
         </div>
       </div>
 
-      {/* Live Positions — always visible */}
-      <LivePositionsSection executionBroker={executionBroker} />
-      <BrokerPositionsPanel executionBroker={executionBroker} />
+      {/* Live/Broker Positions moved to the dedicated Positions page -- kept here would just
+          duplicate it right below the header on every tab of this already-busy page. */}
       <CashPositionsSection />
 
       {/* Active Tab View Rendering */}
