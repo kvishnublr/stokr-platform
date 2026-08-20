@@ -6183,4 +6183,4 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
     </div>
   );
 }
-export { LivePositionsSection, BrokerPositionsPanel };
+export { LivePositionsSection, BrokerPositionsPanel, STRATEGY_LABELS };
