@@ -906,7 +906,15 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
     staleTime: 1000,
   });
 
-  const allPositions = data?.positions || [];
+  // "My Positions" means TODAY's live trading, not whatever happens to still be sitting
+  // OPEN from days ago -- a paper position nobody closed a week ago is stale, not live, and
+  // showing it here read as "old ones mixed into live." Positions.jsx's History tab is where
+  // anything from a prior day belongs (open or closed); this stays today-only regardless of
+  // how many days a stale record has lingered.
+  const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const isToday = (p) => typeof p.enteredAt === 'string' && p.enteredAt.slice(0, 10) === todayIST;
+
+  const allPositions = (data?.positions || []).filter(isToday);
   const isPaper = (p) => !p.broker || p.broker === 'PAPER';
   const positions = brokerFilter === 'ALL' ? allPositions
     : brokerFilter === 'PAPER' ? allPositions.filter(isPaper)

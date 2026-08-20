@@ -31,6 +31,10 @@ function PositionsHistoryPanel() {
     refetchInterval: 15000,
   });
 
+  // History intentionally still includes today's closed/failed trades (once a position isn't
+  // OPEN anymore it's no longer on My Positions regardless of date, so there's no overlap) --
+  // matches every other History tab in this app, which defaults to showing today's activity
+  // too rather than hiding it until the day is over.
   const allPositions = data?.positions || [];
   const positions = brokerFilter === 'ALL' ? allPositions
     : brokerFilter === 'PAPER' ? allPositions.filter(p => !p.broker || p.broker === 'PAPER')
