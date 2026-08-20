@@ -2949,11 +2949,7 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning for cheap vertical spread candidates...</div>
         ) : data?.marketClosed ? (
-          <div className="p-12 text-center text-sm font-semibold">
-            <div className="text-3xl mb-2">🌙</div>
-            <div className="text-slate-500">Market is closed</div>
-            <div className="text-slate-400 text-xs font-normal mt-1">{data?.reason || 'NSE/NFO hours: Mon-Fri 09:15-15:30 IST'}</div>
-          </div>
+          <MarketClosedCandidates strategyType="VERTICAL_SPREAD" reason={data?.reason} />
         ) : candidates.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No candidates under {Math.round(maxCostRatio * 100)}% cost/width right now</div>
         ) : (
@@ -3567,6 +3563,105 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
    settlement-price range, so the shape (capped loss, where it's profitable) is visible
    before deciding to trade anything manually. No execution wiring beyond the existing
    per-row manual Trade button. */
+/* Candidates are computed from LIVE option quotes, so once the market closes the scan has
+   nothing to price against and the panel went completely blank -- "Market is closed" and
+   nothing else, even though CandidateSnapshotService has been recording what showed up
+   every 15 minutes all day. This surfaces those snapshots in that dead space instead, so
+   the panel stays useful after hours (what did today actually look like?) rather than
+   throwing away a full day of recorded activity. */
+function MarketClosedCandidates({ strategyType, reason }) {
+  const istToday = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['candidate-snapshots-today', strategyType, istToday],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/candidate-history', {
+        params: { strategyType, startDate: istToday, endDate: istToday },
+      });
+      return res.data;
+    },
+  });
+
+  const rows = data?.items || [];
+  const totalSightings = rows.reduce((s, r) => s + (Number(r.candidateCount) || 0), 0);
+  const peak = rows.reduce((best, r) => (Number(r.topPop) || 0) > (Number(best?.topPop) || 0) ? r : best, null);
+
+  return (
+    <div className="p-6">
+      <div className="text-center mb-4">
+        <div className="text-3xl mb-1">🌙</div>
+        <div className="text-slate-600 text-sm font-semibold">Market is closed — showing today's recorded candidates</div>
+        <div className="text-slate-400 text-xs font-normal mt-1">{reason || 'NSE/NFO hours: Mon-Fri 09:15-15:30 IST'}</div>
+      </div>
+
+      {isLoading && <div className="text-center text-slate-400 text-sm font-semibold py-6">Loading today's snapshots...</div>}
+
+      {!isLoading && rows.length === 0 && (
+        <div className="text-center text-slate-400 text-sm font-semibold py-6">
+          No candidates were recorded today for this strategy.
+        </div>
+      )}
+
+      {!isLoading && rows.length > 0 && (
+        <>
+          <div className="grid grid-cols-3 gap-2 mb-3 max-w-lg mx-auto">
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1.5 text-center">
+              <div className="text-[9px] font-bold text-indigo-700 uppercase">Snapshots</div>
+              <div className="text-sm font-black text-indigo-700">{rows.length}</div>
+            </div>
+            <div className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-center">
+              <div className="text-[9px] font-bold text-slate-600 uppercase">Total Sightings</div>
+              <div className="text-sm font-black text-slate-700">{totalSightings.toLocaleString('en-IN')}</div>
+            </div>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5 text-center">
+              <div className="text-[9px] font-bold text-emerald-700 uppercase">Best Model POP</div>
+              <div className="text-sm font-black text-emerald-700">{peak?.topPop != null ? `${Math.round(peak.topPop)}%` : '--'}</div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px] text-left border-collapse">
+              <thead className="bg-slate-50 border-y border-slate-200 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2">Time</th>
+                  <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2 text-right">Count</th>
+                  <th className="px-2 py-2">Top Strikes</th>
+                  <th className="px-2 py-2">Type</th>
+                  <th className="px-2 py-2 text-right">Model POP</th>
+                  <th className="px-2 py-2 text-right">Cost/Lot</th>
+                  <th className="px-2 py-2 text-right">Max Profit</th>
+                  <th className="px-2 py-2 text-right">Max Loss</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.slice().reverse().map((r) => (
+                  <tr key={r.id} className="hover:bg-slate-50">
+                    <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{fmtTime(r.snapshotTime)}</td>
+                    <td className="px-2 py-1.5 font-bold text-slate-800">{r.underlying}</td>
+                    <td className="px-2 py-1.5 text-right font-mono font-bold text-indigo-600">{r.candidateCount}</td>
+                    <td className="px-2 py-1.5 font-mono text-slate-700">{r.topStrikes || '--'}</td>
+                    <td className="px-2 py-1.5 text-slate-600">{r.topOptionType || '--'}</td>
+                    <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
+                      {r.topPop != null ? `${Math.round(r.topPop)}%` : '--'}
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono">{r.topCostPerLot != null ? `₹${Math.round(r.topCostPerLot).toLocaleString('en-IN')}` : '--'}</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-emerald-700">{r.topMaxProfit != null ? `₹${Math.round(r.topMaxProfit).toLocaleString('en-IN')}` : '--'}</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-red-600">{r.topMaxLoss != null ? `₹${Math.round(r.topMaxLoss).toLocaleString('en-IN')}` : '--'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-2 text-center">
+            Snapshots taken every 15 min during market hours — count + highest-POP candidate per underlying, not every candidate.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
   const [underlying, setUnderlying] = useState('ALL');
   const [maxCostRatio, setMaxCostRatio] = useState(0.35);
@@ -3925,11 +4020,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning for cheap butterfly candidates...</div>
         ) : data?.marketClosed ? (
-          <div className="p-12 text-center text-sm font-semibold">
-            <div className="text-3xl mb-2">🌙</div>
-            <div className="text-slate-500">Market is closed</div>
-            <div className="text-slate-400 text-xs font-normal mt-1">{data?.reason || 'NSE/NFO hours: Mon-Fri 09:15-15:30 IST'}</div>
-          </div>
+          <MarketClosedCandidates strategyType="BUTTERFLY_SPREAD" reason={data?.reason} />
         ) : candidates.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No candidates under {Math.round(maxCostRatio * 100)}% cost/width right now</div>
         ) : (
@@ -4615,11 +4706,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning for cheap condor candidates...</div>
         ) : data?.marketClosed ? (
-          <div className="p-12 text-center text-sm font-semibold">
-            <div className="text-3xl mb-2">🌙</div>
-            <div className="text-slate-500">Market is closed</div>
-            <div className="text-slate-400 text-xs font-normal mt-1">{data?.reason || 'NSE/NFO hours: Mon-Fri 09:15-15:30 IST'}</div>
-          </div>
+          <MarketClosedCandidates strategyType="CONDOR_SPREAD" reason={data?.reason} />
         ) : candidates.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No candidates under {Math.round(maxCostRatio * 100)}% cost/width right now</div>
         ) : (
