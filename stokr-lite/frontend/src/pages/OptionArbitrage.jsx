@@ -238,6 +238,7 @@ export default function OptionArbitrage() {
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = urlParams.get('tab') || 'live';
   const [activeTab, setActiveTab] = useState(initialTab);
+  const [activeGroup, setActiveGroup] = useState('core');
   const [underlyings, setUnderlyings] = useState(['ALL']);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [executionBroker, setExecutionBroker] = useState('PAPER');
