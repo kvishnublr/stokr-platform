@@ -66,6 +66,15 @@ function useToastState() {
   return { toasts, dismiss };
 }
 
+const STRATEGY_LABELS = {
+  BID_PARITY: '⚡ Bid Parity',
+  BOX_SPREAD: '💎 Box Spread',
+  VERTICAL_SPREAD: '📐 Vertical',
+  BUTTERFLY_SPREAD: '🦋 Butterfly',
+  CONDOR_SPREAD: '🎯 Condor',
+  IRON_CONDOR: '🛡️ Iron Condor',
+};
+
 const TOAST_STYLES = {
   success: { bg: 'bg-white', border: 'border-emerald-400', bar: 'bg-emerald-500', icon: '✅', iconBg: 'bg-emerald-100', iconText: 'text-emerald-600', titleText: 'text-emerald-700', defaultTitle: 'Success' },
   error: { bg: 'bg-white', border: 'border-red-400', bar: 'bg-red-500', icon: '❌', iconBg: 'bg-red-100', iconText: 'text-red-600', titleText: 'text-red-700', defaultTitle: 'Error' },
@@ -121,6 +130,110 @@ function ToastCard({ t, dismiss }) {
   );
 }
 
+
+function LiveExecutionModal({ opp, onClose, onConfirm }) {
+  const [loading, setLoading] = useState(true);
+  const [funds, setFunds] = useState(null);
+  
+  useEffect(() => {
+    let active = true;
+    const fetchFunds = async () => {
+      try {
+        const broker = opp.broker || 'PAPER';
+        const res = await client.get('/option-arbitrage/funds', { params: { broker } });
+        if (active) {
+          setFunds(res.data);
+          setLoading(false);
+        }
+      } catch (e) {
+        if (active) setLoading(false);
+      }
+    };
+    fetchFunds();
+    return () => { active = false; };
+  }, [opp]);
+
+  const formatInr = (val) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
+
+  const reqMargin = opp.marginReq || 50000;
+  const isShortfall = funds && (funds.availableCash < reqMargin);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+        <div className="bg-slate-900 px-5 py-4 flex items-center justify-between">
+          <h3 className="text-white font-black text-lg flex items-center gap-2">
+            <span>⚡</span> Deploy Live Arbitrage
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white transition">✖</button>
+        </div>
+        
+        <div className="p-5 space-y-5">
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Target Opportunity</h4>
+            <div className="flex justify-between items-center mb-1">
+              <span className="font-bold text-slate-800">{opp.underlying} {opp.strike}</span>
+              <span className="font-bold text-indigo-600">{opp.type || opp.strategyType || 'BID_PARITY'}</span>
+            </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-slate-600">Expected Edge:</span>
+              <span className="font-black text-emerald-600">+{formatInr(opp.edgeAfterCosts || 0)}</span>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Margin &amp; Capital Check</h4>
+            {loading ? (
+              <div className="animate-pulse flex space-x-4">
+                <div className="flex-1 space-y-3 py-1">
+                  <div className="h-4 bg-slate-200 rounded w-3/4"></div>
+                  <div className="h-4 bg-slate-200 rounded w-1/2"></div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex justify-between items-center p-3 rounded-lg border border-slate-100 bg-slate-50">
+                  <span className="text-slate-600 font-bold text-sm">Peak Margin Required</span>
+                  <span className="font-black text-slate-800">{formatInr(reqMargin)}</span>
+                </div>
+                <div className="flex justify-between items-center p-3 rounded-lg border border-slate-100 bg-slate-50">
+                  <span className="text-slate-600 font-bold text-sm">Available Cash</span>
+                  <span className={`font-black ${isShortfall ? 'text-red-600' : 'text-emerald-600'}`}>
+                    {funds ? formatInr(funds.availableCash) : 'Unknown'}
+                  </span>
+                </div>
+                
+                {isShortfall && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-xl text-xs font-bold flex items-start gap-2">
+                    <span className="text-base">⚠️</span>
+                    <p>Insufficient funds to deploy this strategy. You need {formatInr(reqMargin - funds.availableCash)} more capital.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="px-5 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
+          <button 
+            onClick={onClose}
+            className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition"
+          >
+            Cancel
+          </button>
+          <button 
+            onClick={() => { onConfirm(); onClose(); }}
+            disabled={loading || isShortfall}
+            className="px-5 py-2 font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+          >
+            Confirm Deployment
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ToastContainer({ toasts, dismiss }) {
   if (!toasts || toasts.length === 0) return null;
   return (
@@ -140,9 +253,11 @@ export default function OptionArbitrage() {
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = urlParams.get('tab') || 'live';
   const [activeTab, setActiveTab] = useState(initialTab);
+  const [activeGroup, setActiveGroup] = useState('core');
   const [underlyings, setUnderlyings] = useState(['ALL']);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [executionBroker, setExecutionBroker] = useState('PAPER');
+  const [pendingLiveDeploy, setPendingLiveDeploy] = useState(null);
   const [isTestingBroker, setIsTestingBroker] = useState(false);
   const [maxSignals, setMaxSignals] = useState(() => {
     const saved = localStorage.getItem('stokr_max_signals');
@@ -897,7 +1012,15 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
     staleTime: 1000,
   });
 
-  const allPositions = data?.positions || [];
+  // "My Positions" means TODAY's live trading, not whatever happens to still be sitting
+  // OPEN from days ago -- a paper position nobody closed a week ago is stale, not live, and
+  // showing it here read as "old ones mixed into live." Positions.jsx's History tab is where
+  // anything from a prior day belongs (open or closed); this stays today-only regardless of
+  // how many days a stale record has lingered.
+  const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const isToday = (p) => typeof p.enteredAt === 'string' && p.enteredAt.slice(0, 10) === todayIST;
+
+  const allPositions = (data?.positions || []).filter(isToday);
   const isPaper = (p) => !p.broker || p.broker === 'PAPER';
   const positions = brokerFilter === 'ALL' ? allPositions
     : brokerFilter === 'PAPER' ? allPositions.filter(isPaper)
@@ -995,13 +1118,14 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                 <tr>
                   <th className="px-3 py-2">Time</th>
                   <th className="px-3 py-2">Broker</th>
+                  <th className="px-3 py-2">Strategy</th>
                   <th className="px-3 py-2">Underlying</th>
                   <th className="px-3 py-2">Strike</th>
                   <th className="px-3 py-2">Action</th>
                   <th className="px-3 py-2 text-right">CE Entry</th>
                   <th className="px-3 py-2 text-right">PE Entry</th>
                   <th className="px-3 py-2 text-right">FUT Entry</th>
-                  <th className="px-3 py-2 text-right">Target Edge</th>
+                  <th className="px-3 py-2 text-right">Edge</th>
                   <th className="px-3 py-2 text-center">Edge Progress</th>
                   <th className="px-3 py-2 text-right">Live P&amp;L</th>
                   <th className="px-3 py-2 text-right">Lots</th>
@@ -1016,7 +1140,8 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                   const pnl = p.currentPnl || 0;
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
-                  const canShowPayoff = p.strategyType === 'BUTTERFLY_SPREAD' && Array.isArray(p.legList) && p.legList.length >= 3;
+                  const PAYOFF_CHART_TYPES = ['BUTTERFLY_SPREAD', 'BOX_SPREAD', 'VERTICAL_SPREAD', 'CONDOR_SPREAD', 'IRON_CONDOR'];
+                  const canShowPayoff = PAYOFF_CHART_TYPES.includes(p.strategyType) && Array.isArray(p.legList) && p.legList.length >= 2;
                   const isExpanded = expandedPosId === p.id;
                   return (
                     <React.Fragment key={p.id}>
@@ -1026,6 +1151,11 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                       <td className="px-3 py-2">
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${p.broker === 'PAPER' || !p.broker ? 'bg-slate-100 text-slate-500 border-slate-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300'}`}>
                           {p.broker === 'PAPER' || !p.broker ? '📄 PAPER' : `🔴 ${p.broker}`}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">
+                          {STRATEGY_LABELS[p.strategyType] || p.strategyType || '—'}
                         </span>
                       </td>
                       <td className="px-3 py-2 font-bold text-slate-800">{p.underlying}</td>
@@ -1099,7 +1229,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                     </tr>
                     {isExpanded && canShowPayoff && (
                       <tr className="bg-fuchsia-50/40 border-b border-fuchsia-100">
-                        <td colSpan={16} className="p-3">
+                        <td colSpan={17} className="p-3">
                           <div className="bg-white rounded-xl p-3 border border-fuchsia-200 shadow-md space-y-2">
                             <span className="font-bold text-slate-800 text-xs uppercase block">Open Position Payoff -- {p.underlying} {p.action}:</span>
                             <ArbitrageSignalPayoffChart opp={p} />
@@ -1494,10 +1624,9 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
                         <td className="px-2 py-1.5 text-center font-bold text-emerald-600">{Math.round(opp.confidence || 85)}%</td>
                         <td className="px-2 py-1.5 text-center">
                           <button
-                            onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp, lots); }}
+                            onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy({...(opp), lots}); }}
                             className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded shadow-sm"
-                          >
-                            ⚡ Execute
+                          >⚡ Deploy
                           </button>
                         </td>
                       </tr>
@@ -1534,10 +1663,9 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
                                     Est Net: +₹{(Math.round(Number(opp.edgeAfterCosts || 350)) * lots).toLocaleString('en-IN')}
                                   </span>
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp, lots); }}
+                                    onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy({...(opp), lots}); }}
                                     className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-md"
-                                  >
-                                    ⚡ Confirm ({executionBroker})
+                                  >⚡ Deploy ({executionBroker})
                                   </button>
                                 </div>
                               </div>
@@ -1840,9 +1968,8 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                         </td>
                         <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{exitStr}</td>
                         <td className="px-2 py-1.5 text-center">
-                          <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
-                            className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm">
-                            ⚡ Trade
+                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(opp); }}
+                            className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm">⚡ Deploy
                           </button>
                         </td>
                       </tr>
@@ -1862,6 +1989,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                                   {Object.entries(opp.costBreakdown).map(([k,v]) => <span key={k}>{k}: ₹{v}</span>)}
                                 </div>
                               )}
+                              <ArbitrageSignalPayoffChart opp={opp} />
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-amber-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   ⚡ Submit ({executionBroker})
@@ -2151,9 +2279,8 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                         </td>
                         <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{exitStr}</td>
                         <td className="px-2 py-1.5 text-center">
-                          <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
-                            className="px-2 py-0.5 bg-purple-600 text-white text-[10px] font-bold rounded shadow-sm">
-                            ⚡ Trade
+                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(opp); }}
+                            className="px-2 py-0.5 bg-purple-600 text-white text-[10px] font-bold rounded shadow-sm">⚡ Deploy
                           </button>
                         </td>
                       </tr>
@@ -2168,6 +2295,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                                 </p>
                               )}
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || 'BUY CE1 | SELL PE1 | SELL CE2 | BUY PE2'}</p>
+                              <ArbitrageSignalPayoffChart opp={opp} />
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-purple-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   ⚡ Submit ({executionBroker})
@@ -2526,9 +2654,8 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
                         </td>
                         <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{exitStr}</td>
                         <td className="px-2 py-1.5 text-center">
-                          <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
-                            className="px-2 py-0.5 bg-teal-600 text-white text-[10px] font-bold rounded shadow-sm">
-                            ⚡ Trade
+                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(opp); }}
+                            className="px-2 py-0.5 bg-teal-600 text-white text-[10px] font-bold rounded shadow-sm">⚡ Deploy
                           </button>
                         </td>
                       </tr>
@@ -2923,11 +3050,7 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning for cheap vertical spread candidates...</div>
         ) : data?.marketClosed ? (
-          <div className="p-12 text-center text-sm font-semibold">
-            <div className="text-3xl mb-2">🌙</div>
-            <div className="text-slate-500">Market is closed</div>
-            <div className="text-slate-400 text-xs font-normal mt-1">{data?.reason || 'NSE/NFO hours: Mon-Fri 09:15-15:30 IST'}</div>
-          </div>
+          <MarketClosedCandidates strategyType="VERTICAL_SPREAD" reason={data?.reason} />
         ) : candidates.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No candidates under {Math.round(maxCostRatio * 100)}% cost/width right now</div>
         ) : (
@@ -3089,30 +3212,47 @@ function ArbitrageSignalPayoffChart({ opp }) {
   const chartRef = useRef(null);
   const [hover, setHover] = useState(null);
 
-  const strikeMatch = opp.action ? opp.action.match(/\((\d+)\/(\d+)\/(\d+)\)/) : null;
-  const optionType = opp.action && opp.action.toUpperCase().includes('PE') ? 'PE' : 'CE';
-  const hasLegs = Array.isArray(opp.legList) && opp.legList.length >= 3;
+  const hasLegs = Array.isArray(opp.legList) && opp.legList.length >= 2;
 
   const lotSize = Number(opp.lotSize) > 0 ? Number(opp.lotSize) : 1;
 
   const chart = useMemo(() => {
-    if (!strikeMatch || !hasLegs) return null;
-    const k1 = Number(strikeMatch[1]), k2 = Number(strikeMatch[2]), k3 = Number(strikeMatch[3]);
-    if (!(k1 < k2 && k2 < k3)) return null;
+    if (!hasLegs) return null;
+    // Generic across every multi-leg strategy (Vertical/Butterfly/Condor/Box, CE-only,
+    // PE-only, or mixed CE+PE like a box spread) -- payoff(x) is just the sum of each leg's
+    // own intrinsic value at settlement x, signed by side and scaled by its qty multiplier.
+    // This replaced a version hardcoded to 3-leg CE-only butterflies (regex-parsed from the
+    // action string), which silently produced nothing for box spreads or any PE leg.
+    // A FUT leg (Bid Parity's conversion/reversal) has no strike -- its payoff is linear in
+    // settlement price (x itself, signed), not an option's capped intrinsic value.
+    const optionStrikes = [...new Set(opp.legList.filter(l => String(l.optionType).toUpperCase() !== 'FUT')
+      .map(l => Number(l.strike)).filter(n => !isNaN(n)))].sort((a, b) => a - b);
+    if (optionStrikes.length === 0) return null;
+    const k1 = optionStrikes[0], k2 = optionStrikes[optionStrikes.length - 1];
+    // Bid Parity has a single strike (same K for both CE and PE) -- fall back to a sensible
+    // range around it since there's no wing-to-wing width to pad from.
+    const refPrice = opp.spotPrice || opp.futuresPrice || k1;
+
     const cost = opp.legList.reduce((s, leg) => {
       const sign = leg.side === 'BUY' ? 1 : -1;
       return s + sign * (Number(leg.price) || 0) * (Number(leg.qty) || 1);
     }, 0);
-    const width = k3 - k1;
-    const lo = k1 - width * 0.4, hi = k3 + width * 0.4;
+    const width = k2 > k1 ? k2 - k1 : Math.max(refPrice * 0.03, 1);
+    const lo = k1 - Math.max(width, 1) * 0.4, hi = k2 + Math.max(width, 1) * 0.4;
     const steps = 150;
     const points = [];
     let minY = 0, maxY = 0;
     for (let i = 0; i <= steps; i++) {
       const x = lo + (hi - lo) * i / steps;
-      const payoff = optionType === 'CE'
-        ? Math.max(x - k1, 0) - 2 * Math.max(x - k2, 0) + Math.max(x - k3, 0)
-        : Math.max(k1 - x, 0) - 2 * Math.max(k2 - x, 0) + Math.max(k3 - x, 0);
+      const payoff = opp.legList.reduce((sum, leg) => {
+        const optType = String(leg.optionType).toUpperCase();
+        const sign = leg.side === 'BUY' ? 1 : -1;
+        if (optType === 'FUT') return sum + sign * x * (Number(leg.qty) || 1);
+        const strike = Number(leg.strike);
+        const isPe = optType === 'PE';
+        const intrinsic = isPe ? Math.max(strike - x, 0) : Math.max(x - strike, 0);
+        return sum + sign * intrinsic * (Number(leg.qty) || 1);
+      }, 0);
       const pnl = payoff - cost;
       points.push({ x, y: pnl });
       minY = Math.min(minY, pnl); maxY = Math.max(maxY, pnl);
@@ -3127,8 +3267,8 @@ function ArbitrageSignalPayoffChart({ opp }) {
         breakevens.push(a.x + t * (b.x - a.x));
       }
     }
-    return { points, lo, hi, minY: Math.min(minY, 0), maxY: Math.max(maxY, 0), k1, k2, k3, cost, breakevens };
-  }, [strikeMatch?.[0], hasLegs, opp.legList, optionType]);
+    return { points, lo, hi, minY: Math.min(minY, 0), maxY: Math.max(maxY, 0), k1, k2, cost, breakevens };
+  }, [hasLegs, opp.legList]);
 
   if (!chart) return null;
 
@@ -3162,10 +3302,21 @@ function ArbitrageSignalPayoffChart({ opp }) {
   const totalMax = maxProfitPerShare * lotSize;
   const totalMin = maxLossPerShare * lotSize;
 
+  const expiryLabel = opp.expiryDate
+    ? new Date(opp.expiryDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : null;
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-3">
-      <div className="text-[10px] font-black text-slate-500 uppercase mb-2">
-        Payoff at Expiry — guaranteed by the convexity bound, not a probability estimate
+      <div className="flex items-center justify-between flex-wrap gap-1 mb-2">
+        <div className="text-[10px] font-black text-slate-500 uppercase">
+          Payoff at Expiry — guaranteed by the convexity bound, not a probability estimate
+        </div>
+        {expiryLabel && (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-violet-50 text-violet-700 border-violet-200" title="This payoff is priced off THIS contract expiry -- comparing against another tool with a different expiry selected will show different premiums even for identical strikes.">
+            📅 Expiry {expiryLabel}
+          </span>
+        )}
       </div>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5">
@@ -3192,7 +3343,15 @@ function ArbitrageSignalPayoffChart({ opp }) {
           <defs>
             <linearGradient id="arbPayoffGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
-              <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
+              <stop offset={`${Math.max(0, Math.min(100, (zeroPx / CHART_H) * 100))}%`} stopColor="#10b981" stopOpacity="0.05" />
+              <stop offset={`${Math.max(0, Math.min(100, (zeroPx / CHART_H) * 100))}%`} stopColor="#ef4444" stopOpacity="0.05" />
+              <stop offset="100%" stopColor="#ef4444" stopOpacity="0.35" />
+            </linearGradient>
+            <linearGradient id="arbLineGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#059669" />
+              <stop offset={`${Math.max(0, Math.min(100, (zeroPx / CHART_H) * 100))}%`} stopColor="#059669" />
+              <stop offset={`${Math.max(0, Math.min(100, (zeroPx / CHART_H) * 100))}%`} stopColor="#dc2626" />
+              <stop offset="100%" stopColor="#dc2626" />
             </linearGradient>
           </defs>
           {yTicks.map((ty, i) => (
@@ -3209,7 +3368,7 @@ function ArbitrageSignalPayoffChart({ opp }) {
           <text x={xToPx(spot)} y={PAD_TOP - 6} textAnchor="middle" fontSize="9" fontWeight="700" fill="#6366f1">
             Spot {Math.round(spot).toLocaleString('en-IN')}
           </text>
-          <polyline fill="none" stroke="#059669" strokeWidth="2.5" strokeLinejoin="round"
+          <polyline fill="none" stroke="url(#arbLineGrad)" strokeWidth="2.5" strokeLinejoin="round"
             points={chart.points.map(p => `${xToPx(p.x)},${yToPx(p.y)}`).join(' ')} />
           {hover && (
             <g>
@@ -3455,9 +3614,8 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
                         </td>
                         <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{exitStr}</td>
                         <td className="px-2 py-1.5 text-center">
-                          <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
-                            className="px-2 py-0.5 bg-fuchsia-600 text-white text-[10px] font-bold rounded shadow-sm">
-                            ⚡ Trade
+                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(opp); }}
+                            className="px-2 py-0.5 bg-fuchsia-600 text-white text-[10px] font-bold rounded shadow-sm">⚡ Deploy
                           </button>
                         </td>
                       </tr>
@@ -3513,6 +3671,105 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
    settlement-price range, so the shape (capped loss, where it's profitable) is visible
    before deciding to trade anything manually. No execution wiring beyond the existing
    per-row manual Trade button. */
+/* Candidates are computed from LIVE option quotes, so once the market closes the scan has
+   nothing to price against and the panel went completely blank -- "Market is closed" and
+   nothing else, even though CandidateSnapshotService has been recording what showed up
+   every 15 minutes all day. This surfaces those snapshots in that dead space instead, so
+   the panel stays useful after hours (what did today actually look like?) rather than
+   throwing away a full day of recorded activity. */
+function MarketClosedCandidates({ strategyType, reason }) {
+  const istToday = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['candidate-snapshots-today', strategyType, istToday],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/candidate-history', {
+        params: { strategyType, startDate: istToday, endDate: istToday },
+      });
+      return res.data;
+    },
+  });
+
+  const rows = data?.items || [];
+  const totalSightings = rows.reduce((s, r) => s + (Number(r.candidateCount) || 0), 0);
+  const peak = rows.reduce((best, r) => (Number(r.topPop) || 0) > (Number(best?.topPop) || 0) ? r : best, null);
+
+  return (
+    <div className="p-6">
+      <div className="text-center mb-4">
+        <div className="text-3xl mb-1">🌙</div>
+        <div className="text-slate-600 text-sm font-semibold">Market is closed — showing today's recorded candidates</div>
+        <div className="text-slate-400 text-xs font-normal mt-1">{reason || 'NSE/NFO hours: Mon-Fri 09:15-15:30 IST'}</div>
+      </div>
+
+      {isLoading && <div className="text-center text-slate-400 text-sm font-semibold py-6">Loading today's snapshots...</div>}
+
+      {!isLoading && rows.length === 0 && (
+        <div className="text-center text-slate-400 text-sm font-semibold py-6">
+          No candidates were recorded today for this strategy.
+        </div>
+      )}
+
+      {!isLoading && rows.length > 0 && (
+        <>
+          <div className="grid grid-cols-3 gap-2 mb-3 max-w-lg mx-auto">
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1.5 text-center">
+              <div className="text-[9px] font-bold text-indigo-700 uppercase">Snapshots</div>
+              <div className="text-sm font-black text-indigo-700">{rows.length}</div>
+            </div>
+            <div className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-center">
+              <div className="text-[9px] font-bold text-slate-600 uppercase">Total Sightings</div>
+              <div className="text-sm font-black text-slate-700">{totalSightings.toLocaleString('en-IN')}</div>
+            </div>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5 text-center">
+              <div className="text-[9px] font-bold text-emerald-700 uppercase">Best Model POP</div>
+              <div className="text-sm font-black text-emerald-700">{peak?.topPop != null ? `${Math.round(peak.topPop)}%` : '--'}</div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px] text-left border-collapse">
+              <thead className="bg-slate-50 border-y border-slate-200 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2">Time</th>
+                  <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2 text-right">Count</th>
+                  <th className="px-2 py-2">Top Strikes</th>
+                  <th className="px-2 py-2">Type</th>
+                  <th className="px-2 py-2 text-right">Model POP</th>
+                  <th className="px-2 py-2 text-right">Cost/Lot</th>
+                  <th className="px-2 py-2 text-right">Max Profit</th>
+                  <th className="px-2 py-2 text-right">Max Loss</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.slice().reverse().map((r) => (
+                  <tr key={r.id} className="hover:bg-slate-50">
+                    <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{fmtTime(r.snapshotTime)}</td>
+                    <td className="px-2 py-1.5 font-bold text-slate-800">{r.underlying}</td>
+                    <td className="px-2 py-1.5 text-right font-mono font-bold text-indigo-600">{r.candidateCount}</td>
+                    <td className="px-2 py-1.5 font-mono text-slate-700">{r.topStrikes || '--'}</td>
+                    <td className="px-2 py-1.5 text-slate-600">{r.topOptionType || '--'}</td>
+                    <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
+                      {r.topPop != null ? `${Math.round(r.topPop)}%` : '--'}
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono">{r.topCostPerLot != null ? `₹${Math.round(r.topCostPerLot).toLocaleString('en-IN')}` : '--'}</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-emerald-700">{r.topMaxProfit != null ? `₹${Math.round(r.topMaxProfit).toLocaleString('en-IN')}` : '--'}</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-red-600">{r.topMaxLoss != null ? `₹${Math.round(r.topMaxLoss).toLocaleString('en-IN')}` : '--'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-2 text-center">
+            Snapshots taken every 15 min during market hours — count + highest-POP candidate per underlying, not every candidate.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
   const [underlying, setUnderlying] = useState('ALL');
   const [maxCostRatio, setMaxCostRatio] = useState(0.35);
@@ -3871,11 +4128,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning for cheap butterfly candidates...</div>
         ) : data?.marketClosed ? (
-          <div className="p-12 text-center text-sm font-semibold">
-            <div className="text-3xl mb-2">🌙</div>
-            <div className="text-slate-500">Market is closed</div>
-            <div className="text-slate-400 text-xs font-normal mt-1">{data?.reason || 'NSE/NFO hours: Mon-Fri 09:15-15:30 IST'}</div>
-          </div>
+          <MarketClosedCandidates strategyType="BUTTERFLY_SPREAD" reason={data?.reason} />
         ) : candidates.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No candidates under {Math.round(maxCostRatio * 100)}% cost/width right now</div>
         ) : (
@@ -4165,9 +4418,8 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
                         </td>
                         <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{exitStr}</td>
                         <td className="px-2 py-1.5 text-center">
-                          <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
-                            className="px-2 py-0.5 bg-cyan-600 text-white text-[10px] font-bold rounded shadow-sm">
-                            ⚡ Trade
+                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(opp); }}
+                            className="px-2 py-0.5 bg-cyan-600 text-white text-[10px] font-bold rounded shadow-sm">⚡ Deploy
                           </button>
                         </td>
                       </tr>
@@ -4561,11 +4813,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning for cheap condor candidates...</div>
         ) : data?.marketClosed ? (
-          <div className="p-12 text-center text-sm font-semibold">
-            <div className="text-3xl mb-2">🌙</div>
-            <div className="text-slate-500">Market is closed</div>
-            <div className="text-slate-400 text-xs font-normal mt-1">{data?.reason || 'NSE/NFO hours: Mon-Fri 09:15-15:30 IST'}</div>
-          </div>
+          <MarketClosedCandidates strategyType="CONDOR_SPREAD" reason={data?.reason} />
         ) : candidates.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No candidates under {Math.round(maxCostRatio * 100)}% cost/width right now</div>
         ) : (
@@ -5805,164 +6053,151 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
 
   return (
     <div className="space-y-4 w-full">
-      {/* Controls Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Controls Bar - Redesigned Grid Layout */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-6 mb-4">
+        {/* Header & Date Range */}
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
-            <h2 className="text-base font-bold text-slate-800">
-              {lockedStrategy ? `${STRATEGY_LOCK_LABELS[lockedStrategy] || lockedStrategy} History` : 'Arbitrage Signals & Trade Analytics'}
+            <h2 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">
+              <span className="text-xl">📊</span>
+              {lockedStrategy ? `${STRATEGY_LOCK_LABELS[lockedStrategy] || lockedStrategy} History` : 'Arbitrage Analytics & Audit'}
             </h2>
-            <p className="text-xs text-slate-500">
-              <span className="font-bold text-slate-700">{filteredItems.length.toLocaleString('en-IN')}</span> signals generated
-              {' '}in this range — audit scans, track live MTM P&amp;L &amp; exit timestamps
+            <p className="text-[11px] text-slate-500 font-medium mt-1">
+              <span className="font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded mr-1">{filteredItems.length.toLocaleString('en-IN')}</span> 
+              matching signals — track paper P&L, exit timestamps, and edge validation
             </p>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Date Range Filter */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-              {[
-                { id: 'TODAY', label: 'Today' },
-                { id: 'YESTERDAY', label: 'Yesterday' },
-                { id: 'WEEK', label: 'This Week' },
-                { id: 'MONTH', label: 'This Month' },
-                { id: 'CUSTOM', label: 'Custom' },
-              ].map(d => (
-                <button
-                  key={d.id}
-                  onClick={() => { setDateRange(d.id); setCurrentPage(1); }}
-                  className={`px-2 py-0.5 rounded-lg text-xs font-bold transition ${
-                    dateRange === d.id ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {d.label}
-                </button>
-              ))}
-            </div>
-
-            {dateRange === 'CUSTOM' && (
-              <div className="flex items-center gap-1">
-                <input type="date" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-xs font-mono text-slate-800 outline-none focus:border-emerald-500" />
-                <span className="text-[10px] text-slate-400">to</span>
-                <input type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-xs font-mono text-slate-800 outline-none focus:border-emerald-500" />
-              </div>
-            )}
-
-            {/* Strategy Filters -- hidden when embedded in a strategy's own History sub-tab,
-                since the strategy is already implied by context (locked, not a free filter). */}
-            {!lockedStrategy && (
-              <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl">
-                {[
-                  { id: 'ALL', label: 'All' },
-                  { id: 'PARITY', label: '⚡ Parity' },
-                  { id: 'BOX', label: '💎 Box' },
-                  { id: 'VERTICAL', label: '📐 Vertical' },
-                  { id: 'BUTTERFLY', label: '🦋 Butterfly' },
-                  { id: 'CONDORSPREAD', label: '🎯 Condor Spread' },
-                  { id: 'CALENDAR', label: '⏳ Calendar' },
-                  { id: 'CONDOR', label: '🛡️ Iron Condor' },
-                ].map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => { setStrategyFilter(s.id); setCurrentPage(1); }}
-                    className={`px-2 py-0.5 rounded-lg text-xs font-bold transition ${
-                      strategyFilter === s.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Underlying Filter */}
-            <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl">
-              {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
-                <button
-                  key={u}
-                  onClick={() => { setUnderlyingFilter(u); setCurrentPage(1); }}
-                  className={`px-2 py-0.5 rounded-lg text-xs font-bold transition ${
-                    underlyingFilter === u ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {u}
-                </button>
-              ))}
-            </div>
-
-            {/* Status Filters */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-              {[
-                { id: 'ALL', label: 'All' },
-                { id: 'RUNNING', label: '🟢 Running' },
-                { id: 'DETECTED', label: '🔵 Detected' },
-                { id: 'EXITED', label: '🔴 Exited' },
-                { id: 'MISSED', label: '⚪ Missed' },
-                { id: 'FAILED', label: '❌ Failed' },
-              ].map(st => (
-                <button
-                  key={st.id}
-                  onClick={() => { setStatusFilter(st.id); setCurrentPage(1); }}
-                  className={`px-2 py-0.5 rounded-lg text-xs font-bold transition ${
-                    statusFilter === st.id ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {st.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Net Edge Minimum Threshold Filter Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[11px] font-bold text-slate-500 uppercase mr-1">Minimum Net Edge:</span>
-            {[
-              { label: 'All Edges', min: 0 },
-              { label: '> ₹100', min: 100 },
-              { label: '> ₹300 (Default)', min: 300 },
-              { label: '> ₹500', min: 500 },
-              { label: '> ₹1,000', min: 1000 },
-            ].map(b => (
+          <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-lg border border-slate-200">
+            {['TODAY', 'WEEK', 'ALL_TIME'].map(dr => (
               <button
-                key={b.min}
-                onClick={() => { setMinEdgeFilter(b.min); setCustomMinEdge(String(b.min)); setCurrentPage(1); }}
-                className={`px-2 py-0.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                  minEdgeFilter === b.min ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
+                key={dr}
+                onClick={() => setDateRange(dr)}
+                className={`px-3 py-1.5 rounded-md text-[10px] font-black tracking-wide transition-all ${dateRange === dr ? 'bg-slate-800 text-white shadow' : 'text-slate-600 hover:bg-slate-200 hover:text-slate-800'}`}
               >
-                <span>{b.label}</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${minEdgeFilter === b.min ? 'bg-emerald-800 text-white' : 'bg-slate-200 text-slate-700'}`}>
-                  {countByEdge(b.min)}
-                </span>
+                {dr === 'TODAY' ? 'Today' : dr === 'WEEK' ? 'Last 7 Days' : 'All Time'}
               </button>
             ))}
           </div>
+        </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-slate-500 font-bold">Custom Edge:</span>
-            <div className="flex items-center gap-0.5">
-              <span className="text-xs font-bold text-slate-400">₹</span>
-              <input
-                type="number"
-                value={customMinEdge}
+        {/* 3-Column Grid for main filters */}
+        <div className={`grid grid-cols-1 ${!lockedStrategy ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-6`}>
+           
+           {!lockedStrategy && (
+           <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-slate-300"></span> Strategy
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {['ALL', 'BID_PARITY', 'BOX', 'VERTICAL_SPREAD', 'BUTTERFLY_SPREAD', 'CONDOR_SPREAD', 'CALENDAR', 'CONDOR'].map(st => {
+                  const isSel = strategyFilter === st;
+                  return (
+                    <button
+                      key={st}
+                      onClick={() => setStrategyFilter(st)}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all shadow-sm ${
+                        isSel ? 'bg-indigo-600 text-white border-indigo-700 ring-1 ring-indigo-500/50' : 'bg-white border-slate-200 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 border'
+                      }`}
+                    >
+                      {st === 'ALL' ? 'All Strategies' : STRATEGY_LOCK_LABELS[st] || st}
+                    </button>
+                  )
+                })}
+              </div>
+           </div>
+           )}
+
+           <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-slate-300"></span> Status
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {['ALL', 'OPEN', 'CLOSED_PROFIT', 'CLOSED_LOSS', 'ORPHANED'].map(st => {
+                  const isSel = statusFilter === st;
+                  return (
+                    <button
+                      key={st}
+                      onClick={() => setStatusFilter(st)}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all shadow-sm ${
+                        isSel ? 'bg-slate-800 text-white border-slate-900 ring-1 ring-slate-900/50' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800 border'
+                      }`}
+                    >
+                      {st === 'ALL' ? 'All Status' : st === 'CLOSED_PROFIT' ? '🟢 Target Hit' : st === 'CLOSED_LOSS' ? '🔴 Stop Loss' : st === 'ORPHANED' ? '⚠️ Orphaned' : '🟢 Open'}
+                    </button>
+                  )
+                })}
+              </div>
+           </div>
+
+           <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-slate-300"></span> Underlying Asset
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'SENSEX', 'BANKEX'].map(u => {
+                  const isSel = underlyingFilter === u;
+                  return (
+                    <button
+                      key={u}
+                      onClick={() => setUnderlyingFilter(u)}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all shadow-sm ${
+                        isSel ? 'bg-blue-600 text-white border-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-blue-700 border'
+                      }`}
+                    >
+                      {u === 'ALL' ? 'All Assets' : u}
+                    </button>
+                  )
+                })}
+              </div>
+           </div>
+        </div>
+
+        {/* Full width bottom row for edge filter */}
+        <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-5">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Min Edge:</span>
+                <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-200 shadow-inner">
+                  {[
+                    { val: 0, label: 'All Edges' },
+                    { val: 100, label: '> ₹100' },
+                    { val: 300, label: '> ₹300 (Default)' },
+                    { val: 500, label: '> ₹500' },
+                    { val: 1000, label: '> ₹1,000' }
+                  ].map(ef => (
+                    <button
+                      key={ef.val}
+                      onClick={() => setMinEdgeFilter(ef.val)}
+                      className={`px-3 py-1 rounded-lg text-[10px] font-black tracking-wide transition-all ${
+                        minEdgeFilter === ef.val 
+                          ? 'bg-emerald-500 text-white shadow-sm ring-1 ring-emerald-600/50' 
+                          : 'text-slate-600 hover:bg-slate-200 hover:text-slate-800'
+                      }`}
+                    >
+                      {ef.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200 shadow-inner">
+              <span className="text-[10px] font-bold text-slate-500 uppercase px-1">Custom: ₹</span>
+              <input 
+                type="number" 
+                value={customMinEdge} 
                 onChange={(e) => {
                   setCustomMinEdge(e.target.value);
-                  const val = parseFloat(e.target.value) || 0;
-                  setMinEdgeFilter(val);
-                  setCurrentPage(1);
+                  const parsed = parseInt(e.target.value, 10);
+                  if (!isNaN(parsed)) setMinEdgeFilter(parsed);
                 }}
-                className="w-14 bg-slate-50 border border-slate-300 rounded-lg px-1.5 py-0.5 text-xs font-bold text-slate-800 font-mono outline-none focus:border-indigo-500"
-                placeholder="300"
+                className="w-20 px-2 py-1 text-xs border border-slate-300 rounded-lg font-bold text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all shadow-sm"
+                placeholder="e.g. 250"
               />
             </div>
-          </div>
         </div>
       </div>
-
-      {/* Ultra-Compact History Data Table (100% Fit, No Side Overflow) */}
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
+<div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
         {histLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Loading trade analytics...</div>
         ) : filteredItems.length === 0 ? (
@@ -6081,10 +6316,9 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                         <td className="px-1.5 py-1.5 text-center font-mono text-[10px] text-slate-500 truncate">{exitTimeFormatted}</td>
                         <td className="px-1.5 py-1.5 text-center whitespace-nowrap">
                           <button
-                            onClick={(e) => { e.stopPropagation(); handleExecuteInline(item); }}
+                            onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(item); }}
                             className="px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold rounded shadow-sm"
-                          >
-                            ⚡ Trade
+                          >⚡ Deploy
                           </button>
                         </td>
                       </tr>
@@ -6097,12 +6331,38 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
                                 {item.legs || `${item.action} on ${item.underlying} ${item.strike}`}
                               </p>
-                              {(item.strategyType === 'BUTTERFLY_SPREAD' || item.type === 'BUTTERFLY_SPREAD') && (
-                                <ArbitrageSignalPayoffChart opp={item} />
-                              )}
+                              {(() => {
+                                let oppToPass = item;
+                                if ((!Array.isArray(item.legList) || item.legList.length < 2) && typeof item.legs === 'string') {
+                                  // Synthesize legList from the legs string
+                                  // e.g. BUY 15000 CE @ 17.0 | SELL 15000 PE @ 150.6 | SELL MIDCPNIFTY FUT @ 14876.7
+                                  const legStrs = item.legs.split('|').map(s => s.trim()).filter(Boolean);
+                                  const legList = legStrs.map(ls => {
+                                    let side = ls.includes('BUY') ? 'BUY' : 'SELL';
+                                    let type = ls.includes('CE') ? 'CE' : ls.includes('PE') ? 'PE' : 'FUT';
+                                    let priceMatch = ls.match(/@\s+([\d.]+)/);
+                                    let price = priceMatch ? Number(priceMatch[1]) : 0;
+                                    let strikeMatch = type !== 'FUT' ? ls.match(/(\d+(?:\.\d+)?)\s+(?:CE|PE)/) : null;
+                                    let strike = strikeMatch ? Number(strikeMatch[1]) : (type === 'FUT' ? 0 : item.strike);
+                                    
+                                    if (price > 0) {
+                                      return { side, optionType: type, strike, price, qty: 1 };
+                                    }
+                                    return null;
+                                  }).filter(Boolean);
+                                  
+                                  if (legList.length >= 2) {
+                                    oppToPass = { ...item, legList };
+                                  }
+                                }
+                                
+                                if (Array.isArray(oppToPass.legList) && oppToPass.legList.length >= 2) {
+                                  return <ArbitrageSignalPayoffChart opp={oppToPass} />;
+                                }
+                                return null;
+                              })()}
                               <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(item); }} className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⚡ Re-Execute ({executionBroker})
+                                <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(item); }} className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold shadow-md">⚡ Deploy ({executionBroker})
                                 </button>
                               </div>
                             </div>
@@ -6146,4 +6406,4 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
     </div>
   );
 }
-export { LivePositionsSection, BrokerPositionsPanel };
+export { LivePositionsSection, BrokerPositionsPanel, STRATEGY_LABELS };

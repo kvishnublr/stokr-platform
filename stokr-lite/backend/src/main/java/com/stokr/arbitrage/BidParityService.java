@@ -22,7 +22,7 @@ public class BidParityService {
 
     private static final double RISK_FREE_RATE = 0.065;
     private static final double MIN_PARITY_DEVIATION_BID = 1.5;
-    private static final double MIN_EDGE_AFTER_COSTS = 300.0;
+    private static final double MIN_EDGE_AFTER_COSTS = 1000.0;
     private static final int MIN_VOLUME = 500;
     private static final int MIN_OI = 2000;
 
@@ -247,12 +247,22 @@ public class BidParityService {
             map.put("description", description);
             map.put("spotPrice", spot);
             map.put("futuresPrice", fut);
+            // Entry price tracked for later P&L must be the side actually achievable at fill
+            // (bid to sell, ask to buy) -- the edge/legs above already use these correctly;
+            // using lastPrice here instead made the tracked "entry" look better than the real
+            // fill (bid <= LTP <= ask), so mark-to-market P&L crossed the edge threshold faster
+            // than a real fill ever could, inflating the apparent win rate on signals that were
+            // never actually traded (see the RUNNING BID_PARITY mark-to-market path in
+            // OptionArbitrageController, which now closes this loop by also marking-to-market
+            // against the correct closing side instead of lastPrice).
+            double ceEntryFill = isConvergent ? ceQuote.bid : ceQuote.ask;
+            double peEntryFill = isConvergent ? peQuote.ask : peQuote.bid;
             map.put("ceBid", ceQuote.bid);
             map.put("ceAsk", ceQuote.ask);
-            map.put("ceEntryPrice", ceQuote.lastPrice);
+            map.put("ceEntryPrice", ceEntryFill);
             map.put("peBid", peQuote.bid);
             map.put("peAsk", peQuote.ask);
-            map.put("peEntryPrice", peQuote.lastPrice);
+            map.put("peEntryPrice", peEntryFill);
             map.put("cePrice", ceQuote.lastPrice);
             map.put("pePrice", peQuote.lastPrice);
             map.put("ceVolume", ceQuote.volume);
@@ -282,6 +292,23 @@ public class BidParityService {
             costBreakdown.put("lotSize", (double) lotSize);
             map.put("costBreakdown", costBreakdown);
 
+            // legList lets the frontend payoff chart render this like every other multi-leg
+            // strategy -- conversion/reversal is delta-neutral by put-call-parity construction,
+            // so its "payoff at expiry" chart is expected to come out flat (same idea as a box
+            // spread), which is itself useful confirmation that the detected mispricing really
+            // is model-free arbitrage rather than a directional bet. The FUT leg has no strike
+            // (payoff is linear in settlement price, not capped like an option's intrinsic
+            // value) -- the frontend chart handles optionType="FUT" as that special case.
+            String ceSide = isConvergent ? "SELL" : "BUY";
+            String peSide = isConvergent ? "BUY" : "SELL";
+            String futSide = isConvergent ? "BUY" : "SELL";
+            List<Map<String, Object>> legList = List.of(
+                Map.of("strike", strike, "optionType", "CE", "side", ceSide, "qty", 1, "price", ceEntryFill),
+                Map.of("strike", strike, "optionType", "PE", "side", peSide, "qty", 1, "price", peEntryFill),
+                Map.of("strike", 0, "optionType", "FUT", "side", futSide, "qty", 1, "price", fut)
+            );
+            map.put("legList", legList);
+
             results.add(map);
 
             ArbitrageOpportunity opp = new ArbitrageOpportunity();
@@ -290,10 +317,18 @@ public class BidParityService {
             opp.strike = strike;
             opp.action = action;
             opp.legs = legs;
+            // Deliberately NOT opp.legList = legList here -- unlike the other multi-leg
+            // strategies, Bid Parity's execution path (manualExecuteLive/paper trade) branches
+            // on legList presence to decide MULTI-LEG vs LEGACY CE+PE+FUT executor, and the
+            // multi-leg executor has no concept of a futures leg (it only builds NFO option
+            // symbols). Persisting legList here would silently misroute every bid-parity trade
+            // into the wrong executor. legList stays map-only, display-only, for this strategy.
             opp.spotPrice = spot;
             opp.futuresPrice = fut;
-            opp.cePrice = ceQuote.lastPrice;
-            opp.pePrice = peQuote.lastPrice;
+            // Persisted as ce_entry_price/pe_entry_price and used for all later P&L tracking --
+            // must be the real achievable fill, not lastPrice (see comment above on map.put).
+            opp.cePrice = ceEntryFill;
+            opp.pePrice = peEntryFill;
             opp.ceBid = ceQuote.bid;
             opp.ceAsk = ceQuote.ask;
             opp.peBid = peQuote.bid;

@@ -49,6 +49,28 @@ public class EntryManager {
             return false;
         }
 
+        // Sanity floor on stop-loss distance: no strategy plugin here is validated against
+        // this before its signal reaches EntryManager, and nothing else in the pipeline checks
+        // it either -- a strategy with a miscalibrated SL formula (e.g. VCP_BREAKOUT evaluating
+        // on 1-minute candles instead of daily ones, collapsing its ATR(14)-based stop to a few
+        // paise) sailed straight through and rapid-fired SL_HIT within minutes on ordinary
+        // price noise, undetected until someone happened to notice the trade history. 0.1% is
+        // comfortably below every strategy's real SL distance today (RSI/OB use a flat 3%,
+        // VCP's real ATR-based stop is normally well over 1%) but well above what a broken
+        // sub-paise calculation could ever produce by chance.
+        double slPx = signal.stopLoss().doubleValue();
+        double slDistancePct = Math.abs(entryPx - slPx) / entryPx * 100.0;
+        if (slDistancePct < 0.1) {
+            log.warn("Deployment {} REJECTING {} — stop-loss ₹{} is only {}% from entry ₹{}, "
+                    + "far tighter than any real strategy setup should produce (likely a miscalibrated SL formula)",
+                    deployment.getId(), signal.symbol(), signal.stopLoss(),
+                    String.format("%.3f", slDistancePct), signal.entryPrice());
+            errorLogService.logError(deployment.getId(), "SL_TOO_TIGHT",
+                    "Rejected " + signal.symbol() + ": SL only " + String.format("%.3f", slDistancePct)
+                            + "% from entry (min 0.1%) -- likely a miscalibrated stop formula", null, "WARN");
+            return false;
+        }
+
         // Check if deployment already has an open position in this symbol
         List<Position> openPositions = positionService.getOpenPositions(deployment.getId());
         boolean hasPositionInSymbol = openPositions.stream()

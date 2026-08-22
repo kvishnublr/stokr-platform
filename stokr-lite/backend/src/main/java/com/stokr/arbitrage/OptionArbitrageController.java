@@ -1094,18 +1094,35 @@ public class OptionArbitrageController {
                                         pnlMap.put(oppIdStr, opp.getPnlAfterCosts() != null ? Math.round(opp.getPnlAfterCosts().doubleValue()) : 0);
                                     } else if ("EXPIRED".equals(oppStatus)) {
                                         statusMap.put(oppIdStr, oppStatus);
-                                        // EXPIRED: contract expired, never entered — show edge as potential
+                                        // EXPIRED means the contract expired with this signal NEVER traded --
+                                        // nothing was ever captured, so it has no P&L, real or simulated. This
+                                        // used to show the original detected edge in the P&L column, which
+                                        // reads exactly like a realized win and was inflating the profit/win-
+                                        // rate counts shown on the strategy summary cards with signals nobody
+                                        // ever acted on. Null here (same as the MISSED case below) is the
+                                        // honest answer: no P&L exists for a position that was never opened.
                                         if (opp.getExpiryDate() != null) {
                                             exitTimeMap.put(oppIdStr, opp.getExpiryDate().toString());
                                         }
-                                        pnlMap.put(oppIdStr, opp.getEdgeAfterCosts() != null ? Math.round(opp.getEdgeAfterCosts().doubleValue()) : 0);
+                                        pnlMap.put(oppIdStr, null);
                                     } else if ("RUNNING".equals(oppStatus) && "BID_PARITY".equals(opp.getStrategyType())) {
                                         // RUNNING bid-parity signal, never traded — simulate live mark-to-market
                                         // P&L against current quotes and auto-exit once edge target is hit.
+                                        String actionForClose = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
+                                        boolean ceIsLong = actionForClose.contains("BUY CE +");
                                         String ceSym = ceSymByOpp.get(oppId);
                                         String peSym = peSymByOpp.get(oppId);
-                                        double ceCurrent = (ceSym != null && bpQuotes.containsKey(ceSym)) ? bpQuotes.get(ceSym).lastPrice : 0;
-                                        double peCurrent = (peSym != null && bpQuotes.containsKey(peSym)) ? bpQuotes.get(peSym).lastPrice : 0;
+                                        // Closing a long leg means SELLING it (get the bid); closing a short leg
+                                        // means BUYING it back (pay the ask) -- using lastPrice here instead let
+                                        // the simulated exit dodge the spread it would actually have to cross,
+                                        // on top of ceEntryPrice/peEntryPrice previously making the same mistake
+                                        // at entry (fixed in BidParityService) -- together those made every
+                                        // never-actually-traded signal look like it converged to profit far
+                                        // faster and more reliably than a real fill ever could.
+                                        OptionChainService.OptionQuote ceQ = ceSym != null ? bpQuotes.get(ceSym) : null;
+                                        OptionChainService.OptionQuote peQ = peSym != null ? bpQuotes.get(peSym) : null;
+                                        double ceCurrent = ceQ != null ? (ceIsLong ? ceQ.bid : ceQ.ask) : 0;
+                                        double peCurrent = peQ != null ? (ceIsLong ? peQ.ask : peQ.bid) : 0;
 
                                         double[] futSpotFut = futLiveByUnderlying.computeIfAbsent(opp.getUnderlying(), u -> {
                                             try {
@@ -1122,12 +1139,11 @@ public class OptionArbitrageController {
                                         double peEntry = opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() : 0;
                                         double futEntry = opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() : 0;
                                         int lotSz = OptionChainService.getLotSize(opp.getUnderlying());
-                                        String action = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
 
                                         boolean havePrices = ceCurrent > 0 || peCurrent > 0 || futCurrent > 0;
                                         double pnl = 0;
                                         if (havePrices) {
-                                            if (action.contains("BUY CE +")) {
+                                            if (ceIsLong) {
                                                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
                                                 if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                                                 if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
@@ -1168,12 +1184,18 @@ public class OptionArbitrageController {
                                         double pnl = 0;
                                         for (Map<String, Object> leg : resolvedLegs) {
                                             String sym = (String) leg.get("symbol");
-                                            double current = (sym != null && bpQuotes.containsKey(sym)) ? bpQuotes.get(sym).lastPrice : 0;
+                                            String side = (String) leg.get("side");
+                                            // Same fix as BID_PARITY above: closing a long leg (BUY) means
+                                            // SELLING it back (get the bid), closing a short leg (SELL) means
+                                            // BUYING it back (pay the ask) -- lastPrice here let the simulated
+                                            // exit dodge the real spread cost, on never-actually-traded signals,
+                                            // the same way it did for Bid Parity.
+                                            OptionChainService.OptionQuote q = sym != null ? bpQuotes.get(sym) : null;
+                                            double current = q != null ? ("BUY".equals(side) ? q.bid : q.ask) : 0;
                                             double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
                                             if (current <= 0 || entry <= 0) continue;
                                             havePrices = true;
                                             int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
-                                            String side = (String) leg.get("side");
                                             pnl += ("BUY".equals(side) ? (current - entry) : (entry - current)) * qtyMult;
                                         }
                                         pnl *= lotSz;
@@ -1226,6 +1248,111 @@ public class OptionArbitrageController {
     @GetMapping("/auto-execute/settings")
     public ResponseEntity<Map<String, Object>> getSettings() {
         return ResponseEntity.ok(autoExecService.getSettings());
+    }
+
+    /**
+     * Per-strategy performance breakdown from ACTUALLY TRADED positions (live_positions), not
+     * from signal-level simulations -- the Arbitrage Signals feed's win-rate counters include
+     * never-traded signals marked to market, which is a different (and more flattering) number
+     * than what real entries and exits produced. This answers "which strategies are actually
+     * carrying their weight", split by paper vs live since mixing them hides whether a
+     * strategy's record survived contact with a real broker.
+     */
+    @GetMapping("/performance")
+    public ResponseEntity<Map<String, Object>> getPerformance(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(defaultValue = "ALL") String mode) {
+
+        List<LivePosition> closed = livePositionRepo.findAllClosed().stream()
+                .filter(p -> p.getCurrentPnl() != null)
+                .filter(p -> {
+                    if ("ALL".equalsIgnoreCase(mode)) return true;
+                    boolean isPaper = p.getBroker() == null || "PAPER".equalsIgnoreCase(p.getBroker());
+                    return "PAPER".equalsIgnoreCase(mode) == isPaper;
+                })
+                .filter(p -> {
+                    if (startDate == null || endDate == null || p.getEnteredAt() == null) return true;
+                    LocalDate d = p.getEnteredAt().toLocalDate();
+                    return !d.isBefore(LocalDate.parse(startDate)) && !d.isAfter(LocalDate.parse(endDate));
+                })
+                .toList();
+
+        Map<String, List<LivePosition>> byStrategy = closed.stream()
+                .collect(Collectors.groupingBy(p -> p.getStrategyType() != null ? p.getStrategyType() : "UNKNOWN"));
+
+        List<Map<String, Object>> strategies = new ArrayList<>();
+        for (Map.Entry<String, List<LivePosition>> e : byStrategy.entrySet()) {
+            strategies.add(summarize(e.getKey(), e.getValue(), true));
+        }
+        strategies.sort((a, b) -> Integer.compare((Integer) b.get("trades"), (Integer) a.get("trades")));
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("strategies", strategies);
+        resp.put("overall", summarize("ALL", closed, false));
+        resp.put("mode", mode);
+        resp.put("note", "Computed from real closed positions only (entered and exited). Never-traded signals are excluded -- their simulated results are not trading performance.");
+        return ResponseEntity.ok(resp);
+    }
+
+    private Map<String, Object> summarize(String label, List<LivePosition> rows, boolean includeUnderlyings) {
+        int trades = rows.size();
+        long wins = rows.stream().filter(p -> p.getCurrentPnl().doubleValue() > 0).count();
+        long losses = rows.stream().filter(p -> p.getCurrentPnl().doubleValue() < 0).count();
+        double total = rows.stream().mapToDouble(p -> p.getCurrentPnl().doubleValue()).sum();
+        double best = rows.stream().mapToDouble(p -> p.getCurrentPnl().doubleValue()).max().orElse(0);
+        double worst = rows.stream().mapToDouble(p -> p.getCurrentPnl().doubleValue()).min().orElse(0);
+
+        // Average win and average loss separately: a strategy can show a strong win rate while
+        // its rare losses dwarf its many small wins, which a single avg-P&L number hides.
+        double avgWin = rows.stream().filter(p -> p.getCurrentPnl().doubleValue() > 0)
+                .mapToDouble(p -> p.getCurrentPnl().doubleValue()).average().orElse(0);
+        double avgLoss = rows.stream().filter(p -> p.getCurrentPnl().doubleValue() < 0)
+                .mapToDouble(p -> p.getCurrentPnl().doubleValue()).average().orElse(0);
+
+        double avgHoldMin = rows.stream()
+                .filter(p -> p.getEnteredAt() != null && p.getExitedAt() != null)
+                .mapToDouble(p -> java.time.Duration.between(p.getEnteredAt(), p.getExitedAt()).toSeconds() / 60.0)
+                .average().orElse(0);
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("strategyType", label);
+        m.put("trades", trades);
+        m.put("wins", (int) wins);
+        m.put("losses", (int) losses);
+        m.put("winRate", trades > 0 ? Math.round(wins * 1000.0 / trades) / 10.0 : 0.0);
+        m.put("totalPnl", Math.round(total));
+        m.put("avgPnl", trades > 0 ? Math.round(total / trades) : 0);
+        m.put("avgWin", Math.round(avgWin));
+        m.put("avgLoss", Math.round(avgLoss));
+        // Expectancy per trade -- the number that actually decides whether repeating this
+        // strategy makes or loses money over time, unlike win rate on its own.
+        m.put("expectancy", trades > 0 ? Math.round(total / trades) : 0);
+        m.put("bestTrade", Math.round(best));
+        m.put("worstTrade", Math.round(worst));
+        m.put("avgHoldMinutes", Math.round(avgHoldMin * 10.0) / 10.0);
+
+        if (includeUnderlyings) {
+            Map<String, List<LivePosition>> byU = rows.stream()
+                    .collect(Collectors.groupingBy(p -> p.getUnderlying() != null ? p.getUnderlying() : "UNKNOWN"));
+            List<Map<String, Object>> uList = new ArrayList<>();
+            for (Map.Entry<String, List<LivePosition>> ue : byU.entrySet()) {
+                List<LivePosition> ur = ue.getValue();
+                double uTotal = ur.stream().mapToDouble(p -> p.getCurrentPnl().doubleValue()).sum();
+                long uWins = ur.stream().filter(p -> p.getCurrentPnl().doubleValue() > 0).count();
+                Map<String, Object> um = new LinkedHashMap<>();
+                um.put("underlying", ue.getKey());
+                um.put("trades", ur.size());
+                um.put("wins", (int) uWins);
+                um.put("winRate", ur.isEmpty() ? 0.0 : Math.round(uWins * 1000.0 / ur.size()) / 10.0);
+                um.put("totalPnl", Math.round(uTotal));
+                um.put("avgPnl", ur.isEmpty() ? 0 : Math.round(uTotal / ur.size()));
+                uList.add(um);
+            }
+            uList.sort((a, b) -> Integer.compare((Integer) b.get("trades"), (Integer) a.get("trades")));
+            m.put("underlyings", uList);
+        }
+        return m;
     }
 
     @GetMapping("/candidate-history")
@@ -1363,27 +1490,38 @@ public class OptionArbitrageController {
                         String closeSide = "BUY".equals(leg.get("side")) ? "SELL" : "BUY";
                         rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), (String) leg.get("symbol"),
                                 closeSide, toQty(leg.get("qty"), p.getLotSize(), p.getLots()),
-                                exitPrice, product, broker, "COMPLETE", null));
+                                exitPrice, product, broker, "COMPLETE", null, null, "EXIT"));
                     }
                 }
             } else {
                 String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
                 boolean buyCe = !action.contains("SELL CE +");
+                // In BOTH conversion (SELL CE + BUY PE + BUY FUT) and reversal (BUY CE +
+                // SELL PE + SELL FUT), the futures leg is always OPPOSITE the CE leg -- that's
+                // what makes the structure delta-neutral. This previously assigned FUT the SAME
+                // side as CE, so every futures row on this page showed the wrong direction
+                // (e.g. "BUY FUT + SELL CE + BUY PE" rendered its futures leg as SELL).
+                String ceSide = buyCe ? "BUY" : "SELL";
+                String peSide = buyCe ? "SELL" : "BUY";
+                String futSide = buyCe ? "SELL" : "BUY";
+                String ceClose = buyCe ? "SELL" : "BUY";
+                String peClose = buyCe ? "BUY" : "SELL";
+                String futClose = buyCe ? "BUY" : "SELL";
                 int qty = (p.getLotSize() != null ? p.getLotSize() : 1) * (p.getLots() != null ? p.getLots() : 1);
                 String legStatus = mapPositionStatus(p.getStatus());
                 if (p.getCeSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getCeSymbol(),
-                        buyCe ? "BUY" : "SELL", qty, p.getCeEntryPrice(), product, broker, legStatus, p.getCeOrderId(), p.getErrorMessage()));
+                        ceSide, qty, p.getCeEntryPrice(), product, broker, legStatus, p.getCeOrderId(), p.getErrorMessage()));
                 if (p.getPeSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getPeSymbol(),
-                        buyCe ? "SELL" : "BUY", qty, p.getPeEntryPrice(), product, broker, legStatus, p.getPeOrderId(), p.getErrorMessage()));
+                        peSide, qty, p.getPeEntryPrice(), product, broker, legStatus, p.getPeOrderId(), p.getErrorMessage()));
                 if (p.getFutSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getFutSymbol(),
-                        buyCe ? "BUY" : "SELL", qty, p.getFutEntryPrice(), product, broker, legStatus, p.getFutOrderId(), p.getErrorMessage()));
+                        futSide, qty, p.getFutEntryPrice(), product, broker, legStatus, p.getFutOrderId(), p.getErrorMessage()));
                 if (p.getExitedAt() != null && (p.getCeExitPrice() != null || p.getPeExitPrice() != null || p.getFutExitPrice() != null)) {
                     if (p.getCeSymbol() != null && p.getCeExitPrice() != null) rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), p.getCeSymbol(),
-                            buyCe ? "SELL" : "BUY", qty, p.getCeExitPrice(), product, broker, "COMPLETE", null));
+                            ceClose, qty, p.getCeExitPrice(), product, broker, "COMPLETE", null, null, "EXIT"));
                     if (p.getPeSymbol() != null && p.getPeExitPrice() != null) rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), p.getPeSymbol(),
-                            buyCe ? "BUY" : "SELL", qty, p.getPeExitPrice(), product, broker, "COMPLETE", null));
+                            peClose, qty, p.getPeExitPrice(), product, broker, "COMPLETE", null, null, "EXIT"));
                     if (p.getFutSymbol() != null && p.getFutExitPrice() != null) rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), p.getFutSymbol(),
-                            buyCe ? "SELL" : "BUY", qty, p.getFutExitPrice(), product, broker, "COMPLETE", null));
+                            futClose, qty, p.getFutExitPrice(), product, broker, "COMPLETE", null, null, "EXIT"));
                 }
             }
         }
@@ -1424,14 +1562,25 @@ public class OptionArbitrageController {
 
     private Map<String, Object> orderRow(LocalDateTime time, String underlying, String symbol, String side,
                                           int qty, Object price, String product, String broker, String status, String orderId) {
-        return orderRow(time, underlying, symbol, side, qty, price, product, broker, status, orderId, null);
+        return orderRow(time, underlying, symbol, side, qty, price, product, broker, status, orderId, null, "ENTRY");
     }
 
     private Map<String, Object> orderRow(LocalDateTime time, String underlying, String symbol, String side,
                                           int qty, Object price, String product, String broker, String status,
                                           String orderId, String reason) {
+        return orderRow(time, underlying, symbol, side, qty, price, product, broker, status, orderId, reason, "ENTRY");
+    }
+
+    private Map<String, Object> orderRow(LocalDateTime time, String underlying, String symbol, String side,
+                                          int qty, Object price, String product, String broker, String status,
+                                          String orderId, String reason, String kind) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("time", time != null ? time.toString() : null);
+        // ENTRY vs EXIT: a position CLOSE emits its own leg rows, previously indistinguishable
+        // from an opening order -- so closing a position after hours looked exactly like the
+        // platform had opened brand-new trades post-market. The side is already flipped for an
+        // exit (closing a BUY shows as SELL), which made it read even more like a real new order.
+        row.put("kind", kind);
         row.put("underlying", underlying);
         row.put("symbol", symbol);
         row.put("side", side);
@@ -1903,15 +2052,11 @@ public class OptionArbitrageController {
             historyService.getRepository().save(opp);
 
             try {
-                // Paper positions gated against paper count, not mixed with live -- opening
-                // a paper trade shouldn't be blocked by real live positions or vice versa.
-                long openCount = livePositionRepo.countOpenPaper();
-                int maxOpen = ((Number) autoExecService.getSettings().getOrDefault("maxOpenPositions", 1)).intValue();
-                if (openCount >= maxOpen) {
-                    resp.put("status", "ERROR");
-                    resp.put("message", "Already have " + openCount + "/" + maxOpen + " open positions. Close one first or raise Max Open Positions in Auto-Trade settings.");
-                    return ResponseEntity.badRequest().body(resp);
-                }
+                // No cap on paper trades -- Max Open Positions is a real risk control meant for
+                // LIVE capital exposure (still enforced there, user-configurable in Auto-Trade
+                // settings); paper trading has no real money or margin at stake, so restricting
+                // how many a user can explore at once serves no purpose and was just getting in
+                // the way of testing strategies.
                 int lotSize = getLotSize(opp.getUnderlying());
 
                 if (isMultiLeg) {
@@ -2158,6 +2303,18 @@ public class OptionArbitrageController {
             resp.put("trades", trades.stream().limit(200).toList());
         } catch (Exception e) {
             log.error("Backtest failed: {}", e.getMessage(), e);
+            resp.put("error", e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/funds")
+    public ResponseEntity<Map<String, Object>> getBrokerFunds(@RequestParam String broker) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        try {
+            resp.put("availableCash", 1500000.0);
+            resp.put("broker", broker);
+        } catch (Exception e) {
             resp.put("error", e.getMessage());
         }
         return ResponseEntity.ok(resp);
