@@ -2308,6 +2308,26 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(resp);
     }
 
+    @GetMapping("/funds")
+    public ResponseEntity<Map<String, Object>> getBrokerFunds(@RequestParam String broker) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        try {
+            List<com.stokr.account.BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");
+            if (accounts.isEmpty()) {
+                resp.put("error", "No active account found for broker " + broker);
+                return ResponseEntity.ok(resp);
+            }
+            com.stokr.account.BrokerAccount account = accounts.get(0);
+            com.stokr.broker.BrokerAdapter adapter = brokerService.getAdapter(broker);
+            double funds = adapter.getFunds(account.getAccessToken());
+            resp.put("funds", funds);
+            resp.put("broker", broker);
+        } catch (Exception e) {
+            resp.put("error", e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
     @GetMapping("/margin-check")
     public ResponseEntity<Map<String, Object>> marginCheck(
             @RequestParam String underlying,
