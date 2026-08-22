@@ -230,6 +230,16 @@ function LiveExecutionModal({ opp, onClose, onConfirm }) {
           </button>
         </div>
       </div>
+      {pendingLiveDeploy && (
+        <LiveExecutionModal 
+          opp={pendingLiveDeploy}
+          onClose={() => setPendingLiveDeploy(null)}
+          onConfirm={(oppToExecute, lots) => {
+            setPendingLiveDeploy(null);
+            handleExecuteInline(oppToExecute, lots);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -597,12 +607,12 @@ export default function OptionArbitrage() {
             condorSpreadOpportunities={condorSpreadOpportunities}
             summary={summary}
             scanLoading={scanLoading}
-            handleExecuteInline={handleExecuteInline}
+            handleExecuteInline={setPendingLiveDeploy}
             executionBroker={executionBroker}
           />
         )}
 
-        {activeTab === 'bidparity' && <BidParityView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
+        {activeTab === 'bidparity' && <BidParityView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
         {activeTab === 'autotrade' && (
           <div className="space-y-4">
             <AutoExecSettingsPanel />
@@ -610,14 +620,14 @@ export default function OptionArbitrage() {
           </div>
         )}
         {activeTab === 'papertrades' && <PaperTradesView />}
-        {activeTab === 'box' && <BoxSpreadView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'vertical' && <VerticalSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'butterfly' && <ButterflySpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'condorspread' && <CondorSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'ironcondor' && <IronCondorView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'cashsurge' && <CashSurgeView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'cashswing' && <CashSwingView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'history' && <HistoryView calendarOpportunities={calendarOpportunities} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} underlyings={underlyings} />}
+        {activeTab === 'box' && <BoxSpreadView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'vertical' && <VerticalSpreadView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'butterfly' && <ButterflySpreadView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'condorspread' && <CondorSpreadView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'ironcondor' && <IronCondorView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'cashsurge' && <CashSurgeView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'cashswing' && <CashSwingView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'history' && <HistoryView calendarOpportunities={calendarOpportunities} handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} underlyings={underlyings} />}
       </div>
     </div>
   );
@@ -1836,7 +1846,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       {subTab === 'autotrade' ? (
         <StrategyAutoTradePanel prefix="bidParity" label="Bid Parity" accent="indigo" />
       ) : subTab === 'history' ? (
-        <HistoryView lockedStrategy="PARITY" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <HistoryView lockedStrategy="PARITY" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
       ) : (
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -2151,7 +2161,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       {subTab === 'autotrade' ? (
         <StrategyAutoTradePanel prefix="box" label="Box Spread" accent="indigo" />
       ) : subTab === 'history' ? (
-        <HistoryView lockedStrategy="BOX" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <HistoryView lockedStrategy="BOX" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
       ) : subTab === 'nearmiss' ? (
         <BoxNearMissPanel />
       ) : (
@@ -2551,11 +2561,11 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
           {historyMode === 'candidates' ? (
             <CandidateHistoryPanel strategyType="VERTICAL_SPREAD" label="Vertical Spread" />
           ) : (
-            <HistoryView lockedStrategy="VERTICAL" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+            <HistoryView lockedStrategy="VERTICAL" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
           )}
         </div>
       ) : subTab === 'candidates' ? (
-        <VerticalCandidatesPanel handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <VerticalCandidatesPanel handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
       ) : (
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -3469,7 +3479,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
 
   return (
     <div className="space-y-4 w-full">
-      <AutoRollPendingPanel handleExecuteInline={handleExecuteInline} />
+      <AutoRollPendingPanel handleExecuteInline={setPendingLiveDeploy} />
       <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl w-fit">
         <button onClick={() => setSubTab('signals')}
           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'signals' ? 'bg-fuchsia-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
@@ -3504,7 +3514,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
           {historyMode === 'candidates' ? (
             <CandidateHistoryPanel strategyType="BUTTERFLY_SPREAD" label="Butterfly Spread" />
           ) : (
-            <HistoryView lockedStrategy="BUTTERFLY" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+            <HistoryView lockedStrategy="BUTTERFLY" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
           )}
         </div>
       ) : subTab === 'autotrade' ? (
@@ -3513,7 +3523,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
           <AutoRollSettingsPanel />
         </div>
       ) : subTab === 'candidates' ? (
-        <ButterflyCandidatesPanel handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <ButterflyCandidatesPanel handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
       ) : (
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -4310,13 +4320,13 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
           {historyMode === 'candidates' ? (
             <CandidateHistoryPanel strategyType="CONDOR_SPREAD" label="Condor Spread" />
           ) : (
-            <HistoryView lockedStrategy="CONDORSPREAD" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+            <HistoryView lockedStrategy="CONDORSPREAD" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
           )}
         </div>
       ) : subTab === 'autotrade' ? (
         <StrategyAutoTradePanel prefix="condor" label="Condor Spread" accent="indigo" />
       ) : subTab === 'candidates' ? (
-        <CondorCandidatesPanel handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <CondorCandidatesPanel handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
       ) : (
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -5004,7 +5014,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
       </div>
 
       {subTab === 'history' ? (
-        <HistoryView lockedStrategy="CONDOR" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <HistoryView lockedStrategy="CONDOR" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
       ) : subTab === 'autotrade' ? (
         <StrategyAutoTradePanel prefix="ironCondor" label="Iron Condor" accent="indigo" />
       ) : (
