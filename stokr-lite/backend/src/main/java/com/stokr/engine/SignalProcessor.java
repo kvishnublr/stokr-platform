@@ -59,6 +59,11 @@ public class SignalProcessor {
     // what VCP needs, so it would never generate a signal even once fed real daily candles.
     private static final int DAILY_LOOKBACK_DAYS = 260;
 
+    /** How long to wait before re-evaluating a symbol that was just rejected (see the
+     *  re-fire suppression in processDeployment). Long enough to stop per-scan-cycle spam,
+     *  short enough that a transient rejection still gets retried well within the session. */
+    private static final int REJECT_RETRY_MINUTES = 30;
+
     public void processDeployment(Deployment deployment) {
         try {
             Strategy strategy = strategyService.getStrategy(deployment.getStrategyId());
@@ -93,6 +98,23 @@ public class SignalProcessor {
                             deployment.getId(), symbol, List.of("EXECUTED", "GENERATED"))
                         .isPresent();
                     if (alreadyOpen) continue;
+
+                    // Re-fire suppression: the check above only matches EXECUTED/GENERATED, so a
+                    // signal that got REJECTED (price out of range, cooldown, max positions...)
+                    // stopped matching and re-fired every single scan cycle for as long as the
+                    // strategy's entry condition held -- one symbol produced 91 identical
+                    // REJECTED rows in 90 minutes, burying every other signal in the UI.
+                    // Rejections are re-evaluated after a short window rather than suppressed for
+                    // the day, since some causes are genuinely transient (a max-positions or
+                    // cooldown rejection should get another look once that clears).
+                    var lastRejected = signalRepository
+                        .findFirstByDeploymentIdAndSymbolAndStatusOrderByCreatedAtDesc(
+                            deployment.getId(), symbol, "REJECTED");
+                    if (lastRejected.isPresent() && lastRejected.get().getCreatedAt() != null
+                            && lastRejected.get().getCreatedAt().isAfter(
+                                java.time.Instant.now().minus(java.time.Duration.ofMinutes(REJECT_RETRY_MINUTES)))) {
+                        continue;
+                    }
 
                     SignalEntity entity = SignalEntity.builder()
                         .deploymentId(deployment.getId())
