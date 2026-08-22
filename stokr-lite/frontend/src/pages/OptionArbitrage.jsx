@@ -130,6 +130,110 @@ function ToastCard({ t, dismiss }) {
   );
 }
 
+
+function LiveExecutionModal({ opp, onClose, onConfirm }) {
+  const [loading, setLoading] = useState(true);
+  const [funds, setFunds] = useState(null);
+  
+  useEffect(() => {
+    let active = true;
+    const fetchFunds = async () => {
+      try {
+        const broker = opp.broker || 'PAPER';
+        const res = await client.get('/option-arbitrage/funds', { params: { broker } });
+        if (active) {
+          setFunds(res.data);
+          setLoading(false);
+        }
+      } catch (e) {
+        if (active) setLoading(false);
+      }
+    };
+    fetchFunds();
+    return () => { active = false; };
+  }, [opp]);
+
+  const formatInr = (val) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
+
+  const reqMargin = opp.marginReq || 50000;
+  const isShortfall = funds && (funds.availableCash < reqMargin);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+        <div className="bg-slate-900 px-5 py-4 flex items-center justify-between">
+          <h3 className="text-white font-black text-lg flex items-center gap-2">
+            <span>⚡</span> Deploy Live Arbitrage
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white transition">✖</button>
+        </div>
+        
+        <div className="p-5 space-y-5">
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Target Opportunity</h4>
+            <div className="flex justify-between items-center mb-1">
+              <span className="font-bold text-slate-800">{opp.underlying} {opp.strike}</span>
+              <span className="font-bold text-indigo-600">{opp.type || opp.strategyType || 'BID_PARITY'}</span>
+            </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-slate-600">Expected Edge:</span>
+              <span className="font-black text-emerald-600">+{formatInr(opp.edgeAfterCosts || 0)}</span>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Margin &amp; Capital Check</h4>
+            {loading ? (
+              <div className="animate-pulse flex space-x-4">
+                <div className="flex-1 space-y-3 py-1">
+                  <div className="h-4 bg-slate-200 rounded w-3/4"></div>
+                  <div className="h-4 bg-slate-200 rounded w-1/2"></div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex justify-between items-center p-3 rounded-lg border border-slate-100 bg-slate-50">
+                  <span className="text-slate-600 font-bold text-sm">Peak Margin Required</span>
+                  <span className="font-black text-slate-800">{formatInr(reqMargin)}</span>
+                </div>
+                <div className="flex justify-between items-center p-3 rounded-lg border border-slate-100 bg-slate-50">
+                  <span className="text-slate-600 font-bold text-sm">Available Cash</span>
+                  <span className={`font-black ${isShortfall ? 'text-red-600' : 'text-emerald-600'}`}>
+                    {funds ? formatInr(funds.availableCash) : 'Unknown'}
+                  </span>
+                </div>
+                
+                {isShortfall && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-xl text-xs font-bold flex items-start gap-2">
+                    <span className="text-base">⚠️</span>
+                    <p>Insufficient funds to deploy this strategy. You need {formatInr(reqMargin - funds.availableCash)} more capital.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="px-5 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
+          <button 
+            onClick={onClose}
+            className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition"
+          >
+            Cancel
+          </button>
+          <button 
+            onClick={() => { onConfirm(); onClose(); }}
+            disabled={loading || isShortfall}
+            className="px-5 py-2 font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+          >
+            Confirm Deployment
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ToastContainer({ toasts, dismiss }) {
   if (!toasts || toasts.length === 0) return null;
   return (
@@ -143,95 +247,6 @@ function ToastContainer({ toasts, dismiss }) {
 }
 
 const ALL_U = ['ALL', 'NIFTY', 'BANKNIFTY', 'MIDCPNIFTY', 'FINNIFTY'];
-
-
-function LiveExecutionModal({ opp, onClose, onConfirm }) {
-  const [loading, setLoading] = useState(true);
-  const [funds, setFunds] = useState(null);
-  const [lots, setLots] = useState(1);
-  const broker = localStorage.getItem('stokr_live_broker') || 'ZERODHA'; // or a prop
-
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const res = await client.get('/option-arbitrage/funds', { params: { broker } });
-        if (res.data && res.data.funds !== undefined) {
-          setFunds(res.data.funds);
-        } else {
-          setFunds('UNAVAILABLE');
-        }
-      } catch (e) {
-        setFunds('ERROR');
-      }
-      setLoading(false);
-    }
-    fetchData();
-  }, [broker]);
-
-  const reqMargin = (opp.marginEstimate || opp.maxLoss || 45000) * lots;
-  const hasFunds = typeof funds === 'number' && funds >= reqMargin;
-
-  return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col">
-        <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-          <h3 className="font-black text-slate-800 text-lg flex items-center gap-2">
-            <span className="text-2xl">⚡</span> Live Execution
-          </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
-        </div>
-        
-        <div className="p-6 space-y-5">
-          <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-center">
-            <div className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-1">Target Opportunity</div>
-            <div className="text-lg font-black text-indigo-900">{opp.underlying} {opp.strike || ''}</div>
-            <div className="text-sm font-bold text-indigo-600 mt-1">{opp.strategyType || 'BID PARITY'}</div>
-          </div>
-
-          <div className="flex gap-4">
-            <div className="flex-1 bg-slate-50 rounded-xl p-3 border border-slate-200">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Lot Multiplier</label>
-              <input type="number" min="1" max="100" value={lots} onChange={e => setLots(parseInt(e.target.value)||1)} className="w-full bg-white border border-slate-200 rounded px-2 py-1 font-bold text-slate-700" />
-            </div>
-            <div className="flex-1 bg-slate-50 rounded-xl p-3 border border-slate-200">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Broker</label>
-              <div className="font-bold text-slate-800 py-1">{broker}</div>
-            </div>
-          </div>
-
-          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-bold text-slate-600">Available Capital</span>
-              <span className="font-mono font-bold text-slate-800">
-                {loading ? 'Fetching...' : typeof funds === 'number' ? `₹${funds.toLocaleString('en-IN')}` : funds}
-              </span>
-            </div>
-            <div className="flex justify-between items-center border-t border-slate-200 pt-3">
-              <span className="text-sm font-bold text-slate-600">Peak Margin Required</span>
-              <span className="font-mono font-bold text-indigo-600">₹{reqMargin.toLocaleString('en-IN')}</span>
-            </div>
-            {typeof funds === 'number' && !hasFunds && (
-              <div className="text-[11px] font-bold text-red-600 bg-red-50 p-2 rounded border border-red-200 mt-2">
-                ⚠️ Insufficient capital to cover peak execution margin.
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="p-5 border-t border-slate-100 bg-slate-50 flex gap-3">
-          <button onClick={onClose} className="flex-1 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
-          <button 
-            disabled={loading || (typeof funds === 'number' && !hasFunds)}
-            onClick={() => onConfirm(lots, broker)} 
-            className="flex-1 px-4 py-2.5 bg-indigo-600 rounded-xl text-sm font-bold text-white shadow-md hover:bg-indigo-700 disabled:opacity-50"
-          >
-            Deploy Live
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function OptionArbitrage() {
   const { toasts, dismiss: dismissToast } = useToastState();
@@ -273,7 +288,7 @@ export default function OptionArbitrage() {
   const testBrokerConnection = async () => {
     setIsTestingBroker(true);
     try {
-      const res = await client.post('/brokers/test-execution', { broker: targetBroker });
+      const res = await client.post('/brokers/test-execution', { broker: executionBroker });
       if (res.data?.ok) {
         showToast(res.data.message, 'success');
       } else {
@@ -385,8 +400,7 @@ export default function OptionArbitrage() {
     }
   };
 
-  const handleExecuteInline = async (opp, lots = 1, overrideBroker = null) => {
-    const targetBroker = overrideBroker || executionBroker;
+  const handleExecuteInline = async (opp, lots = 1) => {
     // Cash Surge/Swing signals are plain stock picks (symbol, no underlying/strike) --
     // route to the equity execution endpoint instead of the options-shaped one.
     const isCashEquity = !opp.underlying && !!opp.symbol;
@@ -397,7 +411,7 @@ export default function OptionArbitrage() {
           strategyType: opp.strategyType || (opp.rsiMomentum != null ? 'CASH_SWING' : 'CASH_SURGE'),
           targetPrice: opp.targetPrice || 0,
           stopLossPrice: opp.stopLossPrice || 0,
-          broker: targetBroker
+          broker: executionBroker
         });
         const data = res.data;
         if (data?.status === 'SUCCESS') {
@@ -425,7 +439,7 @@ export default function OptionArbitrage() {
         futuresPrice: opp.futuresPrice || 0,
         legList: opp.legList || undefined,
         lots: lots,
-        broker: targetBroker
+        broker: executionBroker
       });
       const data = res.data;
       if (data?.status === 'SUCCESS') {
@@ -448,19 +462,7 @@ export default function OptionArbitrage() {
 
   return (
     <div className="w-full max-w-full space-y-5 font-sans text-slate-900">
-      
       <ToastContainer toasts={toasts} dismiss={dismissToast} />
-      {pendingLiveDeploy && (
-        <LiveExecutionModal 
-          opp={pendingLiveDeploy} 
-          onClose={() => setPendingLiveDeploy(null)}
-          onConfirm={(lots, broker) => {
-             handleExecuteInline(pendingLiveDeploy, lots, broker);
-             setPendingLiveDeploy(null);
-          }}
-        />
-      )}
-
 
       {/* Top Header Card */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 md:p-5 shadow-xl border border-slate-800 flex flex-wrap items-center justify-between gap-4">
@@ -511,116 +513,37 @@ export default function OptionArbitrage() {
         </div>
       </div>
 
-      {/* Tab Navigation Bar - Redesigned & Grouped */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm space-y-4">
-        
-        {/* Row 1: Core Arbitrage */}
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-          <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest w-24">
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Core
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {[
-              { key: 'live', label: '⚡ Live Scan' },
-              { key: 'bidparity', label: '🎯 Bid Parity' },
-              { key: 'box', label: '💎 Box Spread' }
-            ].map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border ${
-                  activeTab === tab.key
-                    ? 'bg-indigo-600 text-white border-indigo-700 shadow-md shadow-indigo-200/50'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
-                }`}
-              >
-                <span>{tab.label}</span>
-                {tab.key === 'live' && <span className={`px-1.5 py-0.5 rounded-full text-[10px] border ${activeTab === tab.key ? 'bg-indigo-700 border-indigo-800 text-white' : 'bg-slate-100 border-slate-200 text-slate-600'}`}>{opportunities.length}</span>}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="w-full h-px bg-gradient-to-r from-slate-100 via-slate-200 to-slate-100"></div>
-        
-        {/* Row 2: Spreads & Yield */}
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-          <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest w-24">
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Spreads
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {[
-              { key: 'vertical', label: '📐 Vertical Spread' },
-              { key: 'butterfly', label: '🦋 Butterfly Spread' },
-              { key: 'condorspread', label: '🎯 Condor Spread' },
-              { key: 'ironcondor', label: '🛡️ Iron Condor' }
-            ].map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border ${
-                  activeTab === tab.key
-                    ? 'bg-indigo-600 text-white border-indigo-700 shadow-md shadow-indigo-200/50'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
-                }`}
-              >
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="w-full h-px bg-gradient-to-r from-slate-100 via-slate-200 to-slate-100"></div>
-        
-        {/* Row 3: Equities & System */}
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
-          <div className="flex items-center gap-x-6 gap-y-3 flex-wrap">
-            <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest w-24">
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Equities
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {[
-                { key: 'cashsurge', label: '🔥 Cash Surge' },
-                { key: 'cashswing', label: '🚀 Cash Swing' }
-              ].map(tab => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border ${
-                    activeTab === tab.key
-                      ? 'bg-indigo-600 text-white border-indigo-700 shadow-md shadow-indigo-200/50'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
-                  }`}
-                >
-                  <span>{tab.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-4">
-            <div className="w-px h-8 bg-slate-200 hidden xl:block"></div>
-            <div className="flex items-center gap-2 flex-wrap bg-slate-50 p-1.5 rounded-xl border border-slate-200 shadow-inner">
-              {[
-                { key: 'autotrade', label: '🤖 Auto-Trade' },
-                { key: 'papertrades', label: '📋 Paper Trades' },
-                { key: 'history', label: '📊 History' }
-              ].map(tab => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-                    activeTab === tab.key
-                      ? 'bg-white text-slate-800 shadow-sm border border-slate-200'
-                      : 'text-slate-500 hover:bg-slate-200/50 hover:text-slate-700 border border-transparent'
-                  }`}
-                >
-                  <span>{tab.label}</span>
-                  {tab.key === 'history' && <span className={`px-1.5 py-0.5 rounded-full text-[10px] border ${activeTab === tab.key ? 'bg-slate-100 border-slate-200 text-slate-700' : 'bg-slate-200 border-slate-300 text-slate-600'}`}>{historyItems.length}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* Tab Navigation Bar */}
+      <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {[
+            { key: 'live', label: '⚡ Live Scan' },
+            { key: 'bidparity', label: '🎯 Bid Parity' },
+            { key: 'box', label: '💎 Box Spread' },
+            { key: 'vertical', label: '📐 Vertical Spread' },
+            { key: 'butterfly', label: '🦋 Butterfly Spread' },
+            { key: 'condorspread', label: '🎯 Condor Spread' },
+            { key: 'autotrade', label: '🤖 Auto-Trade' },
+            { key: 'papertrades', label: '📋 Paper Trades' },
+            { key: 'ironcondor', label: '🛡️ Iron Condor' },
+            { key: 'cashsurge', label: '🔥 Cash Surge' },
+            { key: 'cashswing', label: '🚀 Cash Swing' },
+            { key: 'history', label: '📊 History' },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                activeTab === tab.key
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <span>{tab.label}</span>
+              {tab.key === 'live' && <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === tab.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>{opportunities.length}</span>}
+              {tab.key === 'history' && <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === tab.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>{historyItems.length}</span>}
+            </button>
+          ))}
         </div>
 
         <div className="flex items-center gap-2 px-2">
@@ -1701,10 +1624,9 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
                         <td className="px-2 py-1.5 text-center font-bold text-emerald-600">{Math.round(opp.confidence || 85)}%</td>
                         <td className="px-2 py-1.5 text-center">
                           <button
-                            onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp, lots); }}
+                            onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy({...(opp), lots}); }}
                             className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded shadow-sm"
-                          >
-                            ⚡ Execute
+                          >⚡ Deploy
                           </button>
                         </td>
                       </tr>
@@ -1741,10 +1663,9 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
                                     Est Net: +₹{(Math.round(Number(opp.edgeAfterCosts || 350)) * lots).toLocaleString('en-IN')}
                                   </span>
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp, lots); }}
+                                    onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy({...(opp), lots}); }}
                                     className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-md"
-                                  >
-                                    ⚡ Confirm ({executionBroker})
+                                  >⚡ Deploy ({executionBroker})
                                   </button>
                                 </div>
                               </div>
@@ -2047,7 +1968,8 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                         </td>
                         <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{exitStr}</td>
                         <td className="px-2 py-1.5 text-center">
-                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(\1); }}\2>⚡ Deploy
+                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(opp); }}
+                            className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm">⚡ Deploy
                           </button>
                         </td>
                       </tr>
@@ -2357,7 +2279,8 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                         </td>
                         <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{exitStr}</td>
                         <td className="px-2 py-1.5 text-center">
-                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(\1); }}\2>⚡ Deploy
+                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(opp); }}
+                            className="px-2 py-0.5 bg-purple-600 text-white text-[10px] font-bold rounded shadow-sm">⚡ Deploy
                           </button>
                         </td>
                       </tr>
@@ -2731,7 +2654,8 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
                         </td>
                         <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{exitStr}</td>
                         <td className="px-2 py-1.5 text-center">
-                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(\1); }}\2>⚡ Deploy
+                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(opp); }}
+                            className="px-2 py-0.5 bg-teal-600 text-white text-[10px] font-bold rounded shadow-sm">⚡ Deploy
                           </button>
                         </td>
                       </tr>
@@ -3419,7 +3343,15 @@ function ArbitrageSignalPayoffChart({ opp }) {
           <defs>
             <linearGradient id="arbPayoffGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
-              <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
+              <stop offset={`${Math.max(0, Math.min(100, (zeroPx / CHART_H) * 100))}%`} stopColor="#10b981" stopOpacity="0.05" />
+              <stop offset={`${Math.max(0, Math.min(100, (zeroPx / CHART_H) * 100))}%`} stopColor="#ef4444" stopOpacity="0.05" />
+              <stop offset="100%" stopColor="#ef4444" stopOpacity="0.35" />
+            </linearGradient>
+            <linearGradient id="arbLineGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#059669" />
+              <stop offset={`${Math.max(0, Math.min(100, (zeroPx / CHART_H) * 100))}%`} stopColor="#059669" />
+              <stop offset={`${Math.max(0, Math.min(100, (zeroPx / CHART_H) * 100))}%`} stopColor="#dc2626" />
+              <stop offset="100%" stopColor="#dc2626" />
             </linearGradient>
           </defs>
           {yTicks.map((ty, i) => (
@@ -3436,7 +3368,7 @@ function ArbitrageSignalPayoffChart({ opp }) {
           <text x={xToPx(spot)} y={PAD_TOP - 6} textAnchor="middle" fontSize="9" fontWeight="700" fill="#6366f1">
             Spot {Math.round(spot).toLocaleString('en-IN')}
           </text>
-          <polyline fill="none" stroke="#059669" strokeWidth="2.5" strokeLinejoin="round"
+          <polyline fill="none" stroke="url(#arbLineGrad)" strokeWidth="2.5" strokeLinejoin="round"
             points={chart.points.map(p => `${xToPx(p.x)},${yToPx(p.y)}`).join(' ')} />
           {hover && (
             <g>
@@ -3682,7 +3614,8 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
                         </td>
                         <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{exitStr}</td>
                         <td className="px-2 py-1.5 text-center">
-                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(\1); }}\2>⚡ Deploy
+                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(opp); }}
+                            className="px-2 py-0.5 bg-fuchsia-600 text-white text-[10px] font-bold rounded shadow-sm">⚡ Deploy
                           </button>
                         </td>
                       </tr>
@@ -4485,7 +4418,8 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
                         </td>
                         <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{exitStr}</td>
                         <td className="px-2 py-1.5 text-center">
-                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(\1); }}\2>⚡ Deploy
+                          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(opp); }}
+                            className="px-2 py-0.5 bg-cyan-600 text-white text-[10px] font-bold rounded shadow-sm">⚡ Deploy
                           </button>
                         </td>
                       </tr>
@@ -6133,34 +6067,16 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
               matching signals — track paper P&L, exit timestamps, and edge validation
             </p>
           </div>
-
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200 shadow-inner">
-              {[
-                { id: 'TODAY', label: 'Today' },
-                { id: 'YESTERDAY', label: 'Yesterday' },
-                { id: 'WEEK', label: 'This Week' },
-                { id: 'MONTH', label: 'This Month' },
-                { id: 'CUSTOM', label: 'Custom' },
-              ].map(d => (
-                <button
-                  key={d.id}
-                  onClick={() => { setDateRange(d.id); setCurrentPage(1); }}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                    dateRange === d.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700 hover:bg-white'
-                  }`}
-                >
-                  {d.label}
-                </button>
-              ))}
-            </div>
-            {dateRange === 'CUSTOM' && (
-              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-1 shadow-inner">
-                <input type="date" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} className="bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-mono text-slate-700 outline-none focus:border-indigo-500" />
-                <span className="text-[10px] font-bold text-slate-400">TO</span>
-                <input type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} className="bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-mono text-slate-700 outline-none focus:border-indigo-500" />
-              </div>
-            )}
+          <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-lg border border-slate-200">
+            {['TODAY', 'WEEK', 'ALL_TIME'].map(dr => (
+              <button
+                key={dr}
+                onClick={() => setDateRange(dr)}
+                className={`px-3 py-1.5 rounded-md text-[10px] font-black tracking-wide transition-all ${dateRange === dr ? 'bg-slate-800 text-white shadow' : 'text-slate-600 hover:bg-slate-200 hover:text-slate-800'}`}
+              >
+                {dr === 'TODAY' ? 'Today' : dr === 'WEEK' ? 'Last 7 Days' : 'All Time'}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -6173,72 +6089,65 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                 <span className="w-1 h-1 rounded-full bg-slate-300"></span> Strategy
               </label>
               <div className="flex flex-wrap gap-1.5">
-                {[
-                  { id: 'ALL', label: 'All' },
-                  { id: 'PARITY', label: '⚡ Parity' },
-                  { id: 'BOX', label: '💎 Box' },
-                  { id: 'VERTICAL', label: '📐 Vertical' },
-                  { id: 'BUTTERFLY', label: '🦋 Butterfly' },
-                  { id: 'CONDORSPREAD', label: '🎯 Condor' },
-                  { id: 'CALENDAR', label: '⏳ Calendar' },
-                  { id: 'CONDOR', label: '🛡️ Iron Condor' },
-                ].map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => { setStrategyFilter(s.id); setCurrentPage(1); }}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                      strategyFilter === s.id ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    {s.label}
-                  </button>
-                ))}
+                {['ALL', 'BID_PARITY', 'BOX', 'VERTICAL_SPREAD', 'BUTTERFLY_SPREAD', 'CONDOR_SPREAD', 'CALENDAR', 'CONDOR'].map(st => {
+                  const isSel = strategyFilter === st;
+                  return (
+                    <button
+                      key={st}
+                      onClick={() => setStrategyFilter(st)}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all shadow-sm ${
+                        isSel ? 'bg-indigo-600 text-white border-indigo-700 ring-1 ring-indigo-500/50' : 'bg-white border-slate-200 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 border'
+                      }`}
+                    >
+                      {st === 'ALL' ? 'All Strategies' : STRATEGY_LOCK_LABELS[st] || st}
+                    </button>
+                  )
+                })}
               </div>
            </div>
            )}
 
            <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                <span className="w-1 h-1 rounded-full bg-slate-300"></span> Underlying
+                <span className="w-1 h-1 rounded-full bg-slate-300"></span> Status
               </label>
               <div className="flex flex-wrap gap-1.5">
-                {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
-                  <button
-                    key={u}
-                    onClick={() => { setUnderlyingFilter(u); setCurrentPage(1); }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                      underlyingFilter === u ? 'bg-purple-600 text-white border-purple-700 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    {u}
-                  </button>
-                ))}
+                {['ALL', 'OPEN', 'CLOSED_PROFIT', 'CLOSED_LOSS', 'ORPHANED'].map(st => {
+                  const isSel = statusFilter === st;
+                  return (
+                    <button
+                      key={st}
+                      onClick={() => setStatusFilter(st)}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all shadow-sm ${
+                        isSel ? 'bg-slate-800 text-white border-slate-900 ring-1 ring-slate-900/50' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800 border'
+                      }`}
+                    >
+                      {st === 'ALL' ? 'All Status' : st === 'CLOSED_PROFIT' ? '🟢 Target Hit' : st === 'CLOSED_LOSS' ? '🔴 Stop Loss' : st === 'ORPHANED' ? '⚠️ Orphaned' : '🟢 Open'}
+                    </button>
+                  )
+                })}
               </div>
            </div>
 
            <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                <span className="w-1 h-1 rounded-full bg-slate-300"></span> Status
+                <span className="w-1 h-1 rounded-full bg-slate-300"></span> Underlying Asset
               </label>
               <div className="flex flex-wrap gap-1.5">
-                {[
-                  { id: 'ALL', label: 'All' },
-                  { id: 'RUNNING', label: '🟢 Running' },
-                  { id: 'DETECTED', label: '🔵 Detected' },
-                  { id: 'EXITED', label: '🔴 Exited' },
-                  { id: 'MISSED', label: '⚪ Missed' },
-                  { id: 'FAILED', label: '❌ Failed' },
-                ].map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => { setStatusFilter(s.id); setCurrentPage(1); }}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                      statusFilter === s.id ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    {s.label}
-                  </button>
-                ))}
+                {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'SENSEX', 'BANKEX'].map(u => {
+                  const isSel = underlyingFilter === u;
+                  return (
+                    <button
+                      key={u}
+                      onClick={() => setUnderlyingFilter(u)}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all shadow-sm ${
+                        isSel ? 'bg-blue-600 text-white border-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-blue-700 border'
+                      }`}
+                    >
+                      {u === 'ALL' ? 'All Assets' : u}
+                    </button>
+                  )
+                })}
               </div>
            </div>
         </div>
@@ -6246,79 +6155,49 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
         {/* Full width bottom row for edge filter */}
         <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-5">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                  <span className="w-1 h-1 rounded-full bg-slate-300"></span> Minimum Target Edge
-                </label>
-                <div className="flex flex-wrap items-center gap-2">
-                    {[
-                      { val: 0, label: 'All Edges' },
-                      { val: 100, label: '> ₹100' },
-                      { val: 300, label: '> ₹300 (Default)' },
-                      { val: 500, label: '> ₹500' },
-                      { val: 1000, label: '> ₹1,000' }
-                    ].map(ef => (
-                      <button
-                        key={ef.val}
-                        onClick={() => { setMinEdgeFilter(ef.val); setCurrentPage(1); }}
-                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border flex items-center gap-1.5 ${
-                          minEdgeFilter === ef.val ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                        }`}
-                      >
-                        {ef.label}
-                        <span className={`px-1 rounded-sm text-[9px] ${minEdgeFilter === ef.val ? 'bg-emerald-700/50 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                          {historyItems.filter(i => {
-                            if (dateRange === 'TODAY' && i.scanTime < new Date().setHours(0,0,0,0)) return false;
-                            if (dateRange === 'YESTERDAY') {
-                              const yest = new Date(); yest.setDate(yest.getDate() - 1); yest.setHours(0,0,0,0);
-                              if (i.scanTime < yest.getTime() || i.scanTime > new Date().setHours(0,0,0,0)) return false;
-                            }
-                            if (dateRange === 'WEEK' && i.scanTime < new Date().getTime() - 7*86400000) return false;
-                            if (dateRange === 'MONTH' && i.scanTime < new Date().getTime() - 30*86400000) return false;
-                            if (dateRange === 'CUSTOM') {
-                              const s = customStartDate ? new Date(customStartDate).getTime() : 0;
-                              const e = customEndDate ? new Date(customEndDate).getTime() + 86400000 : Infinity;
-                              if (i.scanTime < s || i.scanTime > e) return false;
-                            }
-                            if (strategyFilter !== 'ALL' && i.strategyType !== strategyFilter && i.type !== strategyFilter) return false;
-                            if (underlyingFilter !== 'ALL' && i.underlying !== underlyingFilter) return false;
-                            const stat = i.status || 'DETECTED';
-                            const pnl = i.currentPnl || i.pnlAfterCosts || 0;
-                            const isRun = stat !== 'FAILED' && stat !== 'MISSED' && stat !== 'EXPIRED' && !i.exitTime;
-                            const isEx = i.exitTime != null;
-                            if (statusFilter === 'RUNNING' && !isRun) return false;
-                            if (statusFilter === 'EXITED' && !isEx) return false;
-                            if (statusFilter === 'DETECTED' && stat !== 'DETECTED') return false;
-                            if (statusFilter === 'MISSED' && stat !== 'MISSED') return false;
-                            if (statusFilter === 'FAILED' && stat !== 'FAILED') return false;
-                            const edge = i.edgeAfterCosts || i.boxEdgeInr || i.netEdge || 0;
-                            return edge >= ef.val;
-                          }).length}
-                        </span>
-                      </button>
-                    ))}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Min Edge:</span>
+                <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-200 shadow-inner">
+                  {[
+                    { val: 0, label: 'All Edges' },
+                    { val: 100, label: '> ₹100' },
+                    { val: 300, label: '> ₹300 (Default)' },
+                    { val: 500, label: '> ₹500' },
+                    { val: 1000, label: '> ₹1,000' }
+                  ].map(ef => (
+                    <button
+                      key={ef.val}
+                      onClick={() => setMinEdgeFilter(ef.val)}
+                      className={`px-3 py-1 rounded-lg text-[10px] font-black tracking-wide transition-all ${
+                        minEdgeFilter === ef.val 
+                          ? 'bg-emerald-500 text-white shadow-sm ring-1 ring-emerald-600/50' 
+                          : 'text-slate-600 hover:bg-slate-200 hover:text-slate-800'
+                      }`}
+                    >
+                      {ef.label}
+                    </button>
+                  ))}
                 </div>
+              </div>
             </div>
             
             <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200 shadow-inner">
               <span className="text-[10px] font-bold text-slate-500 uppercase px-1">Custom: ₹</span>
               <input 
-                type="text" 
+                type="number" 
                 value={customMinEdge} 
                 onChange={(e) => {
                   setCustomMinEdge(e.target.value);
-                  const parsed = parseInt(e.target.value.replace(/,/g, ''));
-                  if (!isNaN(parsed) && parsed >= 0) {
-                    setMinEdgeFilter(parsed);
-                    setCurrentPage(1);
-                  }
+                  const parsed = parseInt(e.target.value, 10);
+                  if (!isNaN(parsed)) setMinEdgeFilter(parsed);
                 }}
-                className="w-20 bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-700 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200" 
+                className="w-20 px-2 py-1 text-xs border border-slate-300 rounded-lg font-bold text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all shadow-sm"
+                placeholder="e.g. 250"
               />
             </div>
         </div>
       </div>
-      
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
+<div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
         {histLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Loading trade analytics...</div>
         ) : filteredItems.length === 0 ? (
@@ -6437,7 +6316,9 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                         <td className="px-1.5 py-1.5 text-center font-mono text-[10px] text-slate-500 truncate">{exitTimeFormatted}</td>
                         <td className="px-1.5 py-1.5 text-center whitespace-nowrap">
                           <button
-                            onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(\1); }}\2>⚡ Deploy
+                            onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(item); }}
+                            className="px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold rounded shadow-sm"
+                          >⚡ Deploy
                           </button>
                         </td>
                       </tr>
@@ -6450,13 +6331,38 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
                                 {item.legs || `${item.action} on ${item.underlying} ${item.strike}`}
                               </p>
-                              {(['BUTTERFLY_SPREAD', 'BOX_SPREAD', 'VERTICAL_SPREAD', 'CONDOR_SPREAD', 'IRON_CONDOR'].includes(item.strategyType)
-                                || ['BUTTERFLY_SPREAD', 'BOX_SPREAD', 'VERTICAL_SPREAD', 'CONDOR_SPREAD', 'IRON_CONDOR'].includes(item.type))
-                                && Array.isArray(item.legList) && item.legList.length >= 2 && (
-                                <ArbitrageSignalPayoffChart opp={item} />
-                              )}
+                              {(() => {
+                                let oppToPass = item;
+                                if ((!Array.isArray(item.legList) || item.legList.length < 2) && typeof item.legs === 'string') {
+                                  // Synthesize legList from the legs string
+                                  // e.g. BUY 15000 CE @ 17.0 | SELL 15000 PE @ 150.6 | SELL MIDCPNIFTY FUT @ 14876.7
+                                  const legStrs = item.legs.split('|').map(s => s.trim()).filter(Boolean);
+                                  const legList = legStrs.map(ls => {
+                                    let side = ls.includes('BUY') ? 'BUY' : 'SELL';
+                                    let type = ls.includes('CE') ? 'CE' : ls.includes('PE') ? 'PE' : 'FUT';
+                                    let priceMatch = ls.match(/@\s+([\d.]+)/);
+                                    let price = priceMatch ? Number(priceMatch[1]) : 0;
+                                    let strikeMatch = type !== 'FUT' ? ls.match(/(\d+(?:\.\d+)?)\s+(?:CE|PE)/) : null;
+                                    let strike = strikeMatch ? Number(strikeMatch[1]) : (type === 'FUT' ? 0 : item.strike);
+                                    
+                                    if (price > 0) {
+                                      return { side, optionType: type, strike, price, qty: 1 };
+                                    }
+                                    return null;
+                                  }).filter(Boolean);
+                                  
+                                  if (legList.length >= 2) {
+                                    oppToPass = { ...item, legList };
+                                  }
+                                }
+                                
+                                if (Array.isArray(oppToPass.legList) && oppToPass.legList.length >= 2) {
+                                  return <ArbitrageSignalPayoffChart opp={oppToPass} />;
+                                }
+                                return null;
+                              })()}
                               <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(\1); }}\2>⚡ Deploy ({executionBroker})
+                                <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(item); }} className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold shadow-md">⚡ Deploy ({executionBroker})
                                 </button>
                               </div>
                             </div>
