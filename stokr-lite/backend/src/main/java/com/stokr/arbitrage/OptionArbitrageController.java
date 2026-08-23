@@ -660,7 +660,8 @@ public class OptionArbitrageController {
         double targetPrice = body.get("targetPrice") instanceof Number n ? n.doubleValue() : 0;
         double stopLossPrice = body.get("stopLossPrice") instanceof Number n ? n.doubleValue() : 0;
         String broker = (String) body.getOrDefault("broker", "PAPER");
-        Map<String, Object> result = cashExecutionService.execute(symbol, strategyType, targetPrice, stopLossPrice, broker);
+        double capital = body.get("capital") instanceof Number n ? n.doubleValue() : 25000.0;
+        Map<String, Object> result = cashExecutionService.execute(symbol, strategyType, targetPrice, stopLossPrice, broker, capital);
         addAuditLog("CASH_TRADE", result.get("status") != null ? result.get("status").toString() : "ERROR",
             "Cash trade " + symbol + " via " + broker + ": " + result.get("message"));
         return ResponseEntity.ok(result);
