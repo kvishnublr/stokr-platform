@@ -113,10 +113,16 @@ public class OptionArbAutoExecService {
     }
 
     public Map<String, Object> getSettings() {
-        return new LinkedHashMap<>(autoExecSettings.getOrDefault("global", Map.of()));
+        return getSettings("PAPER");
+    }
+    public Map<String, Object> getSettings(String mode) {
+        String key = "LIVE".equalsIgnoreCase(mode) ? "LIVE" : "PAPER";
+        return new LinkedHashMap<>(autoExecSettings.getOrDefault(key, Map.of()));
     }
 
-    public void updateSetting(String key, String value) {
+    public void updateSetting(String mode, String key, String value) {
+        String profileKey = "LIVE".equalsIgnoreCase(mode) ? "LIVE" : "PAPER";
+        Map<String, Object> settings = autoExecSettings.computeIfAbsent(profileKey, k -> new ConcurrentHashMap<>());
         Map<String, Object> s = autoExecSettings.computeIfAbsent("global", k -> new LinkedHashMap<>());
         if ("enabled".equals(key)) s.put("enabled", Boolean.parseBoolean(value));
         else if (key.endsWith("Enabled")) s.put(key, Boolean.parseBoolean(value));
@@ -419,7 +425,11 @@ public class OptionArbAutoExecService {
     }
 
     public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) {
-        Map<String, Object> settings = getSettings();
+        evaluateAndExecuteForMode(newOpps, "PAPER", autoExecSettings.getOrDefault("PAPER", Map.of()));
+        evaluateAndExecuteForMode(newOpps, "LIVE", autoExecSettings.getOrDefault("LIVE", Map.of()));
+    }
+    
+    private void evaluateAndExecuteForMode(List<OptionArbOpportunity> newOpps, String mode, Map<String, Object> settings) {
         if (!Boolean.TRUE.equals(settings.get("enabled"))) return;
 
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));

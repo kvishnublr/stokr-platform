@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import ErrorBoundary from '../components/ErrorBoundary';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
 
@@ -152,7 +153,7 @@ function ToastCard({ t, dismiss }) {
 }
 
 
-function LiveExecutionModal({ opp, onClose, onConfirm }) {
+function LiveExecutionModal({ opp, executionBroker, onClose, onConfirm }) {
   const [loading, setLoading] = useState(true);
   const [funds, setFunds] = useState(null);
   
@@ -160,7 +161,7 @@ function LiveExecutionModal({ opp, onClose, onConfirm }) {
     let active = true;
     const fetchFunds = async () => {
       try {
-        const broker = opp.broker || 'PAPER';
+        const broker = opp.broker || executionBroker || 'PAPER';
         const res = await client.get('/option-arbitrage/funds', { params: { broker } });
         if (active) {
           setFunds(res.data);
@@ -184,7 +185,7 @@ function LiveExecutionModal({ opp, onClose, onConfirm }) {
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
         <div className="bg-slate-900 px-5 py-4 flex items-center justify-between">
           <h3 className="text-white font-black text-lg flex items-center gap-2">
-            <span>⚡</span> Deploy Live Arbitrage
+            {executionBroker === "PAPER" ? <span>📝 Deploy Paper Trade</span> : <span>⚡ Deploy Live Arbitrage</span>}
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition">✖</button>
         </div>
@@ -247,7 +248,7 @@ function LiveExecutionModal({ opp, onClose, onConfirm }) {
             disabled={loading || isShortfall}
             className="px-5 py-2 font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
           >
-            Confirm Deployment
+            {executionBroker === "PAPER" ? "Confirm Paper Trade" : "Confirm Live Deployment"}
           </button>
         </div>
       </div>
@@ -278,10 +279,31 @@ export default function OptionArbitrage() {
   const [underlyings, setUnderlyings] = useState(['ALL']);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [executionBroker, setExecutionBroker] = useState('PAPER');
+  const [liveBrokerPref, setLiveBrokerPref] = useState('ZERODHA');
+  
+  const handleTradeModeChange = (mode) => {
+    if (mode === 'PAPER') {
+      changeExecutionBroker('PAPER');
+    } else {
+      changeExecutionBroker(liveBrokerPref);
+    }
+  };
+  
+  const handleLiveBrokerChange = (broker) => {
+    setLiveBrokerPref(broker);
+    changeExecutionBroker(broker);
+  };
   const [pendingLiveDeploy, setPendingLiveDeploy] = useState(null);
   // Child views (BidParityView, HistoryView, each spread view) fire deploy requests through
   // the module-level emitter rather than a threaded prop -- see requestLiveDeploy above.
-  useLiveDeployRequests(setPendingLiveDeploy);
+  // Bypass modal entirely for Paper trades
+  useLiveDeployRequests((opp) => {
+    if (executionBroker === 'PAPER') {
+      handleExecuteInline(opp, 1);
+    } else {
+      setPendingLiveDeploy(opp);
+    }
+  });
   const [isTestingBroker, setIsTestingBroker] = useState(false);
   const [maxSignals, setMaxSignals] = useState(() => {
     const saved = localStorage.getItem('stokr_max_signals');
@@ -484,6 +506,18 @@ export default function OptionArbitrage() {
     }
   };
 
+
+  // PREFETCH / BACKGROUND SCANNING
+  // The user requested that all scanners run continuously in the background so tabs load instantly.
+  const bgInterval = autoRefresh ? 30000 : false;
+  useQuery({ queryKey: ['bid-parity-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/parity/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
+  useQuery({ queryKey: ['box-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/box-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
+  useQuery({ queryKey: ['vertical-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/vertical-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
+  useQuery({ queryKey: ['butterfly-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/butterfly-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
+  useQuery({ queryKey: ['condor-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/condor-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
+  useQuery({ queryKey: ['iron-condor-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/iron-condor/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
+  useQuery({ queryKey: ['cash-surge-scan'], queryFn: async () => (await client.get('/option-arbitrage/cash-trade/surge-scan')).data, refetchInterval: bgInterval });
+  useQuery({ queryKey: ['cash-momentum-scan'], queryFn: async () => (await client.get('/option-arbitrage/cash-trade/momentum-scan')).data, refetchInterval: bgInterval });
   return (
     <div className="w-full max-w-full space-y-5 font-sans text-slate-900">
       <ToastContainer toasts={toasts} dismiss={dismissToast} />
@@ -491,10 +525,11 @@ export default function OptionArbitrage() {
       {pendingLiveDeploy && (
         <LiveExecutionModal
           opp={pendingLiveDeploy}
+          executionBroker={executionBroker}
           onClose={() => setPendingLiveDeploy(null)}
-          onConfirm={(oppToExecute, lots) => {
+          onConfirm={() => {
             setPendingLiveDeploy(null);
-            handleExecuteInline(oppToExecute, lots);
+            handleExecuteInline(pendingLiveDeploy, 1);
           }}
         />
       )}
@@ -521,22 +556,37 @@ export default function OptionArbitrage() {
             <span className="font-bold text-white">Zerodha Kite Connect</span>
           </div>
 
-          <div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs">
-            <span className="text-slate-300 font-medium">Execution Broker:</span>
-            <select
-              value={executionBroker}
-              onChange={(e) => changeExecutionBroker(e.target.value)}
-              className="bg-slate-900 text-amber-300 font-bold border border-slate-700 rounded-lg px-2 py-1 outline-none text-xs"
-            >
-              <option value="PAPER">📝 Paper Trading (Virtual ₹1 Cr)</option>
-              <option value="NAVIA">⚡ Navia Markets</option>
-              <option value="MOTILALOSWAL">🟣 Motilal Oswal</option>
-              <option value="ICICI_DIRECT">🏦 ICICI Direct Breeze</option>
-              <option value="ZERODHA">🚀 Zerodha Kite</option>
-              <option value="DHAN">🎯 DhanHQ</option>
-              <option value="FYERS">🔥 Fyers API</option>
-            </select>
-          </div>
+          {/* Trade Mode Toggle */}
+<div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs">
+  <span className="text-slate-300 font-medium">Trade Mode:</span>
+  <select
+    value={executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'}
+    onChange={(e) => handleTradeModeChange(e.target.value)}
+    className="bg-slate-900 text-amber-300 font-bold border border-slate-700 rounded-lg px-2 py-1 outline-none text-xs"
+  >
+    <option value="PAPER">📝 Paper Trading</option>
+    <option value="LIVE">🔴 Live Execution</option>
+  </select>
+</div>
+
+{/* Live Broker Selection */}
+{executionBroker !== 'PAPER' && (
+<div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs transition-all">
+  <span className="text-red-300 font-medium">Live Broker:</span>
+  <select
+    value={executionBroker}
+    onChange={(e) => handleLiveBrokerChange(e.target.value)}
+    className="bg-red-900/30 text-red-300 font-bold border border-red-700/50 rounded-lg px-2 py-1 outline-none text-xs"
+  >
+    <option value="ZERODHA">Zerodha Kite Connect</option>
+    <option value="NAVIA">Navia Markets</option>
+    <option value="MOTILALOSWAL">Motilal Oswal</option>
+    <option value="ICICIDIRECT">ICICI Direct Breeze</option>
+    <option value="DHAN">DhanHQ</option>
+    <option value="FYERS">Fyers API</option>
+  </select>
+</div>
+)}
 
           <button
             onClick={testBrokerConnection}
@@ -652,7 +702,7 @@ export default function OptionArbitrage() {
         {activeTab === 'ironcondor' && <IronCondorView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
         {activeTab === 'cashsurge' && <CashSurgeView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
         {activeTab === 'cashswing' && <CashSwingView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
-        {activeTab === 'history' && <HistoryView calendarOpportunities={calendarOpportunities} handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} underlyings={underlyings} />}
+        {activeTab === 'history' && <ErrorBoundary><HistoryView calendarOpportunities={calendarOpportunities} handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} underlyings={underlyings} /></ErrorBoundary>}
       </div>
     </div>
   );
@@ -664,7 +714,7 @@ function AutoExecSettingsPanel() {
   const [saving, setSaving] = useState(false);
 
   const { data } = useQuery({
-    queryKey: ['autoExecSettings'],
+    queryKey: ['autoExecSettings', executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'],
     queryFn: async () => {
       const res = await client.get('/option-arbitrage/auto-execute/settings');
       return res.data;
@@ -677,7 +727,7 @@ function AutoExecSettingsPanel() {
   const updateSetting = async (key, value) => {
     setSaving(true);
     try {
-      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}`);
+      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}&mode=${executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'}`);
       setSettings(prev => ({ ...prev, [key]: value }));
       showToast(`Setting updated: ${key} = ${value}`, 'success');
     } catch (e) {
@@ -818,8 +868,8 @@ function AutoRollSettingsPanel() {
   const [settings, setSettings] = useState(null);
 
   const { data } = useQuery({
-    queryKey: ['autoExecSettings'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+    queryKey: ['autoExecSettings', executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'],
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
     refetchInterval: 30000,
   });
 
@@ -827,7 +877,7 @@ function AutoRollSettingsPanel() {
 
   const updateSetting = async (key, value) => {
     try {
-      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}`);
+      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}&mode=${executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'}`);
       setSettings(prev => ({ ...prev, [key]: value }));
       showToast(`Setting updated: ${key} = ${value}`, 'success');
     } catch (e) {
@@ -917,12 +967,12 @@ function AutoRollSettingsPanel() {
    sub-tab. Each strategy (Bid Parity/Box/Vertical/Butterfly/Condor/Iron Condor) reads/writes
    its own settings-key prefix (e.g. "box" -> boxNiftyEnabled/boxNiftyMinEdge/boxNiftyLots),
    completely independent of every other strategy's thresholds for the same underlying. */
-function StrategyAutoTradePanel({ prefix, label, accent = 'indigo' }) {
+function StrategyAutoTradePanel({ prefix, label, accent = 'indigo', executionBroker }) {
   const [settings, setSettings] = useState(null);
 
   const { data } = useQuery({
-    queryKey: ['autoExecSettings'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+    queryKey: ['autoExecSettings', executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'],
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
     refetchInterval: 30000,
   });
 
@@ -930,7 +980,7 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo' }) {
 
   const updateSetting = async (key, value) => {
     try {
-      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}`);
+      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}&mode=${executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'}`);
       setSettings(prev => ({ ...prev, [key]: value }));
       showToast(`Setting updated: ${key} = ${value}`, 'success');
     } catch (e) {
@@ -969,9 +1019,27 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo' }) {
       </div>
 
       <div className="p-4 space-y-3">
-        <p className="text-[10px] text-slate-400">
-          Requires the master Engine switch (main Auto-Trade tab) to be ON, with a live broker selected there.
-        </p>
+        <div className="flex flex-col gap-2 mb-3">
+  <div className="flex items-center justify-between">
+    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wider uppercase bg-slate-100 border border-slate-200">
+      <span className="text-slate-500">Configuring Profile:</span>
+      <span className={executionBroker === 'PAPER' ? 'text-blue-600' : 'text-red-600'}>
+        {executionBroker === 'PAPER' ? '📝 Paper Trading' : `🔴 Live Execution (${executionBroker})`}
+      </span>
+    </div>
+    
+    <div className="flex items-center gap-2">
+      <label className="text-[10px] font-bold text-slate-500 uppercase">Max Overall Lots</label>
+      <input type="number" value={settings[prefix + 'MaxLots'] ?? 3} min={1} max={20}
+        onChange={(e) => setSettings(prev => ({ ...prev, [prefix + 'MaxLots']: Number(e.target.value) }))}
+        onBlur={(e) => updateSetting(prefix + 'MaxLots', e.target.value)}
+        className="w-16 px-2 py-1 text-xs font-mono font-bold border border-slate-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-indigo-500" />
+    </div>
+  </div>
+  <p className="text-[10px] text-slate-400">
+    Requires the master Engine switch (main Auto-Trade tab) to be ON.
+  </p>
+</div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {underlyings.map(u => {
             const enabled = !!settings[u.key + 'Enabled'];
@@ -1055,8 +1123,10 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   const isToday = (p) => typeof p.enteredAt === 'string' && p.enteredAt.slice(0, 10) === todayIST;
 
-  const allPositions = (data?.positions || []).filter(isToday);
   const isPaper = (p) => !p.broker || p.broker === 'PAPER';
+  // LIVE positions are actual money and must ALWAYS be shown in My Positions as long as they are OPEN.
+  // Only PAPER positions should be filtered by today to avoid cluttering with stale simulated trades.
+  const allPositions = (data?.positions || []).filter(p => !isPaper(p) || isToday(p));
   const positions = brokerFilter === 'ALL' ? allPositions
     : brokerFilter === 'PAPER' ? allPositions.filter(isPaper)
     : allPositions.filter(p => !isPaper(p));
@@ -1291,6 +1361,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
    instead of discovered by surprise later. */
 function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
   const [collapsed, setCollapsed] = useState(!defaultExpanded);
+  const [expandedGroupId, setExpandedGroupId] = useState(null);
   const broker = executionBroker && executionBroker !== 'PAPER' ? executionBroker : 'ZERODHA';
 
   const { data, refetch, isFetching } = useQuery({
@@ -1304,6 +1375,88 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
   });
 
   const positions = data?.positions || [];
+
+  // Group positions by Underlying + Expiry
+  const groups = React.useMemo(() => {
+    const map = new Map();
+    positions.forEach(p => {
+      // e.g. FINNIFTY26AUG26150CE
+      const m = p.symbol.match(/^([A-Z]+)(\d{2}[A-Z]{3}|\d{2}[A-Z]{3}\d{2}|\d{5,})(\d+)(CE|PE)$/);
+      let underlying = p.symbol;
+      let expiry = 'UNKNOWN';
+      let parsedStrike = 0;
+      let parsedOptionType = 'CE';
+      
+      if (m) {
+        underlying = m[1];
+        expiry = m[2];
+        parsedStrike = parseInt(m[3], 10);
+        parsedOptionType = m[4];
+      }
+
+      const groupId = `${underlying}_${expiry}`;
+      if (!map.has(groupId)) {
+        map.set(groupId, {
+          id: groupId,
+          underlying,
+          expiry,
+          positions: [],
+          unrealizedPnl: 0,
+          realizedPnl: 0
+        });
+      }
+      
+      const group = map.get(groupId);
+      group.positions.push({
+        ...p,
+        parsedStrike,
+        parsedOptionType
+      });
+      group.unrealizedPnl += (p.unrealizedPnl || 0);
+      group.realizedPnl += (p.realizedPnl || 0);
+    });
+    return Array.from(map.values());
+  }, [positions]);
+
+  const handleGroupExit = async (group) => {
+    if (!window.confirm(`Close all positions for ${group.underlying} ${group.expiry} at MARKET?`)) return;
+    
+    const legList = group.positions.map(p => {
+      const isLong = p.qty > 0;
+      return {
+        strike: p.parsedStrike,
+        optionType: p.parsedOptionType,
+        side: isLong ? 'SELL' : 'BUY', // Opposite to close
+        qty: Math.abs(p.qty),
+        price: 0,
+        symbol: p.symbol
+      };
+    });
+
+    const exitOpp = {
+      underlying: group.underlying,
+      strategyType: 'MANUAL_EXIT',
+      legList: legList,
+      description: `Exit ${group.underlying} ${group.expiry} Group`,
+      edgeAfterCosts: 0
+    };
+
+    try {
+      const res = await client.post('/option-arbitrage/paper-trade/execute', {
+        ...exitOpp,
+        lots: 1,
+        broker: broker
+      });
+      if (res.data?.status === 'SUCCESS') {
+        alert('Exit orders placed successfully!');
+        refetch();
+      } else {
+        alert('Failed to place exit orders: ' + res.data?.message);
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+  };
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1329,40 +1482,106 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
         <div className="p-8 text-center text-slate-400 text-sm font-semibold">No open positions at {broker} right now</div>
       )}
 
-      {!collapsed && positions.length > 0 && (
+      {!collapsed && groups.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-[11px] text-left">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold">
               <tr>
-                <th className="px-3 py-2">Symbol</th>
-                <th className="px-3 py-2">Exchange</th>
-                <th className="px-3 py-2">Product</th>
-                <th className="px-3 py-2 text-right">Qty</th>
-                <th className="px-3 py-2 text-right">Avg Price</th>
-                <th className="px-3 py-2 text-right">Last Price</th>
-                <th className="px-3 py-2 text-right">Unrealized P&amp;L</th>
-                <th className="px-3 py-2 text-right">Realized P&amp;L</th>
+                <th className="px-3 py-2">Set / Underlying</th>
+                <th className="px-3 py-2">Expiry</th>
+                <th className="px-3 py-2 text-center">Legs</th>
+                <th className="px-3 py-2 text-right">Unrealized P&L</th>
+                <th className="px-3 py-2 text-right">Realized P&L</th>
+                <th className="px-3 py-2 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {positions.map((p, i) => (
-                <tr key={i} className="hover:bg-slate-50">
-                  <td className="px-3 py-2 font-bold text-slate-800">{p.symbol}</td>
-                  <td className="px-3 py-2 text-slate-500">{p.exchange}</td>
-                  <td className="px-3 py-2">
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold border bg-slate-100 text-slate-600 border-slate-300">{p.productType}</span>
-                  </td>
-                  <td className={`px-3 py-2 text-right font-mono font-bold ${p.quantity >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{p.quantity}</td>
-                  <td className="px-3 py-2 text-right font-mono">₹{Number(p.avgPrice || 0).toFixed(2)}</td>
-                  <td className="px-3 py-2 text-right font-mono">₹{Number(p.lastPrice || 0).toFixed(2)}</td>
-                  <td className={`px-3 py-2 text-right font-mono font-bold ${Number(p.unrealizedPnl || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    ₹{Math.round(Number(p.unrealizedPnl || 0)).toLocaleString('en-IN')}
-                  </td>
-                  <td className={`px-3 py-2 text-right font-mono font-bold ${Number(p.realizedPnl || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    ₹{Math.round(Number(p.realizedPnl || 0)).toLocaleString('en-IN')}
-                  </td>
-                </tr>
-              ))}
+              {groups.map((g) => {
+                const isExpanded = expandedGroupId === g.id;
+                
+                // Build a fake opp for the payoff chart
+                const fakeOpp = {
+                  underlying: g.underlying,
+                  strategyType: 'BOX_SPREAD', // Force it to draw payoff chart
+                  lotSize: 1, // Qty is absolute
+                  legList: g.positions.map(p => ({
+                    strike: p.parsedStrike,
+                    optionType: p.parsedOptionType,
+                    side: p.qty > 0 ? 'BUY' : 'SELL',
+                    qty: Math.abs(p.qty),
+                    price: p.avgPrice
+                  }))
+                };
+
+                return (
+                  <React.Fragment key={g.id}>
+                    <tr onClick={() => setExpandedGroupId(isExpanded ? null : g.id)}
+                      className={`hover:bg-slate-50 cursor-pointer ${isExpanded ? 'bg-fuchsia-50/60' : ''}`}>
+                      <td className="px-3 py-2 font-bold text-slate-800 flex items-center gap-2">
+                        <span className="text-slate-400 text-[10px]">{isExpanded ? '▼' : '▶'}</span>
+                        {g.underlying}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-slate-600">{g.expiry}</td>
+                      <td className="px-3 py-2 text-center">
+                        <span className="px-2 py-0.5 bg-slate-100 rounded-full font-bold text-slate-600">{g.positions.length}</span>
+                      </td>
+                      <td className={`px-3 py-2 text-right font-bold ${g.unrealizedPnl > 0 ? 'text-emerald-600' : g.unrealizedPnl < 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                        {g.unrealizedPnl > 0 ? '+' : ''}{g.unrealizedPnl.toFixed(2)}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-bold ${g.realizedPnl > 0 ? 'text-emerald-600' : g.realizedPnl < 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                        {g.realizedPnl > 0 ? '+' : ''}{g.realizedPnl.toFixed(2)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                         <button onClick={(e) => { e.stopPropagation(); handleGroupExit(g); }} 
+                           className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg font-bold text-[10px] shadow-sm transition-all transform active:scale-95">
+                           EXIT SET
+                         </button>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan="6" className="p-0 bg-slate-50 border-b-2 border-indigo-100">
+                          <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+                              <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">Individual Legs</h4>
+                              <table className="w-full text-[10px] text-left">
+                                <thead className="bg-slate-50 text-slate-500">
+                                  <tr>
+                                    <th className="px-2 py-1">Symbol</th>
+                                    <th className="px-2 py-1 text-right">Qty</th>
+                                    <th className="px-2 py-1 text-right">Avg</th>
+                                    <th className="px-2 py-1 text-right">LTP</th>
+                                    <th className="px-2 py-1 text-right">P&L</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {g.positions.map((p, i) => (
+                                    <tr key={i}>
+                                      <td className="px-2 py-1 font-mono font-bold text-slate-700">{p.symbol}</td>
+                                      <td className={`px-2 py-1 text-right font-bold ${p.qty > 0 ? 'text-blue-600' : 'text-rose-600'}`}>{p.qty > 0 ? '+'+p.qty : p.qty}</td>
+                                      <td className="px-2 py-1 text-right">{p.avgPrice}</td>
+                                      <td className="px-2 py-1 text-right">{p.lastPrice}</td>
+                                      <td className={`px-2 py-1 text-right font-bold ${p.unrealizedPnl > 0 ? 'text-emerald-600' : p.unrealizedPnl < 0 ? 'text-red-600' : ''}`}>
+                                        {p.unrealizedPnl}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                            <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+                               <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">Set Payoff Chart</h4>
+                               <div className="h-48">
+                                 <ArbitrageSignalPayoffChart opp={fakeOpp} />
+                               </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1758,6 +1977,12 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const [histPage, setHistPage] = useState(0);
   const PAGE_SIZE = 200;
 
+  const { data: livePositionsData } = useQuery({
+    queryKey: ['live-positions-global-cache'],
+    queryFn: async () => (await client.get('/option-arbitrage/live-positions')).data,
+    refetchInterval: 5000
+  });
+
   const { data: liveData, isLoading } = useQuery({
     queryKey: ['bid-parity-scan', underlying],
     queryFn: async () => {
@@ -1869,9 +2094,9 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       </div>
 
       {subTab === 'autotrade' ? (
-        <StrategyAutoTradePanel prefix="bidParity" label="Bid Parity" accent="indigo" />
+        <StrategyAutoTradePanel executionBroker={executionBroker} prefix="bidParity" label="Bid Parity" accent="indigo" />
       ) : subTab === 'history' ? (
-        <HistoryView lockedStrategy="PARITY" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
+        <ErrorBoundary><HistoryView lockedStrategy="PARITY" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} /></ErrorBoundary>
       ) : (
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -2024,7 +2249,89 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                                   {Object.entries(opp.costBreakdown).map(([k,v]) => <span key={k}>{k}: ₹{v}</span>)}
                                 </div>
                               )}
-                              <ArbitrageSignalPayoffChart opp={opp} />
+                              
+                                {(() => {
+                                  let oppToPass = opp;
+                                  if ((!Array.isArray(opp.legList) || opp.legList.length < 2) && typeof opp.legs === 'string') {
+                                    const legStrs = opp.legs.split('|').map(s => s.trim()).filter(Boolean);
+                                    const legList = legStrs.map(ls => {
+                                      let side = ls.includes('BUY') ? 'BUY' : 'SELL';
+                                      let type = ls.includes('CE') ? 'CE' : ls.includes('PE') ? 'PE' : 'FUT';
+                                      let priceMatch = ls.match(/@\s+([\d.]+)/);
+                                      let price = priceMatch ? Number(priceMatch[1]) : 0;
+                                      let strikeMatch = type !== 'FUT' ? ls.match(/(\d+(?:\.\d+)?)\s+(?:CE|PE)/) : null;
+                                      let strike = strikeMatch ? Number(strikeMatch[1]) : (type === 'FUT' ? 0 : opp.strike);
+                                      if (price > 0) { return { side, optionType: type, strike, price, qty: 1 }; }
+                                      return null;
+                                    }).filter(Boolean);
+                                    if (legList.length >= 2) {
+                                      oppToPass = { ...opp, legList, strategyType: 'CONVERSION' }; // Use CONVERSION to force it to render properly if needed
+                                    }
+                                  }
+                                  
+                                  const existingPos = oppToPass.existingOpenPosition ? livePositionsData?.positions?.find(p => p.opportunityId === oppToPass.id) : null;
+                                  
+                                  return (
+                                    <>
+                                      {existingPos && (
+                                        <div className="my-3 p-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl flex items-center justify-between">
+                                          <div>
+                                            <span className="font-bold text-emerald-800 text-[10px] uppercase block mb-1">Current Active Trade P&L</span>
+                                            <span className={`font-mono text-2xl font-black ${existingPos.currentPnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                              {existingPos.currentPnl > 0 ? '+' : ''}₹{existingPos.currentPnl?.toFixed(2)}
+                                            </span>
+                                            <span className="text-xs font-bold text-slate-500 ml-2">({existingPos.lots} lots on {existingPos.broker})</span>
+                                          </div>
+                                          <div>
+                                             <button onClick={(e) => { e.stopPropagation(); client.post(`/option-arbitrage/positions/${existingPos.id}/exit`).then(()=>alert('Exit orders sent')).catch(e=>alert(e.message)) }} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-black shadow-md">
+                                                EXIT POSITION
+                                             </button>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {oppToPass.status === 'EXITED' && (
+                                        <div className="my-3 p-3 bg-red-50/50 border border-red-200 rounded-xl">
+                                          <div className="flex items-center justify-between mb-3 border-b border-red-100 pb-2">
+                                            <span className="font-bold text-red-800 text-[10px] uppercase block tracking-wider">Trade Exited</span>
+                                            <span className="text-[10px] text-slate-500 font-mono bg-white px-2 py-0.5 rounded border border-slate-200">
+                                              {oppToPass.exitTime ? new Date(oppToPass.exitTime).toLocaleString() : 'Time Unknown'}
+                                            </span>
+                                          </div>
+                                          
+                                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                                            <div className="bg-white p-2.5 rounded-lg border border-red-100 shadow-sm">
+                                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">CE Exit Price</span>
+                                              <span className="font-mono text-sm font-black text-slate-700">{oppToPass.ceExitPrice ? '₹' + oppToPass.ceExitPrice : '--'}</span>
+                                            </div>
+                                            <div className="bg-white p-2.5 rounded-lg border border-red-100 shadow-sm">
+                                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">PE Exit Price</span>
+                                              <span className="font-mono text-sm font-black text-slate-700">{oppToPass.peExitPrice ? '₹' + oppToPass.peExitPrice : '--'}</span>
+                                            </div>
+                                            <div className="bg-white p-2.5 rounded-lg border border-red-100 shadow-sm">
+                                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">FUT Exit Price</span>
+                                              <span className="font-mono text-sm font-black text-slate-700">{oppToPass.futExitPrice ? '₹' + oppToPass.futExitPrice : '--'}</span>
+                                            </div>
+                                            <div className="bg-emerald-50 p-2.5 rounded-lg border border-emerald-200 shadow-sm">
+                                              <span className="text-[9px] text-emerald-800 font-bold uppercase block mb-1">Realized P&L</span>
+                                              <span className={`font-mono text-sm font-black ${oppToPass.pnlAmount > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                {oppToPass.pnlAmount > 0 ? '+' : ''}₹{oppToPass.pnlAmount || oppToPass.pnlAfterCosts || 0}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {Array.isArray(oppToPass.legList) && oppToPass.legList.length >= 2 ? (
+                                        <div className="mt-3">
+                                          <span className="font-bold text-slate-800 text-xs uppercase block mb-2">Simulated Payoff Chart</span>
+                                          <ArbitrageSignalPayoffChart opp={oppToPass} />
+                                        </div>
+                                      ) : null}
+                                    </>
+                                  );
+                                })()}
+
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-amber-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   ⚡ Submit ({executionBroker})
@@ -2184,7 +2491,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       </div>
 
       {subTab === 'autotrade' ? (
-        <StrategyAutoTradePanel prefix="box" label="Box Spread" accent="indigo" />
+        <StrategyAutoTradePanel executionBroker={executionBroker} prefix="box" label="Box Spread" accent="indigo" />
       ) : subTab === 'history' ? (
         <HistoryView lockedStrategy="BOX" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
       ) : subTab === 'nearmiss' ? (
@@ -2570,7 +2877,7 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
       </div>
 
       {subTab === 'autotrade' ? (
-        <StrategyAutoTradePanel prefix="vertical" label="Vertical Spread" accent="indigo" />
+        <StrategyAutoTradePanel executionBroker={executionBroker} prefix="vertical" label="Vertical Spread" accent="indigo" />
       ) : subTab === 'history' ? (
         <div className="space-y-3">
           <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl w-fit">
@@ -2765,7 +3072,7 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
 
   const { data: execSettings } = useQuery({
     queryKey: ['autoExecSettingsForVerticalCandidates'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
     refetchInterval: 60000
   });
 
@@ -3544,7 +3851,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
         </div>
       ) : subTab === 'autotrade' ? (
         <div className="space-y-4">
-          <StrategyAutoTradePanel prefix="butterfly" label="Butterfly Spread" accent="indigo" />
+          <StrategyAutoTradePanel executionBroker={executionBroker} prefix="butterfly" label="Butterfly Spread" accent="indigo" />
           <AutoRollSettingsPanel />
         </div>
       ) : subTab === 'candidates' ? (
@@ -3828,7 +4135,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
   // if it moves against me" has an honest answer instead of a guess.
   const { data: execSettings } = useQuery({
     queryKey: ['autoExecSettingsForCandidates'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
     refetchInterval: 60000
   });
 
@@ -4349,7 +4656,7 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
           )}
         </div>
       ) : subTab === 'autotrade' ? (
-        <StrategyAutoTradePanel prefix="condor" label="Condor Spread" accent="indigo" />
+        <StrategyAutoTradePanel executionBroker={executionBroker} prefix="condor" label="Condor Spread" accent="indigo" />
       ) : subTab === 'candidates' ? (
         <CondorCandidatesPanel handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
       ) : (
@@ -4529,7 +4836,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
 
   const { data: execSettings } = useQuery({
     queryKey: ['autoExecSettingsForCondorCandidates'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
     refetchInterval: 60000
   });
 
@@ -5041,7 +5348,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
       {subTab === 'history' ? (
         <HistoryView lockedStrategy="CONDOR" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
       ) : subTab === 'autotrade' ? (
-        <StrategyAutoTradePanel prefix="ironCondor" label="Iron Condor" accent="indigo" />
+        <StrategyAutoTradePanel executionBroker={executionBroker} prefix="ironCondor" label="Iron Condor" accent="indigo" />
       ) : (
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -6441,4 +6748,4 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
     </div>
   );
 }
-export { LivePositionsSection, BrokerPositionsPanel, STRATEGY_LABELS };
+export { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS };

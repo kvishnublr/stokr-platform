@@ -1247,8 +1247,8 @@ public class OptionArbitrageController {
     }
 
     @GetMapping("/auto-execute/settings")
-    public ResponseEntity<Map<String, Object>> getSettings() {
-        return ResponseEntity.ok(autoExecService.getSettings());
+    public ResponseEntity<Map<String, Object>> getSettings(@RequestParam(defaultValue = "PAPER") String mode) {
+        return ResponseEntity.ok(autoExecService.getSettings(mode));
     }
 
     /**
@@ -1396,9 +1396,9 @@ public class OptionArbitrageController {
     }
 
     @PostMapping("/auto-execute/settings")
-    public ResponseEntity<Map<String, Object>> updateSetting(@RequestParam String key, @RequestParam String value) {
+    public ResponseEntity<Map<String, Object>> updateSetting(@RequestParam String key, @RequestParam String value, @RequestParam(defaultValue = "PAPER") String mode) {
         try {
-            autoExecService.updateSetting(key, value);
+            autoExecService.updateSetting(mode, key, value);
             addAuditLog("SETTINGS", "INFO", "Updated setting '" + key + "' = " + value);
         } catch (Exception e) {
             log.error("Failed to update setting: {}", e.getMessage());
