@@ -48,6 +48,27 @@ export function showToast(message, type = 'info', duration, title) {
   _notifyToast({ id, message, type, duration: resolvedDuration, title });
 }
 
+/* Live-deploy confirm modal, wired the same way as the toasts above.
+   The "⚡ Deploy" buttons live inside ~10 separate view components (BidParityView,
+   HistoryView, each spread view...) which all called a bare `setPendingLiveDeploy` that was
+   never defined in their scope or passed as a prop -- a ReferenceError the moment any of
+   those views rendered, which is why clicking History blanked the page. Routing through a
+   module-level emitter (exactly the existing showToast idiom in this file) fixes every call
+   site at once without threading the same two props through every component in between. */
+let _deployListeners = [];
+export function requestLiveDeploy(opp) { _deployListeners.forEach(fn => fn(opp)); }
+// Every child call site references this bare name; keep it working as a module function.
+const setPendingLiveDeploy = requestLiveDeploy;
+
+/** Subscribes the page's existing pendingLiveDeploy state to the emitter above. */
+function useLiveDeployRequests(setPending) {
+  useEffect(() => {
+    const handler = (opp) => setPending(opp);
+    _deployListeners.push(handler);
+    return () => { _deployListeners = _deployListeners.filter(f => f !== handler); };
+  }, [setPending]);
+}
+
 function useToastState() {
   const [toasts, setToasts] = useState([]);
   useEffect(() => {
@@ -230,16 +251,6 @@ function LiveExecutionModal({ opp, onClose, onConfirm }) {
           </button>
         </div>
       </div>
-      {pendingLiveDeploy && (
-        <LiveExecutionModal 
-          opp={pendingLiveDeploy}
-          onClose={() => setPendingLiveDeploy(null)}
-          onConfirm={(oppToExecute, lots) => {
-            setPendingLiveDeploy(null);
-            handleExecuteInline(oppToExecute, lots);
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -268,6 +279,9 @@ export default function OptionArbitrage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [executionBroker, setExecutionBroker] = useState('PAPER');
   const [pendingLiveDeploy, setPendingLiveDeploy] = useState(null);
+  // Child views (BidParityView, HistoryView, each spread view) fire deploy requests through
+  // the module-level emitter rather than a threaded prop -- see requestLiveDeploy above.
+  useLiveDeployRequests(setPendingLiveDeploy);
   const [isTestingBroker, setIsTestingBroker] = useState(false);
   const [maxSignals, setMaxSignals] = useState(() => {
     const saved = localStorage.getItem('stokr_max_signals');
@@ -473,6 +487,17 @@ export default function OptionArbitrage() {
   return (
     <div className="w-full max-w-full space-y-5 font-sans text-slate-900">
       <ToastContainer toasts={toasts} dismiss={dismissToast} />
+
+      {pendingLiveDeploy && (
+        <LiveExecutionModal
+          opp={pendingLiveDeploy}
+          onClose={() => setPendingLiveDeploy(null)}
+          onConfirm={(oppToExecute, lots) => {
+            setPendingLiveDeploy(null);
+            handleExecuteInline(oppToExecute, lots);
+          }}
+        />
+      )}
 
       {/* Top Header Card */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 md:p-5 shadow-xl border border-slate-800 flex flex-wrap items-center justify-between gap-4">
