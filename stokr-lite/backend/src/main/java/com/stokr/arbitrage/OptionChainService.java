@@ -212,8 +212,8 @@ public class OptionChainService {
         Integer dynamic = DYNAMIC_LOT_SIZES.get(key);
         if (dynamic != null && dynamic > 0) return dynamic;
         return switch (key) {
-            case "NIFTY" -> 65;
-            case "BANKNIFTY" -> 30;
+            case "NIFTY" -> 25;
+            case "BANKNIFTY" -> 15;
             case "MIDCPNIFTY" -> 50;
             case "FINNIFTY" -> 25;
             default -> 25;

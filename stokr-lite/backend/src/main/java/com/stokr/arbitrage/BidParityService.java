@@ -115,7 +115,7 @@ public class BidParityService {
 
         double[] spotFut = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
         double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
-        double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : spot;
+        double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : 0; // DO NOT fall back to spot!
 
         Double lastFut = lastValidFut.get(underlying);
         if (lastFut != null && lastFut > 0 && fut > 0) {
@@ -129,7 +129,7 @@ public class BidParityService {
         if (fut > 0) lastValidFut.put(underlying, fut);
 
         if (spot <= 0 && fut > 0) spot = fut;
-        if (fut <= 0 && spot > 0) fut = spot;
+        // if (fut <= 0 && spot > 0) fut = spot; // NEVER fall back FUT to SPOT for arbitrage!
 
         if (spot <= 0 || fut <= 0) {
             log.info("Skipping {}: spot={} or fut={} invalid", underlying, spot, fut);

@@ -3051,6 +3051,7 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
                               )}
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
                               <p className="text-[10px] text-slate-500">{opp.description}</p>
+                              <ArbitrageSignalPayoffChart opp={opp} />
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-teal-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   ⚡ Submit ({executionBroker})
@@ -4815,6 +4816,7 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
                               )}
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
                               <p className="text-[10px] text-slate-500">{opp.description}</p>
+                              <ArbitrageSignalPayoffChart opp={opp} />
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-cyan-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   ⚡ Submit ({executionBroker})
