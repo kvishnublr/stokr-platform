@@ -895,15 +895,7 @@ function AutoRollSettingsPanel() {
   ];
   const activeCount = underlyings.filter(u => settings[u.key + 'AutoRollEnabled']).length;
 
-  React.useEffect(() => {
-    groups.forEach(g => {
-      const target = smartExitTargets[g.id];
-      if (target?.enabled && !target?.triggered && g.executablePnl >= target.value) {
-        setSmartExitTargets(prev => ({ ...prev, [g.id]: { ...prev[g.id], triggered: true } }));
-        handleGroupExit(g, true);
-      }
-    });
-  }, [groups, smartExitTargets]);
+
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1012,15 +1004,7 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo', executionBro
     emerald: { grad: 'from-emerald-500 to-teal-600', bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-700', btn: 'bg-emerald-500', ring: 'focus:ring-emerald-500 focus:border-emerald-500', glow: 'shadow-emerald-200' },
   }[accent] || { grad: 'from-indigo-500 to-violet-600', bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700', btn: 'bg-indigo-500', ring: 'focus:ring-indigo-500 focus:border-indigo-500', glow: 'shadow-indigo-200' };
 
-  React.useEffect(() => {
-    groups.forEach(g => {
-      const target = smartExitTargets[g.id];
-      if (target?.enabled && !target?.triggered && g.executablePnl >= target.value) {
-        setSmartExitTargets(prev => ({ ...prev, [g.id]: { ...prev[g.id], triggered: true } }));
-        handleGroupExit(g, true);
-      }
-    });
-  }, [groups, smartExitTargets]);
+
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1440,6 +1424,17 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
     return Array.from(map.values());
   }, [positions]);
 
+  React.useEffect(() => {
+    groups.forEach(g => {
+      const target = smartExitTargets[g.id];
+      if (target?.enabled && !target?.triggered && g.executablePnl >= target.value) {
+        setSmartExitTargets(prev => ({ ...prev, [g.id]: { ...prev[g.id], triggered: true } }));
+        handleGroupExit(g, true);
+      }
+    });
+  }, [groups, smartExitTargets]);
+
+
   const handleGroupExit = async (group, bypassConfirm = false) => {
     if (!bypassConfirm && !window.confirm(`Close all positions for ${group.underlying} ${group.expiry} at MARKET?`)) return;
     
@@ -1480,15 +1475,7 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
     }
   };
 
-  React.useEffect(() => {
-    groups.forEach(g => {
-      const target = smartExitTargets[g.id];
-      if (target?.enabled && !target?.triggered && g.executablePnl >= target.value) {
-        setSmartExitTargets(prev => ({ ...prev, [g.id]: { ...prev[g.id], triggered: true } }));
-        handleGroupExit(g, true);
-      }
-    });
-  }, [groups, smartExitTargets]);
+
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1654,15 +1641,7 @@ function CashPositionsSection() {
   const positions = data?.positions || [];
   if (positions.length === 0) return null;
 
-  React.useEffect(() => {
-    groups.forEach(g => {
-      const target = smartExitTargets[g.id];
-      if (target?.enabled && !target?.triggered && g.executablePnl >= target.value) {
-        setSmartExitTargets(prev => ({ ...prev, [g.id]: { ...prev[g.id], triggered: true } }));
-        handleGroupExit(g, true);
-      }
-    });
-  }, [groups, smartExitTargets]);
+
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
