@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ErrorBoundary from '../components/ErrorBoundary';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
 
@@ -1590,7 +1590,7 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
                     {isExpanded && (
                       <tr>
                         <td colSpan="6" className="p-0 bg-slate-50 border-b-2 border-indigo-100">
-                          <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          <ErrorBoundary><div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
                             <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
                               <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">Individual Legs</h4>
                               <table className="w-full text-[10px] text-left">
@@ -1624,7 +1624,7 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
                                  <ArbitrageSignalPayoffChart opp={fakeOpp} />
                                </div>
                             </div>
-                          </div>
+                          </div></ErrorBoundary>
                         </td>
                       </tr>
                     )}
