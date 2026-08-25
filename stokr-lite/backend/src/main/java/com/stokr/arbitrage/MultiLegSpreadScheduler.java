@@ -51,6 +51,10 @@ public class MultiLegSpreadScheduler {
     }
 
     private void scanAndExec(String label, java.util.function.Supplier<List<Map<String, Object>>> scan) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+            return;
+        }
         try {
             List<Map<String, Object>> opps = scan.get();
             if (opps != null && !opps.isEmpty()) {

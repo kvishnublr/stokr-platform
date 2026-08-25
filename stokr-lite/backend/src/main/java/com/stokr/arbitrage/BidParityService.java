@@ -73,6 +73,10 @@ public class BidParityService {
      */
     @Scheduled(cron = "0/15 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledScan() {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+            return;
+        }
         try {
             scanBidParity("ALL");
         } catch (Exception e) {

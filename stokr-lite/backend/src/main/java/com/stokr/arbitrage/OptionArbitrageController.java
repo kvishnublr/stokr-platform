@@ -2369,7 +2369,76 @@ public class OptionArbitrageController {
         }
         return ResponseEntity.ok(resp);
     }
-
+    @GetMapping("/top-picks")
+    public ResponseEntity<Map<String, Object>> scanTopPicks(
+            @RequestParam(defaultValue = "ALL") String underlying,
+            @RequestParam(defaultValue = "1000.0") double minEdge) {
+        
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        boolean marketClosed = nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
+        
+        List<Map<String, Object>> allOpps = new ArrayList<>();
+        
+        if (!marketClosed) {
+            try {
+                List<Map<String, Object>> parity = bidParityService.scanBidParity(underlying);
+                if (parity != null) allOpps.addAll(parity);
+            } catch (Exception e) {}
+            try {
+                List<Map<String, Object>> box = boxSpreadService.scanBoxSpread(underlying);
+                if (box != null) allOpps.addAll(box);
+            } catch (Exception e) {}
+            try {
+                List<Map<String, Object>> vertical = verticalSpreadService.scanVerticalSpread(underlying);
+                if (vertical != null) allOpps.addAll(vertical);
+            } catch (Exception e) {}
+            try {
+                List<Map<String, Object>> butterfly = butterflySpreadService.scanButterflySpread(underlying);
+                if (butterfly != null) allOpps.addAll(butterfly);
+            } catch (Exception e) {}
+            try {
+                List<Map<String, Object>> condor = condorSpreadService.scanCondorSpread(underlying);
+                if (condor != null) allOpps.addAll(condor);
+            } catch (Exception e) {}
+            try {
+                List<String> targets = "ALL".equalsIgnoreCase(underlying) ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY") : List.of(underlying);
+                for (String u : targets) {
+                    try { allOpps.addAll(scanIronCondorForUnderlying(u)); } catch (Exception e) {}
+                }
+            } catch (Exception e) {}
+        }
+        
+        List<Map<String, Object>> filtered = new ArrayList<>();
+        for (Map<String, Object> opp : allOpps) {
+            if (opp.get("edgeAfterCosts") instanceof Number) {
+                double edge = ((Number) opp.get("edgeAfterCosts")).doubleValue();
+                if (edge >= minEdge) {
+                    filtered.add(opp);
+                }
+            }
+        }
+        
+        filtered.sort((a, b) -> {
+            double edgeA = ((Number) a.get("edgeAfterCosts")).doubleValue();
+            double edgeB = ((Number) b.get("edgeAfterCosts")).doubleValue();
+            return Double.compare(edgeB, edgeA);
+        });
+        
+        if (filtered.size() > 25) {
+            filtered = filtered.subList(0, 25);
+        }
+        
+        markExistingPositions(filtered);
+        
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", marketClosed);
+        resp.put("opportunities", filtered);
+        resp.put("count", filtered.size());
+        
+        return ResponseEntity.ok(resp);
+    }
     @GetMapping("/margin-check")
     public ResponseEntity<Map<String, Object>> marginCheck(
             @RequestParam String underlying,

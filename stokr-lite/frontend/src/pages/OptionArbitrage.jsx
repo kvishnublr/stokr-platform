@@ -602,6 +602,7 @@ export default function OptionArbitrage() {
       <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           {[
+            { key: 'top-picks', label: '🔥 Top Picks' },
             { key: 'live', label: '⚡ Live Scan' },
             { key: 'bidparity', label: '🎯 Bid Parity' },
             { key: 'box', label: '💎 Box Spread' },
@@ -702,6 +703,7 @@ export default function OptionArbitrage() {
         {activeTab === 'ironcondor' && <IronCondorView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
         {activeTab === 'cashsurge' && <CashSurgeView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
         {activeTab === 'cashswing' && <CashSwingView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'top-picks' && <TopPicksView executionBroker={executionBroker} handleExecuteInline={setPendingLiveDeploy} />}
         {activeTab === 'history' && <ErrorBoundary><HistoryView calendarOpportunities={calendarOpportunities} handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} underlyings={underlyings} /></ErrorBoundary>}
       </div>
     </div>
@@ -6789,3 +6791,115 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
   );
 }
 export { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS };
+
+function TopPicksView({ executionBroker, handleExecuteInline }) {
+  const [underlying, setUnderlying] = React.useState('ALL');
+  const [minEdge, setMinEdge] = React.useState(500);
+  const [expandedId, setExpandedId] = React.useState(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['top-picks', underlying, minEdge],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/top-picks', { params: { underlying, minEdge } });
+      return res.data;
+    },
+    refetchInterval: 10000
+  });
+
+  const opps = data?.opportunities || [];
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-base font-bold text-slate-800">🔥 Top Alpha Signals</h2>
+          <p className="text-xs text-slate-500">Aggregated highest-probability guaranteed setups across all strategies</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+              <button key={u} onClick={() => setUnderlying(u)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+                {u}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+            <span className="text-xs font-bold text-slate-500 pl-2">EDGE ≥</span>
+            {[500, 1000, 2000].map(v => (
+              <button key={v} onClick={() => setMinEdge(v)}
+                className={`px-2 py-0.5 rounded text-xs font-bold transition ${minEdge === v ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+                ₹{v}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        {isLoading ? (
+          <div className="p-8 text-center text-slate-500 font-mono text-sm animate-pulse">Scanning all markets...</div>
+        ) : opps.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 font-mono text-sm">No Alpha signals for {underlying} (Edge ≥ ₹{minEdge})</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[800px]">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-black text-slate-400 tracking-wider">
+                  <th className="px-3 py-2">Strategy</th>
+                  <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Action</th>
+                  <th className="px-2 py-2 text-right">Net Edge</th>
+                  <th className="px-2 py-2 text-center">Status</th>
+                  <th className="px-2 py-2 text-center"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-sm">
+                {opps.map((opp, idx) => {
+                  const isExp = expandedId === (opp.id || idx);
+                  const edgeVal = opp.edgeAfterCosts || 0;
+                  const isLive = opp.status === 'RUNNING';
+                  return (
+                    <React.Fragment key={opp.id || idx}>
+                      <tr onClick={() => setExpandedId(isExp ? null : (opp.id || idx))} className={`transition cursor-pointer ${isExp ? 'bg-orange-50/70 border-l-4 border-orange-600' : 'hover:bg-slate-50'}`}>
+                        <td className="px-3 py-2 font-bold text-orange-700 text-xs">{opp.type || 'SIGNAL'}</td>
+                        <td className="px-2 py-2 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-2 font-bold text-slate-600 truncate max-w-[200px] text-xs">{opp.action}</td>
+                        <td className="px-2 py-2 text-right font-mono font-bold text-emerald-600">+₹{Math.round(edgeVal).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-2 text-center">
+                          <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${isLive ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                            {isLive ? '🟢 RUNNING' : 'NEW'}
+                          </span>
+                        </td>
+                        <td className="px-2 py-2 text-center">
+                          <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-2 py-0.5 bg-orange-600 hover:bg-orange-700 text-white text-[10px] font-bold rounded shadow-sm transition">⚡ Deploy</button>
+                        </td>
+                      </tr>
+                      {isExp && (
+                        <tr className="bg-orange-50/40 border-b border-orange-100">
+                          <td colSpan={6} className="p-3">
+                            <div className="bg-white rounded-xl p-3 border border-orange-200 shadow-md space-y-2">
+                              <span className="font-bold text-slate-800 text-xs uppercase block">Signal Breakdown:</span>
+                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
+                              {opp.description && <p className="text-[10px] text-slate-500">{opp.description}</p>}
+                              <ArbitrageSignalPayoffChart opp={opp} />
+                              <div className="flex justify-end pt-1">
+                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-md transition">
+                                  ⚡ Submit ({executionBroker})
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
