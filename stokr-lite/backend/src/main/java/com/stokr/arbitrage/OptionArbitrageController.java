@@ -1447,8 +1447,49 @@ public class OptionArbitrageController {
             com.stokr.broker.BrokerAccount account = accounts.get(0);
             com.stokr.broker.BrokerAdapter adapter = brokerService.getAdapter(broker);
             List<com.stokr.broker.BrokerPosition> positions = adapter.getPositions(account.getAccessToken());
+            
+            List<String> symbols = positions.stream().map(com.stokr.broker.BrokerPosition::symbol).toList();
+            Map<String, OptionChainService.OptionQuote> fetchedQuotes;
+            try {
+                fetchedQuotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
+            } catch (Exception e) {
+                fetchedQuotes = Map.of();
+            }
+            final Map<String, OptionChainService.OptionQuote> quotes = fetchedQuotes;
+            
+            List<Map<String, Object>> enhancedPositions = positions.stream().map(p -> {
+                Map<String, Object> map = new java.util.LinkedHashMap<>();
+                map.put("symbol", p.symbol());
+                map.put("exchange", p.exchange());
+                map.put("quantity", p.quantity());
+                map.put("qty", p.quantity()); // Alias for frontend
+                map.put("avgPrice", p.avgPrice());
+                map.put("lastPrice", p.lastPrice());
+                map.put("unrealizedPnl", p.unrealizedPnl());
+                map.put("realizedPnl", p.realizedPnl());
+                map.put("productType", p.productType());
+                
+                OptionChainService.OptionQuote q = quotes.get(p.symbol());
+                double bid = q != null ? q.bid : p.lastPrice().doubleValue();
+                double ask = q != null ? q.ask : p.lastPrice().doubleValue();
+                if (bid <= 0) bid = p.lastPrice().doubleValue();
+                if (ask <= 0) ask = p.lastPrice().doubleValue();
+                map.put("bid", bid);
+                map.put("ask", ask);
+                
+                double executablePnl = 0;
+                if (p.quantity() > 0) {
+                    executablePnl = (bid - p.avgPrice().doubleValue()) * p.quantity();
+                } else if (p.quantity() < 0) {
+                    executablePnl = (p.avgPrice().doubleValue() - ask) * Math.abs(p.quantity());
+                }
+                map.put("executablePnl", executablePnl);
+                
+                return map;
+            }).toList();
+            
             resp.put("broker", broker);
-            resp.put("positions", positions);
+            resp.put("positions", enhancedPositions);
             resp.put("count", positions.size());
             resp.put("fetchedAt", System.currentTimeMillis());
         } catch (Exception e) {

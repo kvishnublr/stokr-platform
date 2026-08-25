@@ -895,6 +895,16 @@ function AutoRollSettingsPanel() {
   ];
   const activeCount = underlyings.filter(u => settings[u.key + 'AutoRollEnabled']).length;
 
+  React.useEffect(() => {
+    groups.forEach(g => {
+      const target = smartExitTargets[g.id];
+      if (target?.enabled && !target?.triggered && g.executablePnl >= target.value) {
+        setSmartExitTargets(prev => ({ ...prev, [g.id]: { ...prev[g.id], triggered: true } }));
+        handleGroupExit(g, true);
+      }
+    });
+  }, [groups, smartExitTargets]);
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="bg-gradient-to-r from-purple-500 to-fuchsia-600 px-4 py-3.5 flex items-center justify-between">
@@ -1001,6 +1011,16 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo', executionBro
     indigo: { grad: 'from-indigo-500 to-violet-600', bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700', btn: 'bg-indigo-500', ring: 'focus:ring-indigo-500 focus:border-indigo-500', glow: 'shadow-indigo-200' },
     emerald: { grad: 'from-emerald-500 to-teal-600', bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-700', btn: 'bg-emerald-500', ring: 'focus:ring-emerald-500 focus:border-emerald-500', glow: 'shadow-emerald-200' },
   }[accent] || { grad: 'from-indigo-500 to-violet-600', bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700', btn: 'bg-indigo-500', ring: 'focus:ring-indigo-500 focus:border-indigo-500', glow: 'shadow-indigo-200' };
+
+  React.useEffect(() => {
+    groups.forEach(g => {
+      const target = smartExitTargets[g.id];
+      if (target?.enabled && !target?.triggered && g.executablePnl >= target.value) {
+        setSmartExitTargets(prev => ({ ...prev, [g.id]: { ...prev[g.id], triggered: true } }));
+        handleGroupExit(g, true);
+      }
+    });
+  }, [groups, smartExitTargets]);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1111,7 +1131,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
       const res = await client.get('/option-arbitrage/live-positions');
       return res.data;
     },
-    refetchInterval: 2000,
+    refetchInterval: 1000,
     staleTime: 1000,
   });
 
@@ -1362,6 +1382,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
 function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
   const [collapsed, setCollapsed] = useState(!defaultExpanded);
   const [expandedGroupId, setExpandedGroupId] = useState(null);
+  const [smartExitTargets, setSmartExitTargets] = useState({});
   const broker = executionBroker && executionBroker !== 'PAPER' ? executionBroker : 'ZERODHA';
 
   const { data, refetch, isFetching } = useQuery({
@@ -1370,7 +1391,7 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
       const res = await client.get('/option-arbitrage/broker-positions', { params: { broker } });
       return res.data;
     },
-    refetchInterval: 5000,
+    refetchInterval: 1000,
     staleTime: 2000,
   });
 
@@ -1413,13 +1434,14 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
         parsedOptionType
       });
       group.unrealizedPnl += (p.unrealizedPnl || 0);
+      group.executablePnl = (group.executablePnl || 0) + (p.executablePnl || p.unrealizedPnl || 0);
       group.realizedPnl += (p.realizedPnl || 0);
     });
     return Array.from(map.values());
   }, [positions]);
 
-  const handleGroupExit = async (group) => {
-    if (!window.confirm(`Close all positions for ${group.underlying} ${group.expiry} at MARKET?`)) return;
+  const handleGroupExit = async (group, bypassConfirm = false) => {
+    if (!bypassConfirm && !window.confirm(`Close all positions for ${group.underlying} ${group.expiry} at MARKET?`)) return;
     
     const legList = group.positions.map(p => {
       const isLong = p.qty > 0;
@@ -1458,6 +1480,16 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
     }
   };
 
+  React.useEffect(() => {
+    groups.forEach(g => {
+      const target = smartExitTargets[g.id];
+      if (target?.enabled && !target?.triggered && g.executablePnl >= target.value) {
+        setSmartExitTargets(prev => ({ ...prev, [g.id]: { ...prev[g.id], triggered: true } }));
+        handleGroupExit(g, true);
+      }
+    });
+  }, [groups, smartExitTargets]);
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="px-4 py-3 bg-gradient-to-r from-amber-50 via-orange-50 to-white border-b border-amber-100 flex items-center justify-between cursor-pointer" onClick={() => setCollapsed(!collapsed)}>
@@ -1465,7 +1497,7 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
           <span className="text-lg">🏦</span>
           <h3 className="text-sm font-black text-slate-800">{broker} Broker Positions (Ground Truth)</h3>
           <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full">{positions.length}</span>
-          <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-bold rounded-full">5s tick</span>
+          <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-bold rounded-full">1s tick</span>
           {data?.error && (
             <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 text-[10px] font-bold rounded-full">{data.error}</span>
           )}
@@ -1490,7 +1522,7 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
                 <th className="px-3 py-2">Set / Underlying</th>
                 <th className="px-3 py-2">Expiry</th>
                 <th className="px-3 py-2 text-center">Legs</th>
-                <th className="px-3 py-2 text-right">Unrealized P&L</th>
+                <th className="px-3 py-2 text-right" title="Calculated using real Bid/Ask prices">Executable P&L</th>
                 <th className="px-3 py-2 text-right">Realized P&L</th>
                 <th className="px-3 py-2 text-right">Action</th>
               </tr>
@@ -1525,17 +1557,34 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
                       <td className="px-3 py-2 text-center">
                         <span className="px-2 py-0.5 bg-slate-100 rounded-full font-bold text-slate-600">{g.positions.length}</span>
                       </td>
-                      <td className={`px-3 py-2 text-right font-bold ${g.unrealizedPnl > 0 ? 'text-emerald-600' : g.unrealizedPnl < 0 ? 'text-red-600' : 'text-slate-500'}`}>
-                        {g.unrealizedPnl > 0 ? '+' : ''}{g.unrealizedPnl.toFixed(2)}
+                      <td className={`px-3 py-2 text-right font-bold ${g.executablePnl > 0 ? 'text-emerald-600' : g.executablePnl < 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                        {g.executablePnl > 0 ? '+' : ''}{g.executablePnl.toFixed(2)}
                       </td>
                       <td className={`px-3 py-2 text-right font-bold ${g.realizedPnl > 0 ? 'text-emerald-600' : g.realizedPnl < 0 ? 'text-red-600' : 'text-slate-500'}`}>
                         {g.realizedPnl > 0 ? '+' : ''}{g.realizedPnl.toFixed(2)}
                       </td>
                       <td className="px-3 py-2 text-right">
-                         <button onClick={(e) => { e.stopPropagation(); handleGroupExit(g); }} 
-                           className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg font-bold text-[10px] shadow-sm transition-all transform active:scale-95">
-                           EXIT SET
-                         </button>
+                        <div className="flex flex-col gap-1 items-end">
+                          <button onClick={(e) => { e.stopPropagation(); handleGroupExit(g); }} 
+                            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg font-bold text-[10px] shadow-sm transition-all transform active:scale-95">
+                            EXIT SET
+                          </button>
+                          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                            <label className="text-[9px] font-bold text-slate-500">Smart Exit ≥</label>
+                            <input 
+                              type="number" 
+                              className="w-16 px-1 py-0.5 text-[10px] border border-slate-300 rounded"
+                              value={smartExitTargets[g.id]?.value || ''}
+                              placeholder="₹ Target"
+                              onChange={e => setSmartExitTargets(prev => ({ ...prev, [g.id]: { ...prev[g.id], value: Number(e.target.value) } }))}
+                            />
+                            <input 
+                              type="checkbox" 
+                              checked={smartExitTargets[g.id]?.enabled || false}
+                              onChange={e => setSmartExitTargets(prev => ({ ...prev, [g.id]: { ...prev[g.id], enabled: e.target.checked, triggered: false } }))}
+                            />
+                          </div>
+                        </div>
                       </td>
                     </tr>
                     {isExpanded && (
@@ -1551,7 +1600,7 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
                                     <th className="px-2 py-1 text-right">Qty</th>
                                     <th className="px-2 py-1 text-right">Avg</th>
                                     <th className="px-2 py-1 text-right">LTP</th>
-                                    <th className="px-2 py-1 text-right">P&L</th>
+                                    <th className="px-2 py-1 text-right">Exec P&L</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
@@ -1561,8 +1610,8 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
                                       <td className={`px-2 py-1 text-right font-bold ${p.qty > 0 ? 'text-blue-600' : 'text-rose-600'}`}>{p.qty > 0 ? '+'+p.qty : p.qty}</td>
                                       <td className="px-2 py-1 text-right">{p.avgPrice}</td>
                                       <td className="px-2 py-1 text-right">{p.lastPrice}</td>
-                                      <td className={`px-2 py-1 text-right font-bold ${p.unrealizedPnl > 0 ? 'text-emerald-600' : p.unrealizedPnl < 0 ? 'text-red-600' : ''}`}>
-                                        {p.unrealizedPnl}
+                                      <td className={`px-2 py-1 text-right font-bold ${p.executablePnl > 0 ? 'text-emerald-600' : p.executablePnl < 0 ? 'text-red-600' : ''}`}>
+                                        {p.executablePnl != null ? Number(p.executablePnl).toFixed(2) : '--'}
                                       </td>
                                     </tr>
                                   ))}
@@ -1598,12 +1647,22 @@ function CashPositionsSection() {
       const res = await client.get('/option-arbitrage/cash-positions');
       return res.data;
     },
-    refetchInterval: 5000,
+    refetchInterval: 1000,
     staleTime: 2000,
   });
 
   const positions = data?.positions || [];
   if (positions.length === 0) return null;
+
+  React.useEffect(() => {
+    groups.forEach(g => {
+      const target = smartExitTargets[g.id];
+      if (target?.enabled && !target?.triggered && g.executablePnl >= target.value) {
+        setSmartExitTargets(prev => ({ ...prev, [g.id]: { ...prev[g.id], triggered: true } }));
+        handleGroupExit(g, true);
+      }
+    });
+  }, [groups, smartExitTargets]);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1980,7 +2039,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const { data: livePositionsData } = useQuery({
     queryKey: ['live-positions-global-cache'],
     queryFn: async () => (await client.get('/option-arbitrage/live-positions')).data,
-    refetchInterval: 5000
+    refetchInterval: 1000
   });
 
   const { data: liveData, isLoading } = useQuery({
@@ -5814,7 +5873,7 @@ function PaperTradesView() {
       const res = await client.get('/option-arbitrage/paper-trades', { params });
       return res.data;
     },
-    refetchInterval: 5000,
+    refetchInterval: 1000,
   });
 
   const positions = data?.positions || [];

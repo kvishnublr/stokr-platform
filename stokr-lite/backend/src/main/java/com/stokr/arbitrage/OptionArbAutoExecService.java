@@ -1338,12 +1338,16 @@ public class OptionArbAutoExecService {
         for (Map<String, Object> leg : legs) {
             String symbol = (String) leg.get("symbol");
             if (symbol == null || !quotes.containsKey(symbol)) continue;
-            double current = quotes.get(symbol).lastPrice;
+            OptionChainService.OptionQuote q = quotes.get(symbol);
+            double bid = q.bid > 0 ? q.bid : q.lastPrice;
+            double ask = q.ask > 0 ? q.ask : q.lastPrice;
             double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
-            if (current <= 0 || entry <= 0) continue;
+            if (q.lastPrice <= 0 || entry <= 0) continue;
             int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
             String side = (String) leg.get("side");
-            double legPnl = "BUY".equals(side) ? (current - entry) : (entry - current);
+            // To close a BUY leg, we must SELL at the BID
+            // To close a SELL leg, we must BUY at the ASK
+            double legPnl = "BUY".equals(side) ? (bid - entry) : (entry - ask);
             pnl += legPnl * qtyMult;
         }
         return pnl * lotSize * lots;
@@ -1558,10 +1562,22 @@ public class OptionArbAutoExecService {
     }
 
     private double computePnl(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes) {
+        double ceBid = 0, ceAsk = 0, peBid = 0, peAsk = 0, futBid = 0, futAsk = 0;
         double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
-        if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
-        if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) peCurrent = quotes.get(pos.getPeSymbol()).lastPrice;
-        if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) futCurrent = quotes.get(pos.getFutSymbol()).lastPrice;
+
+        if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) {
+            OptionChainService.OptionQuote q = quotes.get(pos.getCeSymbol());
+            ceCurrent = q.lastPrice; ceBid = q.bid > 0 ? q.bid : q.lastPrice; ceAsk = q.ask > 0 ? q.ask : q.lastPrice;
+        }
+        if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) {
+            OptionChainService.OptionQuote q = quotes.get(pos.getPeSymbol());
+            peCurrent = q.lastPrice; peBid = q.bid > 0 ? q.bid : q.lastPrice; peAsk = q.ask > 0 ? q.ask : q.lastPrice;
+        }
+        if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) {
+            OptionChainService.OptionQuote q = quotes.get(pos.getFutSymbol());
+            futCurrent = q.lastPrice; futBid = q.bid > 0 ? q.bid : q.lastPrice; futAsk = q.ask > 0 ? q.ask : q.lastPrice;
+        }
+
         double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
         double peEntry = pos.getPeEntryPrice() != null ? pos.getPeEntryPrice().doubleValue() : 0;
         double futEntry = pos.getFutEntryPrice() != null ? pos.getFutEntryPrice().doubleValue() : 0;
@@ -1569,19 +1585,32 @@ public class OptionArbAutoExecService {
         int lots = pos.getLots() != null ? pos.getLots() : 1;
         String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
         double pnl = 0;
+
         if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
             if (action.contains("BUY CE +")) {
-                if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
-                if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
+                if (ceCurrent > 0 && ceEntry > 0) pnl += ceBid - ceEntry;
+                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peAsk;
+                if (futCurrent > 0 && futEntry > 0) pnl += futBid > 0 ? (futEntry > futCurrent ? (futEntry - futAsk) : (futBid - futEntry)) : (futCurrent - futEntry);
+                // Actually, if it's BUY CE + SELL PE + SELL FUT, we sold fut. Exit = buy fut at ask
+                if (action.contains("SELL FUT")) {
+                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futAsk;
+                } else if (action.contains("BUY FUT")) {
+                    if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
+                }
             } else if (action.contains("SELL CE +")) {
-                if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
-                if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
-                if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
+                if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceAsk;
+                if (peCurrent > 0 && peEntry > 0) pnl += peBid - peEntry;
+                if (action.contains("SELL FUT")) {
+                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futAsk;
+                } else if (action.contains("BUY FUT")) {
+                    if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
+                } else {
+                    if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry; // Fallback
+                }
             } else {
-                if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
-                if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
+                if (ceCurrent > 0 && ceEntry > 0) pnl += ceBid - ceEntry;
+                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peAsk;
+                if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
             }
         }
         return pnl * lotSize * lots;
