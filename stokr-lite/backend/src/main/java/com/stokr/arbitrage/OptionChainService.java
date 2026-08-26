@@ -26,7 +26,7 @@ public class OptionChainService {
 
     private static final double RISK_FREE_RATE = 0.065;
     private static final double MIN_PARITY_DEVIATION = 0.5;
-    private static final double MIN_EDGE_AFTER_COSTS = 300.0;
+    private static final double MIN_EDGE_AFTER_COSTS = 0.0;
 
     private final ConcurrentHashMap<String, Long> cooldownMap = new ConcurrentHashMap<>();
 

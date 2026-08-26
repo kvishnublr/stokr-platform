@@ -90,26 +90,38 @@ public class OptionArbAutoExecService {
             defaults.put(u + "AutoRollMaxRolls", 2);
         }
 
-        // Load persisted settings from DB, overlay on defaults
+        // Map defaults to PAPER and LIVE namespaces
+        autoExecSettings.put("PAPER", new ConcurrentHashMap<>(defaults));
+        autoExecSettings.put("LIVE", new ConcurrentHashMap<>(defaults));
+        autoExecSettings.put("global", new ConcurrentHashMap<>(defaults));
+
+        // Load persisted settings from DB
         try {
             List<AutoExecSetting> dbSettings = autoExecSettingRepo.findAll();
             for (AutoExecSetting s : dbSettings) {
-                String key = s.getSettingKey();
+                String fullKey = s.getSettingKey();
                 String val = s.getSettingValue();
-                if ("enabled".equals(key)) defaults.put(key, Boolean.parseBoolean(val));
-                else if (key.endsWith("Enabled")) defaults.put(key, Boolean.parseBoolean(val));
+                
+                String profileKey = "PAPER";
+                String key = fullKey;
+                if (fullKey.startsWith("PAPER_")) { profileKey = "PAPER"; key = fullKey.substring(6); }
+                else if (fullKey.startsWith("LIVE_")) { profileKey = "LIVE"; key = fullKey.substring(5); }
+                else continue; // Ignore old global settings
+                
+                Map<String, Object> targetMap = autoExecSettings.get(profileKey);
+                
+                if ("enabled".equals(key)) targetMap.put(key, Boolean.parseBoolean(val));
+                else if (key.endsWith("Enabled")) targetMap.put(key, Boolean.parseBoolean(val));
                 else if (key.endsWith("MinEdge") || key.equals("maxDailyLoss") || key.equals("rolloverThresholdPct") || key.equals("autoExitThresholdPct"))
-                    defaults.put(key, Double.parseDouble(val));
+                    targetMap.put(key, Double.parseDouble(val));
                 else if (key.endsWith("Lots") || key.equals("maxOpenPositions") || key.endsWith("AutoRollBreachMinutes") || key.endsWith("AutoRollMaxRolls"))
-                    defaults.put(key, Integer.parseInt(val));
-                else defaults.put(key, val);
+                    targetMap.put(key, Integer.parseInt(val));
+                else targetMap.put(key, val);
             }
             log.info("Loaded {} auto-exec settings from DB", dbSettings.size());
         } catch (Exception e) {
             log.debug("Failed to load auto-exec settings from DB: {}", e.getMessage());
         }
-
-        autoExecSettings.put("global", defaults);
     }
 
     public Map<String, Object> getSettings() {
@@ -123,19 +135,20 @@ public class OptionArbAutoExecService {
     public void updateSetting(String mode, String key, String value) {
         String profileKey = "LIVE".equalsIgnoreCase(mode) ? "LIVE" : "PAPER";
         Map<String, Object> settings = autoExecSettings.computeIfAbsent(profileKey, k -> new ConcurrentHashMap<>());
-        Map<String, Object> s = autoExecSettings.computeIfAbsent("global", k -> new LinkedHashMap<>());
-        if ("enabled".equals(key)) s.put("enabled", Boolean.parseBoolean(value));
-        else if (key.endsWith("Enabled")) s.put(key, Boolean.parseBoolean(value));
-        else if (key.endsWith("MinEdge") || key.equals("maxDailyLoss") || key.equals("rolloverThresholdPct") || key.equals("autoExitThresholdPct")) s.put(key, Double.parseDouble(value));
-        else if (key.endsWith("Lots") || key.equals("maxOpenPositions") || key.endsWith("AutoRollBreachMinutes") || key.endsWith("AutoRollMaxRolls")) s.put(key, Integer.parseInt(value));
-        else s.put(key, value);
+        
+        if ("enabled".equals(key)) settings.put("enabled", Boolean.parseBoolean(value));
+        else if (key.endsWith("Enabled")) settings.put(key, Boolean.parseBoolean(value));
+        else if (key.endsWith("MinEdge") || key.equals("maxDailyLoss") || key.equals("rolloverThresholdPct") || key.equals("autoExitThresholdPct")) settings.put(key, Double.parseDouble(value));
+        else if (key.endsWith("Lots") || key.equals("maxOpenPositions") || key.endsWith("AutoRollBreachMinutes") || key.endsWith("AutoRollMaxRolls")) settings.put(key, Integer.parseInt(value));
+        else settings.put(key, value);
 
         // Persist to DB
         try {
-            AutoExecSetting dbSetting = autoExecSettingRepo.findBySettingKey(key)
+            String dbKey = profileKey + "_" + key;
+            AutoExecSetting dbSetting = autoExecSettingRepo.findBySettingKey(dbKey)
                     .orElse(new AutoExecSetting());
-            dbSetting.setSettingKey(key);
-            dbSetting.setSettingValue(String.valueOf(s.get(key)));
+            dbSetting.setSettingKey(dbKey);
+            dbSetting.setSettingValue(String.valueOf(settings.get(key)));
             autoExecSettingRepo.save(dbSetting);
         } catch (Exception e) {
             log.error("Failed to persist setting {} to DB: {}", key, e.getMessage());

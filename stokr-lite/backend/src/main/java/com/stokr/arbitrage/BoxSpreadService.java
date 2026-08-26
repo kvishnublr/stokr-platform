@@ -207,6 +207,7 @@ public class BoxSpreadService {
                     // Short box: sell CE1, buy PE1, buy CE2, sell PE2 -- a box's payoff at
                     // expiry is exactly `width`, always. If you can collect MORE than width
                     // selling it, that's equally a locked-in profit as buying it for less.
+                    if (ce1.bid <= 0 || pe1.ask <= 0 || ce2.ask <= 0 || pe2.bid <= 0) continue;
                     double sellBoxCredit = ce1.bid - pe1.ask - ce2.ask + pe2.bid;
                     double sellBoxEdgePoints = sellBoxCredit - width;
                     if (sellBoxEdgePoints <= 0) continue;
@@ -346,6 +347,7 @@ public class BoxSpreadService {
                         double buySttSell = (pe1.bid + ce2.bid) * lotSize * ArbitrageCosts.STT_OPTION_SELL;
                         double buyNetEdge = costsAdjustedEdge((width - buyBoxCost) * lotSize, buySttBuy + buySttSell, buyTurnover);
 
+                    if (ce1.bid <= 0 || pe1.ask <= 0 || ce2.ask <= 0 || pe2.bid <= 0) continue;
                         double sellBoxCredit = ce1.bid - pe1.ask - ce2.ask + pe2.bid;
                         double sellTurnover = (ce1.bid + pe1.ask + ce2.ask + pe2.bid) * lotSize;
                         double sellSttSell = (ce1.bid + pe2.bid) * lotSize * ArbitrageCosts.STT_OPTION_SELL;

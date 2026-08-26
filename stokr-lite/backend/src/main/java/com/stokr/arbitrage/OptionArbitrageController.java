@@ -2383,31 +2383,42 @@ public class OptionArbitrageController {
             try {
                 List<Map<String, Object>> parity = bidParityService.scanBidParity(underlying);
                 if (parity != null) allOpps.addAll(parity);
-            } catch (Exception e) {}
+            } catch (Exception e) { e.printStackTrace(); }
             try {
                 List<Map<String, Object>> box = boxSpreadService.scanBoxSpread(underlying);
                 if (box != null) allOpps.addAll(box);
-            } catch (Exception e) {}
+            } catch (Exception e) { e.printStackTrace(); }
             try {
                 List<Map<String, Object>> vertical = verticalSpreadService.scanVerticalSpread(underlying);
                 if (vertical != null) allOpps.addAll(vertical);
-            } catch (Exception e) {}
+            } catch (Exception e) { e.printStackTrace(); }
             try {
                 List<Map<String, Object>> butterfly = butterflySpreadService.scanButterflySpread(underlying);
                 if (butterfly != null) allOpps.addAll(butterfly);
-            } catch (Exception e) {}
+            } catch (Exception e) { e.printStackTrace(); }
             try {
                 List<Map<String, Object>> condor = condorSpreadService.scanCondorSpread(underlying);
                 if (condor != null) allOpps.addAll(condor);
-            } catch (Exception e) {}
+            } catch (Exception e) { e.printStackTrace(); }
             try {
                 List<String> targets = "ALL".equalsIgnoreCase(underlying) ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY") : List.of(underlying);
                 for (String u : targets) {
-                    try { allOpps.addAll(scanIronCondorForUnderlying(u)); } catch (Exception e) {}
+                    try { allOpps.addAll(scanIronCondorForUnderlying(u)); } catch (Exception e) { e.printStackTrace(); }
                 }
-            } catch (Exception e) {}
+            } catch (Exception e) { e.printStackTrace(); }
+        } else {
+            try {
+                var result = historyService.getHistoryByDate(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
+                if (result != null) {
+                    allOpps.addAll(result.stream()
+                        .filter(opp -> "ALL".equalsIgnoreCase(underlying) || underlying.equalsIgnoreCase(opp.getUnderlying()))
+                        .map(OptionArbOpportunity::toMap)
+                        .toList());
+                }
+            } catch (Exception e) { e.printStackTrace(); }
         }
         
+        System.out.println("allOpps size: " + allOpps.size());
         List<Map<String, Object>> filtered = new ArrayList<>();
         for (Map<String, Object> opp : allOpps) {
             if (opp.get("edgeAfterCosts") instanceof Number) {
@@ -2429,6 +2440,7 @@ public class OptionArbitrageController {
         }
         
         markExistingPositions(filtered);
+        System.out.println("filtered size: " + filtered.size());
         
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
@@ -2436,6 +2448,14 @@ public class OptionArbitrageController {
         resp.put("marketClosed", marketClosed);
         resp.put("opportunities", filtered);
         resp.put("count", filtered.size());
+        
+        if (marketClosed) {
+            try {
+                var testResult = historyService.getHistoryByDate(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
+                resp.put("debug_result_size", testResult != null ? testResult.size() : -1);
+                resp.put("debug_allOpps_size", allOpps.size());
+            } catch(Exception e) { resp.put("debug_error", e.getMessage()); }
+        }
         
         return ResponseEntity.ok(resp);
     }

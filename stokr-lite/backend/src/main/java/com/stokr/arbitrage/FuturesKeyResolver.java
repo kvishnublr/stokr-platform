@@ -18,24 +18,26 @@ public class FuturesKeyResolver {
     }
 
     public static String resolveFuturesKey(String underlying, ZerodhaSpotPriceFetcher spotPriceFetcher, String spotKey, LocalDate expiryDate) {
-        int yy = expiryDate.getYear() % 100;
-        String mon = expiryDate.getMonth().name().substring(0, 3);
-        String futKey = String.format("NFO:%s%02d%sFUT", underlying, yy, mon);
-
-        // We ONLY want the futures contract for the exact month of the options expiry.
-        // Falling through to the next month's futures contract causes massive fake
-        // arbitrage signals because of the roll premium / cost-of-carry.
         for (int a = 0; a < 3; a++) {
-            double[] result = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
-            if (result != null && result.length > 1 && result[1] > 0) {
-                log.info("Resolved futures key for {}: {} (fut={})", underlying, futKey, result[1]);
-                return futKey;
+            LocalDate checkDate = expiryDate.plusMonths(a);
+            int yy = checkDate.getYear() % 100;
+            String mon = checkDate.getMonth().name().substring(0, 3);
+            String futKey = String.format("NFO:%s%02d%sFUT", underlying, yy, mon);
+
+            for (int retry = 0; retry < 2; retry++) {
+                double[] result = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
+                if (result != null && result.length > 1 && result[1] > 0) {
+                    log.info("Resolved futures key for {}: {} (fut={})", underlying, futKey, result[1]);
+                    return futKey;
+                }
+                try { Thread.sleep(100); } catch (InterruptedException e) {}
             }
-            try { Thread.sleep(100); } catch (InterruptedException e) {}
         }
 
-        log.warn("Could not resolve active futures for {} (target={})", underlying, futKey);
-        return futKey; // return the expected key anyway, the caller will handle missing price
+        log.warn("Could not resolve active futures for {}", underlying);
+        int yy = expiryDate.getYear() % 100;
+        String mon = expiryDate.getMonth().name().substring(0, 3);
+        return String.format("NFO:%s%02d%sFUT", underlying, yy, mon); // return the expected key anyway
     }
 
     public static List<String> getCandidateFuturesKeys(String underlying) {

@@ -89,7 +89,7 @@ public class ZerodhaSpotPriceFetcher {
             headers.set("X-Kite-Version", "3");
 
             ResponseEntity<String> response = restTemplate.exchange(
-                urlStr, HttpMethod.GET, new HttpEntity<>(headers), String.class);
+                new java.net.URI(urlStr), HttpMethod.GET, new HttpEntity<>(headers), String.class);
 
             JsonNode root = mapper.readTree(response.getBody());
             JsonNode data = root.path("data");
@@ -99,13 +99,14 @@ public class ZerodhaSpotPriceFetcher {
             if (data.isObject()) {
                 JsonNode spotNode = data.path(spotKey);
                 if (spotNode.isMissingNode()) spotNode = data.path(spotKey.replace(" ", "%20"));
+                log.info("DUMP spotNode='{}'", spotNode.toPrettyString());
                 spot = spotNode.path("last_price").asDouble(0);
                 if (spot <= 0) spot = spotNode.path("ohlc").path("close").asDouble(0);
 
                 JsonNode futNode = data.path(futuresKey);
                 if (futNode.isMissingNode()) futNode = data.path(futuresKey.replace(" ", "%20"));
                 fut = futNode.path("last_price").asDouble(0);
-                if (fut <= 0) fut = futNode.path("ohlc").path("close").asDouble(spot);
+                if (fut <= 0) fut = futNode.path("ohlc").path("close").asDouble(0);
 
                 if (spot > 0) {
                     cache.put(spotKey, spot);

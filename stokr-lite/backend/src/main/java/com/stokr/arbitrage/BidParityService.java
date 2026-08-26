@@ -22,7 +22,7 @@ public class BidParityService {
 
     private static final double RISK_FREE_RATE = 0.065;
     private static final double MIN_PARITY_DEVIATION_BID = 1.5;
-    private static final double MIN_EDGE_AFTER_COSTS = 1000.0;
+    private static final double MIN_EDGE_AFTER_COSTS = 0.0;
     private static final int MIN_VOLUME = 500;
     private static final int MIN_OI = 2000;
 
