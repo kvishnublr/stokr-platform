@@ -31,6 +31,9 @@ public class OptionArbitrageController {
     private final ButterflySpreadService butterflySpreadService;
     private final CondorSpreadService condorSpreadService;
     private final CalendarSpreadService calendarSpreadService;
+    private final IVRankService ivRankService;
+    private final SyntheticFuturesArbService syntheticArbService;
+    private final VolSurfaceService volSurfaceService;
     private final ZerodhaSpotPriceFetcher spotFetcher;
     private final OptionArbAutoExecService autoExecService;
     private final LivePositionRepository livePositionRepo;
@@ -53,6 +56,9 @@ public class OptionArbitrageController {
                                      ButterflySpreadService butterflySpreadService,
                                      CondorSpreadService condorSpreadService,
                                      CalendarSpreadService calendarSpreadService,
+                                     IVRankService ivRankService,
+                                     SyntheticFuturesArbService syntheticArbService,
+                                     VolSurfaceService volSurfaceService,
                                      ZerodhaSpotPriceFetcher spotFetcher,
                                      OptionArbAutoExecService autoExecService,
                                      LivePositionRepository livePositionRepo,
@@ -71,6 +77,9 @@ public class OptionArbitrageController {
         this.butterflySpreadService = butterflySpreadService;
         this.condorSpreadService = condorSpreadService;
         this.calendarSpreadService = calendarSpreadService;
+        this.ivRankService = ivRankService;
+        this.syntheticArbService = syntheticArbService;
+        this.volSurfaceService = volSurfaceService;
         this.spotFetcher = spotFetcher;
         this.autoExecService = autoExecService;
         this.livePositionRepo = livePositionRepo;
@@ -435,18 +444,116 @@ public class OptionArbitrageController {
     @GetMapping("/calendar/scan")
     public ResponseEntity<Map<String, Object>> scanCalendarSpread(
             @RequestParam(defaultValue = "ALL") String underlying) {
-        // Disabled: CalendarSpreadService's "expected carry" benchmark has no basis in option
-        // pricing theory (real time-value comes from vega/theta, not futures cost-of-carry),
-        // so its reported "edge" does not represent a genuine arbitrage opportunity. Re-enable
-        // only after the pricing model is rebuilt and the strategy is honestly relabeled.
-        return ResponseEntity.ok(Map.of(
-            "timestamp", System.currentTimeMillis(),
-            "underlying", underlying,
-            "disabled", true,
-            "opportunities", Collections.emptyList(),
-            "count", 0,
-            "reason", "Calendar Spread is temporarily disabled pending a pricing model review."
-        ));
+        LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. Calendar spread scanner runs 9:15 AM - 3:30 PM IST."
+            ));
+        }
+        try {
+            List<Map<String, Object>> opps = calendarSpreadService.scanCalendarSpreads(underlying);
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "opportunities", opps,
+                "count", opps.size()
+            ));
+        } catch (Exception e) {
+            log.error("Calendar scan failed: {}", e.getMessage());
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "error", e.getMessage()
+            ));
+        }
+    }
+
+
+    @GetMapping("/iv-rank/current")
+    public ResponseEntity<Map<String, Object>> getIVRankCurrent() {
+        try {
+            Map<String, Object> data = ivRankService.getAllIVData();
+            return ResponseEntity.ok(data);
+        } catch (Exception e) {
+            log.error("IV rank fetch failed: {}", e.getMessage());
+            return ResponseEntity.ok(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/iv-rank/history")
+    public ResponseEntity<List<Map<String, Object>>> getIVHistory(
+            @RequestParam(defaultValue = "NIFTY") String underlying,
+            @RequestParam(defaultValue = "30") int days) {
+        return ResponseEntity.ok(ivRankService.getIVHistory(underlying, days));
+    }
+
+    @GetMapping("/iv-rank/snapshot")
+    public ResponseEntity<Map<String, Object>> recordIVSnapshot() {
+        ivRankService.recordIVSnapshots();
+        return ResponseEntity.ok(Map.of("status", "recorded", "timestamp", System.currentTimeMillis()));
+    }
+
+    @GetMapping("/synthetic-arb/scan")
+    public ResponseEntity<Map<String, Object>> scanSyntheticArb(
+            @RequestParam(defaultValue = "ALL") String underlying) {
+        LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "opportunities", Collections.emptyList(),
+                "count", 0
+            ));
+        }
+        try {
+            List<Map<String, Object>> opps = syntheticArbService.scanSyntheticArb(underlying);
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "opportunities", opps,
+                "count", opps.size()
+            ));
+        } catch (Exception e) {
+            log.error("Synthetic arb scan failed: {}", e.getMessage());
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "error", e.getMessage()
+            ));
+        }
+    }
+
+    @GetMapping("/vol-surface/scan")
+    public ResponseEntity<Map<String, Object>> scanVolSurface(
+            @RequestParam(defaultValue = "NIFTY") String underlying) {
+        try {
+            String spotKey = switch (underlying.toUpperCase()) {
+                case "BANKNIFTY" -> "NSE:NIFTY BANK";
+                case "MIDCPNIFTY" -> "NSE:NIFTY MID SELECT";
+                case "FINNIFTY" -> "NSE:NIFTY FIN SERVICE";
+                default -> "NSE:NIFTY 50";
+            };
+            String futKey = FuturesKeyResolver.resolveFuturesKey(underlying, spotFetcher, spotKey);
+            double[] sf = spotFetcher.getSpotAndFutures(spotKey, futKey);
+            double spot = (sf != null && sf.length > 0 && sf[0] > 0) ? sf[0] : 0;
+            double fut = (sf != null && sf.length > 1 && sf[1] > 0) ? sf[1] : spot;
+            Map<String, Object> surface = volSurfaceService.getVolSurface(underlying, spot, fut);
+            surface.put("timestamp", System.currentTimeMillis());
+            return ResponseEntity.ok(surface);
+        } catch (Exception e) {
+            log.error("Vol surface scan failed: {}", e.getMessage());
+            return ResponseEntity.ok(Map.of("error", e.getMessage()));
+        }
     }
 
     @GetMapping("/iron-condor/scan")

@@ -701,6 +701,10 @@ export default function OptionArbitrage() {
         {activeTab === 'butterfly' && <ButterflySpreadView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
         {activeTab === 'condorspread' && <CondorSpreadView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
         {activeTab === 'ironcondor' && <IronCondorView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'calendar' && <CalendarSpreadView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'syntheticarb' && <SyntheticArbView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'ivmonitor' && <IVMonitorView />}
+        {activeTab === 'volsurface' && <VolSurfaceView />}
         {activeTab === 'cashsurge' && <CashSurgeView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
         {activeTab === 'cashswing' && <CashSwingView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
         {activeTab === 'top-picks' && <TopPicksView executionBroker={executionBroker} handleExecuteInline={setPendingLiveDeploy} />}
@@ -5903,6 +5907,412 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* SYNTHETIC FUTURES ARB VIEW */
+function SyntheticArbView({ handleExecuteInline, executionBroker }) {
+  const [underlying, setUnderlying] = useState('ALL');
+  const [expandedId, setExpandedId] = useState(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['synthetic-arb-scan', underlying],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/synthetic-arb/scan', { params: { underlying } });
+      return res.data;
+    },
+    refetchInterval: 15000
+  });
+
+  const opps = data?.opportunities || [];
+  const marketClosed = data?.marketClosed;
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-bold text-slate-800">🔄 Synthetic Futures Arbitrage</h2>
+          <p className="text-[10px] text-slate-500">Exploits Put-Call Parity: when Synthetic Futures Price != Actual Futures Price</p>
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            <button
+              key={u}
+              onClick={() => setUnderlying(u)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                underlying === u ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {u}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
+        {isLoading ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Synthetic Futures Arb...</div>
+        ) : marketClosed ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">🕒 Market closed. Scanner runs 9:15 AM - 3:30 PM IST.</div>
+        ) : opps.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No synthetic futures arbitrage detected</div>
+        ) : (
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-xs text-left border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Strike</th>
+                  <th className="px-2 py-2">Direction</th>
+                  <th className="px-2 py-2 text-right">Synthetic</th>
+                  <th className="px-2 py-2 text-right">Futures</th>
+                  <th className="px-2 py-2 text-right">Edge (pts)</th>
+                  <th className="px-2 py-2 text-right text-emerald-600 font-bold">Edge (₹)</th>
+                  <th className="px-2 py-2 text-right">Confidence</th>
+                  <th className="px-2 py-2 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {opps.slice(0, 30).map((opp, idx) => {
+                  const isExp = expandedId === idx;
+                  return (
+                    <React.Fragment key={idx}>
+                      <tr
+                        onClick={() => setExpandedId(isExp ? null : idx)}
+                        className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}
+                      >
+                        <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
+                        <td className="px-2 py-1.5">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            opp.direction === 'BUY_SYNTHETIC' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                          }`}>{opp.direction}</span>
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-600">₹{Number(opp.synthPrice || 0).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-600">₹{Number(opp.futPrice || 0).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-700">{Number(opp.edgePoints || 0).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">+₹{Math.round(Number(opp.edgeRs || 0)).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-indigo-600 font-bold">{Number(opp.confidence || 0).toFixed(0)}%</td>
+                        <td className="px-2 py-1.5 text-center">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
+                            className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded shadow-sm"
+                          >
+                            🔄 Execute
+                          </button>
+                        </td>
+                      </tr>
+                      {isExp && (
+                        <tr className="bg-indigo-50/40 border-b border-indigo-100">
+                          <td colSpan={9} className="p-3">
+                            <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
+                              <span className="font-bold text-slate-800 text-xs uppercase block">Leg Breakdown:</span>
+                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.action}</p>
+                              <div className="grid grid-cols-4 gap-2 text-[10px]">
+                                <div><span className="text-slate-500">CE Bid/Ask:</span> <span className="font-bold">₹{opp.ceBid} / ₹{opp.ceAsk}</span></div>
+                                <div><span className="text-slate-500">PE Bid/Ask:</span> <span className="font-bold">₹{opp.peBid} / ₹{opp.peAsk}</span></div>
+                                <div><span className="text-slate-500">Lot Size:</span> <span className="font-bold">{opp.lotSize}</span></div>
+                                <div><span className="text-slate-500">Txn Cost:</span> <span className="font-bold">₹{opp.txnCost}</span></div>
+                              </div>
+                              <div className="flex justify-end pt-1">
+                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold shadow-md">
+                                  🔄 Submit ({executionBroker})
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* IV MONITOR VIEW */
+function IVMonitorView() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['iv-rank-current'],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/iv-rank/current');
+      return res.data;
+    },
+    refetchInterval: 30000
+  });
+
+  const [histUnderlying, setHistUnderlying] = useState('NIFTY');
+  const { data: histData } = useQuery({
+    queryKey: ['iv-rank-history', histUnderlying],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/iv-rank/history', { params: { underlying: histUnderlying, days: 30 } });
+      return res.data;
+    },
+    refetchInterval: 60000
+  });
+
+  const underlyings = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+
+  const getRegimeColor = (regime) => {
+    if (regime === 'LOW') return 'bg-emerald-100 text-emerald-700 border-emerald-300';
+    if (regime === 'HIGH') return 'bg-red-100 text-red-700 border-red-300';
+    return 'bg-amber-100 text-amber-700 border-amber-300';
+  };
+
+  const getIVRankColor = (rank) => {
+    if (rank > 60) return 'text-emerald-600';
+    if (rank > 35) return 'text-amber-600';
+    return 'text-red-500';
+  };
+
+  return (
+    <div className="space-y-4 w-full">
+      <div>
+        <h2 className="text-base font-bold text-slate-800">📈 IV Rank Monitor & Regime Detector</h2>
+        <p className="text-[10px] text-slate-500">Tracks implied vol rank, realized vol, and market regime across all underlyings</p>
+      </div>
+
+      {isLoading ? (
+        <div className="p-12 text-center text-slate-400 text-sm font-semibold">Loading IV data...</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          {underlyings.map(u => {
+            const d = data?.[u];
+            if (!d) return (
+              <div key={u} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+                <h3 className="font-bold text-slate-800">{u}</h3>
+                <p className="text-xs text-slate-400 mt-2">No data available yet. Market may be closed.</p>
+              </div>
+            );
+            return (
+              <div key={u} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-slate-800 text-sm">{u}</h3>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${getRegimeColor(d.regime)}`}>
+                    {d.regime}
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase">IV Rank</span>
+                    <span className={`text-lg font-black ${getIVRankColor(d.ivRank)}`}>{Number(d.ivRank).toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div className={`h-2 rounded-full ${d.ivRank > 60 ? 'bg-emerald-500' : d.ivRank > 35 ? 'bg-amber-500' : 'bg-red-400'}`}
+                      style={{ width: `${Math.min(100, d.ivRank)}%` }}
+                    ></div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[10px]">
+                  <div className="bg-slate-50 rounded-lg p-2">
+                    <span className="text-slate-500 block">ATM IV</span>
+                    <span className="font-bold text-slate-800 text-sm">{Number(d.atmIV).toFixed(1)}%</span>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2">
+                    <span className="text-slate-500 block">Realized Vol (5d)</span>
+                    <span className="font-bold text-slate-800 text-sm">{Number(d.rv5d).toFixed(1)}%</span>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2">
+                    <span className="text-slate-500 block">IV/RV Ratio</span>
+                    <span className={`font-bold text-sm ${d.ivRvRatio > 1.2 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {Number(d.ivRvRatio).toFixed(2)}x
+                    </span>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2">
+                    <span className="text-slate-500 block">Spot</span>
+                    <span className="font-bold text-slate-800 text-sm">₹{Number(d.spotPrice).toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+
+                <div className={`rounded-lg p-2 text-[10px] font-bold text-center ${
+                  d.sellPremiumOk ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'
+                }`}>
+                  {d.sellPremiumOk ? '✅ OK to sell premium (Butterfly/Condor)' : '⚠️ WAIT — IV too cheap to sell'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* IV History Table */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-slate-800 text-sm">IV History (last 30 days)</h3>
+          <div className="flex gap-1">
+            {underlyings.map(u => (
+              <button key={u} onClick={() => setHistUnderlying(u)}
+                className={`px-2 py-1 rounded-lg text-[10px] font-bold ${histUnderlying === u ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+              >{u}</button>
+            ))}
+          </div>
+        </div>
+        {histData && histData.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2 text-left">Time</th>
+                  <th className="px-2 py-2 text-right">ATM IV</th>
+                  <th className="px-2 py-2 text-right">CE IV</th>
+                  <th className="px-2 py-2 text-right">PE IV</th>
+                  <th className="px-2 py-2 text-right">RV (5d)</th>
+                  <th className="px-2 py-2 text-right">IV Rank</th>
+                  <th className="px-2 py-2 text-right">IV/RV</th>
+                  <th className="px-2 py-2 text-center">Regime</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {histData.slice(0, 50).map((row, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50">
+                    <td className="px-2 py-1 text-slate-600">{new Date(row.snapshot_time).toLocaleString()}</td>
+                    <td className="px-2 py-1 text-right font-mono font-bold">{Number(row.atm_iv).toFixed(1)}%</td>
+                    <td className="px-2 py-1 text-right font-mono">{Number(row.atm_iv_ce).toFixed(1)}%</td>
+                    <td className="px-2 py-1 text-right font-mono">{Number(row.atm_iv_pe).toFixed(1)}%</td>
+                    <td className="px-2 py-1 text-right font-mono">{Number(row.realized_vol_5d).toFixed(1)}%</td>
+                    <td className="px-2 py-1 text-right font-mono font-bold">{Number(row.iv_rank).toFixed(0)}%</td>
+                    <td className="px-2 py-1 text-right font-mono">{Number(row.iv_rv_ratio).toFixed(2)}</td>
+                    <td className="px-2 py-1 text-center">
+                      <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${getRegimeColor(row.regime)}`}>{row.regime}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="p-6 text-center text-slate-400 text-sm">No IV history recorded yet. Data will populate every 30 minutes during market hours.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* VOL SURFACE VIEW */
+function VolSurfaceView() {
+  const [underlying, setUnderlying] = useState('NIFTY');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['vol-surface-scan', underlying],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/vol-surface/scan', { params: { underlying } });
+      return res.data;
+    },
+    refetchInterval: 30000
+  });
+
+  const rows = data?.rows || [];
+  const spot = data?.spotPrice || 0;
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-bold text-slate-800">🌊 Volatility Surface</h2>
+          <p className="text-[10px] text-slate-500">IV smile across strikes - detect skew anomalies and mispriced options</p>
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            <button
+              key={u}
+              onClick={() => setUnderlying(u)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                underlying === u ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {u}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
+        {isLoading ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">Loading volatility surface...</div>
+        ) : rows.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No vol surface data for {underlying}</div>
+        ) : (
+          <>
+            {/* Visual IV Chart */}
+            <div className="p-4 border-b border-slate-200">
+              <h3 className="text-xs font-bold text-slate-600 uppercase mb-3">IV Smile (CE vs PE)</h3>
+              <div className="flex items-end gap-1 h-32">
+                {rows.map((row, idx) => {
+                  const maxIV = Math.max(...rows.map(r => Math.max(r.ceIv || 0, r.peIv || 0)));
+                  const ceH = maxIV > 0 ? ((row.ceIv || 0) / maxIV) * 100 : 0;
+                  const peH = maxIV > 0 ? ((row.peIv || 0) / maxIV) * 100 : 0;
+                  const isATM = row.strike === Math.round(spot / OptionChainService_getStep(underlying)) * OptionChainService_getStep(underlying);
+                  return (
+                    <div key={idx} className="flex-1 flex flex-col items-center gap-0.5" title={`Strike: ${row.strike}
+CE IV: ${row.ceIv}%
+PE IV: ${row.peIv}%`}>
+                      <div className="flex gap-px w-full">
+                        <div className="flex-1 bg-blue-400 rounded-t-sm" style={{ height: `${ceH}%`, minHeight: '2px' }}></div>
+                        <div className="flex-1 bg-pink-400 rounded-t-sm" style={{ height: `${peH}%`, minHeight: '2px' }}></div>
+                      </div>
+                      <span className={`text-[8px] ${isATM ? 'font-bold text-indigo-600' : 'text-slate-400'}`}>{row.strike}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-3 mt-2 text-[9px] text-slate-500">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 bg-blue-400 rounded-sm"></span> CE IV</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 bg-pink-400 rounded-sm"></span> PE IV</span>
+                <span className="ml-auto">Spot: ₹{Number(spot).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            {/* Data Table */}
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                  <tr>
+                    <th className="px-2 py-2">Strike</th>
+                    <th className="px-2 py-2 text-right">Moneyness</th>
+                    <th className="px-2 py-2 text-right text-blue-600">CE IV %</th>
+                    <th className="px-2 py-2 text-right text-pink-600">PE IV %</th>
+                    <th className="px-2 py-2 text-right">Avg IV %</th>
+                    <th className="px-2 py-2 text-right">CE Price</th>
+                    <th className="px-2 py-2 text-right">PE Price</th>
+                    <th className="px-2 py-2 text-right">CE Bid</th>
+                    <th className="px-2 py-2 text-right">CE Ask</th>
+                    <th className="px-2 py-2 text-right">PE Bid</th>
+                    <th className="px-2 py-2 text-right">PE Ask</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.map((row, idx) => {
+                    const isATM = Math.abs(row.moneyness || 0) < 0.005;
+                    return (
+                      <tr key={idx} className={`${isATM ? 'bg-indigo-50/50 font-bold' : 'hover:bg-slate-50'}`}>
+                        <td className="px-2 py-1.5 font-bold text-slate-800">{row.strike}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-500">{(row.moneyness * 100).toFixed(2)}%</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-blue-600">{Number(row.ceIv).toFixed(1)}%</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-pink-600">{Number(row.peIv).toFixed(1)}%</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-700">{Number(row.avgIv).toFixed(1)}%</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-600">₹{Number(row.cePrice).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-600">₹{Number(row.pePrice).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-500">{Number(row.ceBid).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-500">{Number(row.ceAsk).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-500">{Number(row.peBid).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-500">{Number(row.peAsk).toFixed(1)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>
