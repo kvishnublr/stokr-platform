@@ -442,6 +442,104 @@ public class OptionArbAutoExecService {
         evaluateAndExecuteForMode(newOpps, "LIVE", autoExecSettings.getOrDefault("LIVE", Map.of()));
     }
     
+
+    private void executePaperTrades(List<OptionArbOpportunity> newOpps, Map<String, Object> settings) {
+        long currentOpen = positionRepo.countOpenLive(); 
+        for (OptionArbOpportunity opp : newOpps) {
+            if (opp.getUnderlying() == null || opp.getEdgeAfterCosts() == null) continue;
+
+            String prefix = strategyPrefix(opp.getStrategyType());
+            String key = prefix + capitalize(opp.getUnderlying());
+            boolean enabled = Boolean.TRUE.equals(settings.get(key + "Enabled"));
+            if (!enabled) continue;
+
+            double minEdge = ((Number) settings.getOrDefault(key + "MinEdge", 800.0)).doubleValue();
+            if (opp.getEdgeAfterCosts().doubleValue() < minEdge) continue;
+            if (opp.getExpiryDate() == null || opp.getStrike() == null) continue;
+
+            if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
+                    .anyMatch(p -> "PAPER".equals(p.getBroker()) && opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
+
+            int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
+            int lotSize = getLotSize(opp.getUnderlying());
+
+            opp.setStatus("RUNNING");
+            oppRepo.save(opp);
+
+            List<Map<String, Object>> legs = opp.getLegList();
+            boolean isMultiLeg = legs != null && !legs.isEmpty();
+
+            if (isMultiLeg) {
+                List<String> symbols = new ArrayList<>();
+                List<Map<String, Object>> resolvedLegs = new ArrayList<>();
+                for (Map<String, Object> leg : legs) {
+                    int strike = ((Number) leg.get("strike")).intValue();
+                    String optionType = (String) leg.get("optionType");
+                    String sym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), strike, optionType);
+                    Map<String, Object> resolved = new java.util.LinkedHashMap<>(leg);
+                    resolved.put("symbol", sym);
+                    resolvedLegs.add(resolved);
+                    if (sym != null) symbols.add(sym);
+                }
+                Map<String, OptionChainService.OptionQuote> legQuotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
+                double entryCost = 0;
+                for (Map<String, Object> leg : resolvedLegs) {
+                    String sym = (String) leg.get("symbol");
+                    double live = (sym != null && legQuotes.containsKey(sym) && legQuotes.get(sym).lastPrice > 0)
+                        ? legQuotes.get(sym).lastPrice
+                        : (leg.get("price") instanceof Number n ? n.doubleValue() : 0);
+                    leg.put("price", live);
+                    int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+                    boolean isBuy = "BUY".equals(leg.get("side"));
+                    entryCost += (isBuy ? live : -live) * qtyMult;
+                }
+                entryCost = Math.abs(entryCost) * lotSize * lots;
+
+                LivePosition livePos = LivePosition.builder()
+                    .userId(1L).broker("PAPER").opportunityId(opp.getId())
+                    .underlying(opp.getUnderlying()).strike(opp.getStrike()).action(opp.getAction())
+                    .strategyType(opp.getStrategyType()).lots(lots).lotSize(lotSize)
+                    .targetEdge(opp.getEdgeAfterCosts()).entryCost(BigDecimal.valueOf(entryCost))
+                    .status("OPEN").enteredAt(LocalDateTime.now()).createdAt(LocalDateTime.now()).build();
+                livePos.setLegs(resolvedLegs);
+                positionRepo.save(livePos);
+                addLog("EXEC", "PAPER", "Auto-executed PAPER trade for " + opp.getUnderlying() + " (" + resolvedLegs.size() + " legs)");
+            } else {
+                double ceLive = 0, peLive = 0;
+                String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
+                String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
+                Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(List.of(ceSymbol, peSymbol));
+                if (quotes.containsKey(ceSymbol) && quotes.get(ceSymbol).lastPrice > 0) ceLive = quotes.get(ceSymbol).lastPrice;
+                if (quotes.containsKey(peSymbol) && quotes.get(peSymbol).lastPrice > 0) peLive = quotes.get(peSymbol).lastPrice;
+                if (ceLive > 0) opp.setCeEntryPrice(BigDecimal.valueOf(ceLive));
+                if (peLive > 0) opp.setPeEntryPrice(BigDecimal.valueOf(peLive));
+
+                String futSymbol = optionChainService.buildNfoFutSymbol(opp.getUnderlying(), opp.getExpiryDate());
+                double futLive = 0;
+                if (futSymbol != null) {
+                    try {
+                        var futQuotes = optionChainService.fetchQuotes(List.of(futSymbol));
+                        if (futQuotes.containsKey(futSymbol) && futQuotes.get(futSymbol).lastPrice > 0) futLive = futQuotes.get(futSymbol).lastPrice;
+                    } catch (Exception ignored) {}
+                }
+                
+                LivePosition livePos = LivePosition.builder()
+                    .userId(1L).broker("PAPER").opportunityId(opp.getId())
+                    .underlying(opp.getUnderlying()).strike(opp.getStrike()).action(opp.getAction())
+                    .strategyType(opp.getStrategyType()).lots(lots).lotSize(lotSize)
+                    .ceEntryPrice(ceLive > 0 ? BigDecimal.valueOf(ceLive) : null)
+                    .peEntryPrice(peLive > 0 ? BigDecimal.valueOf(peLive) : null)
+                    .futEntryPrice(futLive > 0 ? BigDecimal.valueOf(futLive) : null)
+                    .futSymbol(futSymbol).ceSymbol(ceSymbol).peSymbol(peSymbol)
+                    .targetEdge(opp.getEdgeAfterCosts())
+                    .entryCost(BigDecimal.valueOf((ceLive + peLive + futLive) * lotSize))
+                    .status("OPEN").enteredAt(LocalDateTime.now()).createdAt(LocalDateTime.now()).build();
+                positionRepo.save(livePos);
+                addLog("EXEC", "PAPER", "Auto-executed PAPER Bid Parity trade for " + opp.getUnderlying());
+            }
+        }
+    }
+
     private void evaluateAndExecuteForMode(List<OptionArbOpportunity> newOpps, String mode, Map<String, Object> settings) {
         if (!Boolean.TRUE.equals(settings.get("enabled"))) return;
 
@@ -449,7 +547,10 @@ public class OptionArbAutoExecService {
         if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
 
         String broker = (String) settings.getOrDefault("broker", "NAVIA");
-        if ("PAPER".equalsIgnoreCase(broker)) return;
+        if ("PAPER".equalsIgnoreCase(broker) || "PAPER".equalsIgnoreCase(mode)) {
+            executePaperTrades(newOpps, settings);
+            return;
+        }
         int maxPositions = (int) settings.getOrDefault("maxOpenPositions", 1);
         long currentOpen = positionRepo.countOpenLive();
         if (currentOpen >= maxPositions) return;
@@ -1057,15 +1158,15 @@ public class OptionArbAutoExecService {
             List<PlannedLeg> orderPlan;
             if (isConversion) {
                 orderPlan = List.of(
-                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.BUY, ceQty, 0.0, "ce"),
-                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.SELL, futQty, 0.0, "fut"),
-                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.SELL, peQty, 0.0, "pe")
+                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.BUY, ceQty, opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() * 1.05 : 0.0, "ce"),
+                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.SELL, futQty, opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() * 0.95 : 0.0, "fut"),
+                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.SELL, peQty, opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() * 0.95 : 0.0, "pe")
                 );
             } else {
                 orderPlan = List.of(
-                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.BUY, peQty, 0.0, "pe"),
-                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.BUY, futQty, 0.0, "fut"),
-                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.SELL, ceQty, 0.0, "ce")
+                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.BUY, peQty, opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() * 1.05 : 0.0, "pe"),
+                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.BUY, futQty, opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() * 1.05 : 0.0, "fut"),
+                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.SELL, ceQty, opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() * 0.95 : 0.0, "ce")
                 );
             }
 
@@ -1183,9 +1284,15 @@ public class OptionArbAutoExecService {
                 int qtyMult = spec.get("qty") instanceof Number n ? n.intValue() : 1;
                 String symbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), strike, optionType);
                 int qty = lots * lotSize * qtyMult;
+                double specPrice = spec.get("price") instanceof Number n ? n.doubleValue() : 0.0;
+                // Apply 5% buffer: BUY +5%, SELL -5%. Converts MARKET to guaranteed-fill LIMIT.
+                double bufferedPrice = specPrice > 0
+                        ? ("BUY".equals(side) ? Math.ceil(specPrice * 1.05 * 20) / 20.0
+                                              : Math.floor(specPrice * 0.95 * 20) / 20.0)
+                        : 0.0;
                 PlannedLeg planned = new PlannedLeg(symbol,
                         "BUY".equals(side) ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL,
-                        qty, 0.0, optionType + strike);
+                        qty, bufferedPrice, optionType + strike);
                 pairs.add(new LegPair(spec, planned));
             }
 
@@ -1199,11 +1306,15 @@ public class OptionArbAutoExecService {
             List<PlacedLeg> placedLegs = new ArrayList<>();
             for (LegPair pair : pairs) {
                 PlannedLeg leg = pair.planned();
+                // Use LIMIT with buffered price if available, else MARKET
+                BrokerOrderRequest.OrderType orderType = leg.price() > 0
+                        ? BrokerOrderRequest.OrderType.LIMIT
+                        : BrokerOrderRequest.OrderType.MARKET;
                 BrokerOrderRequest req = BrokerOrderRequest.builder()
                         .symbol(leg.symbol()).exchange("NFO")
                         .side(leg.side())
                         .quantity(leg.quantity()).price(leg.price())
-                        .orderType(BrokerOrderRequest.OrderType.MARKET)
+                        .orderType(orderType)
                         .productType("NRML").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
 

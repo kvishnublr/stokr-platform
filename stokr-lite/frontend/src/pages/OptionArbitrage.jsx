@@ -334,7 +334,7 @@ export default function OptionArbitrage() {
   const testBrokerConnection = async () => {
     setIsTestingBroker(true);
     try {
-      const res = await client.post('/brokers/test-execution', { broker: executionBroker });
+      const res = await client.post('/brokers/test-connection', { broker: executionBroker });
       if (res.data?.ok) {
         showToast(res.data.message, 'success');
       } else {
@@ -692,7 +692,7 @@ export default function OptionArbitrage() {
         {activeTab === 'autotrade' && (
           <div className="space-y-4">
             <AutoExecSettingsPanel />
-            <AutoRollSettingsPanel />
+            <AutoRollSettingsPanel executionBroker={executionBroker} />
           </div>
         )}
         {activeTab === 'papertrades' && <PaperTradesView />}
@@ -866,7 +866,7 @@ function AutoExecSettingsPanel() {
 /* Auto-Roll on Breakeven Breach -- Butterfly only, configured per underlying (same pattern
    as the Auto-Execute Engine cards above). Off by default; each symbol has its own
    enable/breach-window/max-rolls so e.g. NIFTY can run this while BANKNIFTY stays manual. */
-function AutoRollSettingsPanel() {
+function AutoRollSettingsPanel({ executionBroker }) {
   const [settings, setSettings] = useState(null);
 
   const { data } = useQuery({
@@ -1511,6 +1511,7 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
                 <th className="px-3 py-2">Set / Underlying</th>
                 <th className="px-3 py-2">Expiry</th>
                 <th className="px-3 py-2 text-center">Legs</th>
+                <th className="px-3 py-2 text-right" title="Based on LTP (like Zerodha)">LTP P&L</th>
                 <th className="px-3 py-2 text-right" title="Calculated using real Bid/Ask prices">Executable P&L</th>
                 <th className="px-3 py-2 text-right">Realized P&L</th>
                 <th className="px-3 py-2 text-right">Action</th>
@@ -1545,6 +1546,9 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
                       <td className="px-3 py-2 font-mono text-slate-600">{g.expiry}</td>
                       <td className="px-3 py-2 text-center">
                         <span className="px-2 py-0.5 bg-slate-100 rounded-full font-bold text-slate-600">{g.positions.length}</span>
+                      </td>
+                      <td className={`px-3 py-2 text-right font-bold ${g.unrealizedPnl > 0 ? 'text-emerald-600' : g.unrealizedPnl < 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                        {g.unrealizedPnl > 0 ? '+' : ''}{g.unrealizedPnl.toFixed(2)}
                       </td>
                       <td className={`px-3 py-2 text-right font-bold ${g.executablePnl > 0 ? 'text-emerald-600' : g.executablePnl < 0 ? 'text-red-600' : 'text-slate-500'}`}>
                         {g.executablePnl > 0 ? '+' : ''}{g.executablePnl.toFixed(2)}
@@ -1589,7 +1593,8 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
                                     <th className="px-2 py-1 text-right">Qty</th>
                                     <th className="px-2 py-1 text-right">Avg</th>
                                     <th className="px-2 py-1 text-right">LTP</th>
-                                    <th className="px-2 py-1 text-right">Exec P&L</th>
+                                    <th className="px-2 py-1 text-right" title="Based on LTP (like Zerodha)">LTP P&L</th>
+                                    <th className="px-2 py-1 text-right" title="Based on real Bids/Asks">Exec P&L</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
@@ -1599,12 +1604,26 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
                                       <td className={`px-2 py-1 text-right font-bold ${p.qty > 0 ? 'text-blue-600' : 'text-rose-600'}`}>{p.qty > 0 ? '+'+p.qty : p.qty}</td>
                                       <td className="px-2 py-1 text-right">{p.avgPrice}</td>
                                       <td className="px-2 py-1 text-right">{p.lastPrice}</td>
+                                      <td className={`px-2 py-1 text-right font-bold ${p.unrealizedPnl > 0 ? 'text-emerald-600' : p.unrealizedPnl < 0 ? 'text-red-600' : ''}`}>
+                                        {p.unrealizedPnl != null ? Number(p.unrealizedPnl).toFixed(2) : '--'}
+                                      </td>
                                       <td className={`px-2 py-1 text-right font-bold ${p.executablePnl > 0 ? 'text-emerald-600' : p.executablePnl < 0 ? 'text-red-600' : ''}`}>
                                         {p.executablePnl != null ? Number(p.executablePnl).toFixed(2) : '--'}
                                       </td>
                                     </tr>
                                   ))}
                                 </tbody>
+                                <tfoot className="bg-slate-100/80 border-t border-slate-200 font-black">
+                                  <tr>
+                                    <td colSpan="4" className="px-2 py-1.5 text-right uppercase text-slate-500">Total Set P&L</td>
+                                    <td className={`px-2 py-1.5 text-right ${g.positions.reduce((s, p) => s + (p.unrealizedPnl || 0), 0) > 0 ? 'text-emerald-600' : g.positions.reduce((s, p) => s + (p.unrealizedPnl || 0), 0) < 0 ? 'text-red-600' : ''}`}>
+                                      {Number(g.positions.reduce((s, p) => s + (p.unrealizedPnl || 0), 0)).toFixed(2)}
+                                    </td>
+                                    <td className={`px-2 py-1.5 text-right ${g.executablePnl > 0 ? 'text-emerald-600' : g.executablePnl < 0 ? 'text-red-600' : ''}`}>
+                                      {Number(g.executablePnl).toFixed(2)}
+                                    </td>
+                                  </tr>
+                                </tfoot>
                               </table>
                             </div>
                             <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
@@ -2197,6 +2216,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                 <tr>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('scanTime')}>Time{sortIcon('scanTime')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strike')}>Strike{sortIcon('strike')}</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right">CE</th>
@@ -2597,6 +2617,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                 <tr>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('scanTime')}>Time{sortIcon('scanTime')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2">Strike Pair</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right">CE</th>
@@ -2789,6 +2810,7 @@ function BoxNearMissPanel() {
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                 <tr>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strikes')}>Strikes{sortIcon('strikes')}</th>
                   <th className="px-2 py-2">Direction</th>
                   <th className="px-2 py-2 text-right">Width</th>
@@ -2978,6 +3000,7 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
                 <tr>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('scanTime')}>Time{sortIcon('scanTime')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2">Strike Pair</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right text-emerald-600 font-bold cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('edge')}>Net Edge{sortIcon('edge')}</th>
@@ -3443,6 +3466,7 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
                 <tr>
                   <th className="px-2 py-2"></th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strikes')}>Strikes{sortIcon('strikes')}</th>
                   <th className="px-2 py-2">Type</th>
                   <th className="px-2 py-2">Direction</th>
@@ -3468,6 +3492,7 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
                         <input type="checkbox" checked={isSel} onChange={() => toggle(key)} className="w-3.5 h-3.5" />
                       </td>
                       <td className="px-2 py-1.5 font-bold text-slate-800">{c.underlying}</td>
+                      <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{c.expiryDate ? c.expiryDate.substring(5) : '--'}</td>
                       <td className="px-2 py-1.5 font-bold text-slate-700">{c.strikes}</td>
                       <td className="px-2 py-1.5 text-slate-600">{c.optionType}</td>
                       <td className="px-2 py-1.5 text-[10px] text-slate-500">{c.direction}</td>
@@ -3893,7 +3918,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
       ) : subTab === 'autotrade' ? (
         <div className="space-y-4">
           <StrategyAutoTradePanel executionBroker={executionBroker} prefix="butterfly" label="Butterfly Spread" accent="indigo" />
-          <AutoRollSettingsPanel />
+          <AutoRollSettingsPanel executionBroker={executionBroker} />
         </div>
       ) : subTab === 'candidates' ? (
         <ButterflyCandidatesPanel handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
@@ -3937,6 +3962,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
                 <tr>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('scanTime')}>Time{sortIcon('scanTime')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2">Strikes</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right text-emerald-600 font-bold cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('edge')}>Net Edge{sortIcon('edge')}</th>
@@ -4073,9 +4099,45 @@ function MarketClosedCandidates({ strategyType, reason }) {
     },
   });
 
+  const [sortConfig, setSortConfig] = useState({ key: 'snapshotTime', direction: 'desc' });
+
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    setSortConfig({ key, direction });
+  };
+
   const rows = data?.items || [];
+  
+  const sortedRows = [...rows].sort((a, b) => {
+    let valA = a[sortConfig.key];
+    let valB = b[sortConfig.key];
+    
+    if (sortConfig.key === 'payoff') {
+        valA = a.topMaxLoss ? (a.topMaxProfit || 0) / Math.abs(a.topMaxLoss) : 0;
+        valB = b.topMaxLoss ? (b.topMaxProfit || 0) / Math.abs(b.topMaxLoss) : 0;
+    }
+
+    if (valA == null) return 1;
+    if (valB == null) return -1;
+    if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
+
   const totalSightings = rows.reduce((s, r) => s + (Number(r.candidateCount) || 0), 0);
   const peak = rows.reduce((best, r) => (Number(r.topPop) || 0) > (Number(best?.topPop) || 0) ? r : best, null);
+
+  const SortIndicator = ({ columnKey }) => {
+    if (sortConfig.key !== columnKey) return null;
+    return <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>;
+  };
+
+  const Th = ({ children, columnKey, className = "" }) => (
+    <th className={`px-2 py-2 cursor-pointer hover:bg-slate-100 ${className}`} onClick={() => handleSort(columnKey)}>
+      {children} <SortIndicator columnKey={columnKey} />
+    </th>
+  );
 
   return (
     <div className="p-6">
@@ -4112,35 +4174,40 @@ function MarketClosedCandidates({ strategyType, reason }) {
 
           <div className="overflow-x-auto">
             <table className="w-full text-[11px] text-left border-collapse">
-              <thead className="bg-slate-50 border-y border-slate-200 font-bold text-slate-600 uppercase">
+              <thead className="bg-slate-50 border-y border-slate-200 font-bold text-slate-600 uppercase select-none">
                 <tr>
-                  <th className="px-2 py-2">Time</th>
-                  <th className="px-2 py-2">Symbol</th>
-                  <th className="px-2 py-2 text-right">Count</th>
-                  <th className="px-2 py-2">Top Strikes</th>
-                  <th className="px-2 py-2">Type</th>
-                  <th className="px-2 py-2 text-right">Model POP</th>
-                  <th className="px-2 py-2 text-right">Cost/Lot</th>
-                  <th className="px-2 py-2 text-right">Max Profit</th>
-                  <th className="px-2 py-2 text-right">Max Loss</th>
+                  <Th columnKey="snapshotTime">Time</Th>
+                  <Th columnKey="underlying">Symbol</Th>
+                  <Th columnKey="candidateCount" className="text-right">Count</Th>
+                  <Th columnKey="topStrikes">Top Strikes</Th>
+                  <Th columnKey="topOptionType">Type</Th>
+                  <Th columnKey="topPop" className="text-right">Model POP</Th>
+                  <Th columnKey="topCostPerLot" className="text-right">Cost/Lot</Th>
+                  <Th columnKey="topMaxProfit" className="text-right">Max Profit</Th>
+                  <Th columnKey="topMaxLoss" className="text-right">Max Loss</Th>
+                  <Th columnKey="payoff" className="text-right">Payoff</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {rows.slice().reverse().map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50">
-                    <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{fmtTime(r.snapshotTime)}</td>
-                    <td className="px-2 py-1.5 font-bold text-slate-800">{r.underlying}</td>
-                    <td className="px-2 py-1.5 text-right font-mono font-bold text-indigo-600">{r.candidateCount}</td>
-                    <td className="px-2 py-1.5 font-mono text-slate-700">{r.topStrikes || '--'}</td>
-                    <td className="px-2 py-1.5 text-slate-600">{r.topOptionType || '--'}</td>
-                    <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
-                      {r.topPop != null ? `${Math.round(r.topPop)}%` : '--'}
-                    </td>
-                    <td className="px-2 py-1.5 text-right font-mono">{r.topCostPerLot != null ? `₹${Math.round(r.topCostPerLot).toLocaleString('en-IN')}` : '--'}</td>
-                    <td className="px-2 py-1.5 text-right font-mono text-emerald-700">{r.topMaxProfit != null ? `₹${Math.round(r.topMaxProfit).toLocaleString('en-IN')}` : '--'}</td>
-                    <td className="px-2 py-1.5 text-right font-mono text-red-600">{r.topMaxLoss != null ? `₹${Math.round(r.topMaxLoss).toLocaleString('en-IN')}` : '--'}</td>
-                  </tr>
-                ))}
+                {sortedRows.map((r) => {
+                  const payoff = r.topMaxLoss ? (r.topMaxProfit || 0) / Math.abs(r.topMaxLoss) : null;
+                  return (
+                    <tr key={r.id} className="hover:bg-slate-50">
+                      <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{fmtTime(r.snapshotTime)}</td>
+                      <td className="px-2 py-1.5 font-bold text-slate-800">{r.underlying}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold text-indigo-600">{r.candidateCount}</td>
+                      <td className="px-2 py-1.5 font-mono text-slate-700">{r.topStrikes || '--'}</td>
+                      <td className="px-2 py-1.5 text-slate-600">{r.topOptionType || '--'}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
+                        {r.topPop != null ? `${Math.round(r.topPop)}%` : '--'}
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-mono">{r.topCostPerLot != null ? `₹${Math.round(r.topCostPerLot).toLocaleString('en-IN')}` : '--'}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-emerald-700">{r.topMaxProfit != null ? `₹${Math.round(r.topMaxProfit).toLocaleString('en-IN')}` : '--'}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-red-600">{r.topMaxLoss != null ? `₹${Math.round(r.topMaxLoss).toLocaleString('en-IN')}` : '--'}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold text-sky-600">{payoff != null ? `${payoff.toFixed(2)}x` : '--'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -4521,6 +4588,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
                 <tr>
                   <th className="px-2 py-2"></th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strikes')}>Strikes{sortIcon('strikes')}</th>
                   <th className="px-2 py-2">Type</th>
                   <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('costRatio')}>Cost/Width{sortIcon('costRatio')}</th>
@@ -4546,6 +4614,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
                         <input type="checkbox" checked={isSel} onChange={() => toggle(key)} className="w-3.5 h-3.5" />
                       </td>
                       <td className="px-2 py-1.5 font-bold text-slate-800">{c.underlying}</td>
+                      <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{c.expiryDate ? c.expiryDate.substring(5) : '--'}</td>
                       <td className="px-2 py-1.5 font-bold text-slate-700">{c.strikes}</td>
                       <td className="px-2 py-1.5 text-slate-600">{c.optionType}</td>
                       <td className="px-2 py-1.5 text-right font-mono">{Math.round(c.costRatio * 100)}%</td>
@@ -4740,6 +4809,7 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
                 <tr>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('scanTime')}>Time{sortIcon('scanTime')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2">Strikes</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right text-emerald-600 font-bold cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('edge')}>Net Edge{sortIcon('edge')}</th>
@@ -5207,6 +5277,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
                 <tr>
                   <th className="px-2 py-2"></th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strikes')}>Strikes{sortIcon('strikes')}</th>
                   <th className="px-2 py-2">Type</th>
                   <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('costRatio')}>Cost/Width{sortIcon('costRatio')}</th>
@@ -5232,6 +5303,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
                         <input type="checkbox" checked={isSel} onChange={() => toggle(key)} className="w-3.5 h-3.5" />
                       </td>
                       <td className="px-2 py-1.5 font-bold text-slate-800">{c.underlying}</td>
+                      <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{c.expiryDate ? c.expiryDate.substring(5) : '--'}</td>
                       <td className="px-2 py-1.5 font-bold text-slate-700">{c.strikes}</td>
                       <td className="px-2 py-1.5 text-slate-600">{c.optionType}</td>
                       <td className="px-2 py-1.5 text-right font-mono">{Math.round(c.costRatio * 100)}%</td>
@@ -5972,6 +6044,7 @@ function PaperTradesView() {
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('enteredAt')}>Entry Time{sortIcon('enteredAt')}</th>
                   <th className="px-2 py-2">Mode</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strike')}>Strike{sortIcon('strike')}</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right">CE Entry</th>

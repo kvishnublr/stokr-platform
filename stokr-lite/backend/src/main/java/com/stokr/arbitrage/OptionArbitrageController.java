@@ -1464,12 +1464,16 @@ public class OptionArbitrageController {
                 map.put("quantity", p.quantity());
                 map.put("qty", p.quantity()); // Alias for frontend
                 map.put("avgPrice", p.avgPrice());
-                map.put("lastPrice", p.lastPrice());
-                map.put("unrealizedPnl", p.unrealizedPnl());
+                OptionChainService.OptionQuote q = quotes.get(p.symbol());
+                double ltp = q != null && q.lastPrice > 0 ? q.lastPrice : p.lastPrice().doubleValue();
+                map.put("lastPrice", ltp);
+                
+                // Recompute unrealizedPnl based on the live LTP so it matches Kite Live precisely
+                double liveUnrealizedPnl = (ltp - p.avgPrice().doubleValue()) * p.quantity();
+                map.put("unrealizedPnl", liveUnrealizedPnl);
+                
                 map.put("realizedPnl", p.realizedPnl());
                 map.put("productType", p.productType());
-                
-                OptionChainService.OptionQuote q = quotes.get(p.symbol());
                 double bid = q != null ? q.bid : p.lastPrice().doubleValue();
                 double ask = q != null ? q.ask : p.lastPrice().doubleValue();
                 if (bid <= 0) bid = p.lastPrice().doubleValue();
