@@ -7406,15 +7406,19 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
           <div className="p-8 text-center text-slate-400 font-mono text-sm">No Alpha signals for {underlying} (Edge ≥ ₹{minEdge})</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[800px]">
+            <table className="w-full text-left border-collapse min-w-[800px] text-[11px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-black text-slate-400 tracking-wider">
+                  <th className="px-2 py-2">Time</th>
                   <th className="px-3 py-2">Strategy</th>
                   <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Expiry</th>
+                  <th className="px-2 py-2">Strike</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right">Net Edge</th>
                   <th className="px-2 py-2 text-center">Status</th>
-                  <th className="px-2 py-2 text-center"></th>
+                  <th className="px-2 py-2 text-right">P&L</th>
+                  <th className="px-2 py-2 text-center">Trade</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
@@ -7422,47 +7426,47 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
                   const isExp = expandedId === (opp.id || idx);
                   const edgeVal = opp.edgeAfterCosts || 0;
                   const isLive = opp.status === 'RUNNING';
+                  
+                  const fmtTime = (d) => {
+                    if (!d) return '--';
+                    const dt = new Date(d);
+                    return isNaN(dt) ? d : dt.toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' }).toLowerCase();
+                  };
+                  const timeStr = fmtTime(opp.scanTime || opp.entryTime);
+                  
                   return (
                     <React.Fragment key={opp.id || idx}>
                       <tr onClick={() => setExpandedId(isExp ? null : (opp.id || idx))} className={`transition cursor-pointer ${isExp ? 'bg-orange-50/70 border-l-4 border-orange-600' : 'hover:bg-slate-50'}`}>
-                        <td className="px-3 py-2 font-bold text-orange-700 text-xs">{opp.type || 'SIGNAL'}</td>
-                        <td className="px-2 py-2 font-bold text-slate-800">{opp.underlying}</td>
-                        <td className="px-2 py-2 font-bold text-slate-600 truncate max-w-[200px] text-xs">{opp.action}</td>
-                        <td className="px-2 py-2 text-right font-mono font-bold text-emerald-600">+₹{Math.round(edgeVal).toLocaleString('en-IN')}</td>
-                        <td className="px-2 py-2 text-center">
+                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{timeStr}</td>
+                        <td className="px-3 py-1.5 font-bold text-orange-700 text-[11px]">{opp.type || 'SIGNAL'}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-800 text-[11px]">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{opp.expiryDate || opp.expiry || '--'}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-700 text-[11px]">{opp.strike || '--'}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-600 truncate max-w-[200px] text-[10px]">{opp.action}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600 text-[11px]">+₹{Math.round(edgeVal).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5 text-center">
                           <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${isLive ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                             {isLive ? '🟢 RUNNING' : 'NEW'}
                           </span>
                         </td>
-                        <td className="px-2 py-2 text-center">
+                        <td className="px-2 py-1.5 text-right font-mono text-[11px]">
+                          {opp.currentPnl ? (
+                            <span className={opp.currentPnl >= 0 ? 'text-emerald-600 font-bold' : 'text-red-500 font-bold'}>
+                              ₹{opp.currentPnl > 0 ? '+' : ''}{Math.round(opp.currentPnl).toLocaleString('en-IN')}
+                            </span>
+                          ) : <span className="text-slate-400">--</span>}
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
                           <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-2 py-0.5 bg-orange-600 hover:bg-orange-700 text-white text-[10px] font-bold rounded shadow-sm transition">⚡ Deploy</button>
                         </td>
                       </tr>
                       {isExp && (
                         <tr className="bg-orange-50/40 border-b border-orange-100">
-                          <td colSpan={6} className="p-3">
+                          <td colSpan={10} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-orange-200 shadow-md space-y-2">
                               <span className="font-bold text-slate-800 text-xs uppercase block">Signal Breakdown:</span>
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
+                              <p className="text-[11px] font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '?'}</p>
                               {opp.description && <p className="text-[10px] text-slate-500">{opp.description}</p>}
-                              <div className="flex flex-wrap gap-4 mb-2">
-                                <div className="bg-slate-50 p-2 rounded border text-[10px]">
-                                  <span className="text-slate-500 uppercase block font-bold">Detected At</span>
-                                  <span className="font-mono font-bold">{new Date(opp.scanTime || opp.entryTime || Date.now()).toLocaleString()}</span>
-                                </div>
-                                <div className="bg-slate-50 p-2 rounded border text-[10px]">
-                                  <span className="text-slate-500 uppercase block font-bold">Expiry Date</span>
-                                  <span className="font-mono font-bold">{opp.expiryDate || opp.expiry || '--'}</span>
-                                </div>
-                                <div className="bg-slate-50 p-2 rounded border text-[10px]">
-                                  <span className="text-slate-500 uppercase block font-bold">Strike(s)</span>
-                                  <span className="font-mono font-bold text-indigo-700">{opp.strike || '--'}</span>
-                                </div>
-                                <div className="bg-slate-50 p-2 rounded border text-[10px]">
-                                  <span className="text-slate-500 uppercase block font-bold">Base Lot Size</span>
-                                  <span className="font-mono font-bold">{opp.lotSize || opp.qty || '--'}</span>
-                                </div>
-                              </div>
                               
                               {opp.costBreakdown && (
                                 <div className="text-[10px] font-mono text-slate-600 flex flex-wrap gap-3 my-2 bg-slate-100 p-2 rounded-lg border border-slate-200">
@@ -7491,11 +7495,6 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
                                 }
                                 return <ArbitrageSignalPayoffChart opp={oppToPass} />;
                               })()}
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-md transition">
-                                  ⚡ Submit ({executionBroker})
-                                </button>
-                              </div>
                             </div>
                           </td>
                         </tr>
