@@ -238,6 +238,24 @@ public class OptionChainService {
         };
     }
 
+
+    public LocalDate getMonthlyExpiryDate(String underlying) {
+        LocalDate today = LocalDate.now();
+        DayOfWeek targetDay = getExpiryDayForUnderlying(underlying);
+        LocalDate lastDayOfMonth = today.withDayOfMonth(today.lengthOfMonth());
+        LocalDate expiryDay = lastDayOfMonth;
+        while (expiryDay.getDayOfWeek() != targetDay) {
+            expiryDay = expiryDay.minusDays(1);
+        }
+        if (expiryDay.isBefore(today) || (expiryDay.equals(today) && LocalTime.now(ZoneId.of("Asia/Kolkata")).isAfter(LocalTime.of(15, 30)))) {
+            lastDayOfMonth = today.plusMonths(1).withDayOfMonth(today.plusMonths(1).lengthOfMonth());
+            expiryDay = lastDayOfMonth;
+            while (expiryDay.getDayOfWeek() != targetDay) {
+                expiryDay = expiryDay.minusDays(1);
+            }
+        }
+        return expiryDay;
+    }
     public LocalDate getWeeklyExpiryDate(String underlying) {
         LocalDate today = LocalDate.now();
         LocalDate nextExpiry = today;
