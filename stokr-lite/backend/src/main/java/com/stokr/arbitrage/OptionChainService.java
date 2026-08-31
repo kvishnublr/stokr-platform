@@ -180,7 +180,7 @@ public class OptionChainService {
         return quotes;
     }
 
-    public int getATMStrike(String underlying, double spotPrice) {
+    public static int getATMStrike(String underlying, double spotPrice) {
         int step = getStrikeStep(underlying);
         return (int) (Math.round(spotPrice / step) * step);
     }
@@ -278,7 +278,7 @@ public class OptionChainService {
         return expiryDay;
     }
 
-    private List<String> buildNfoSymbolCandidates(String underlying, LocalDate expiryDate, int strike, String type) {
+    public List<String> buildNfoSymbolCandidates(String underlying, LocalDate expiryDate, int strike, String type) {
         String cleanUnderlying = underlying.replace(" ", "");
         int yy = expiryDate.getYear() % 100;
         String mon = expiryDate.getMonth().name().substring(0, 3);

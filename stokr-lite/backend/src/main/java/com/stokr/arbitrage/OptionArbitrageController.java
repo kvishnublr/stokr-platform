@@ -1,4 +1,5 @@
 package com.stokr.arbitrage;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -6,6 +7,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import com.stokr.auth.AuthUser;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -36,6 +39,7 @@ public class OptionArbitrageController {
     private final VolSurfaceService volSurfaceService;
     private final ZerodhaSpotPriceFetcher spotFetcher;
     private final OptionArbAutoExecService autoExecService;
+    @Autowired private MultiTenantExecutionRouter executionRouter;
     private final LivePositionRepository livePositionRepo;
     private final OptionArbOpportunityRepository oppRepo;
     private final com.stokr.delivery.CashScannerService cashScannerService;
@@ -2118,7 +2122,9 @@ public class OptionArbitrageController {
     }
 
     @PostMapping(value = "/paper-trade/execute", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<Map<String, Object>> executePaperTrade(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<Map<String, Object>> executePaperTrade(@RequestBody Map<String, Object> body, Authentication auth) {
+        Long userId = 1L;
+        if (auth != null && auth.getPrincipal() instanceof AuthUser) { userId = ((AuthUser)auth.getPrincipal()).getId(); }
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         try {
@@ -2192,7 +2198,8 @@ public class OptionArbitrageController {
             if (broker != null && !broker.isBlank() && !"PAPER".equalsIgnoreCase(broker)) {
                 // Real broker selected -- place an actual order via the same engine auto-exec
                 // uses, dispatching on legList presence for the correct leg shape.
-                Map<String, Object> liveResult = autoExecService.manualExecuteLive(opp, lots, broker);
+                opp.setUserId(userId);
+                Map<String, Object> liveResult = executionRouter.executeTradeForUser(opp, lots, broker, userId);
                 resp.putAll(liveResult);
                 addAuditLog("MANUAL_LIVE_TRADE", resp.get("status") != null ? resp.get("status").toString() : "ERROR",
                     "Manual LIVE trade via " + broker + " for " + opp.getUnderlying() + " " + opp.getStrike()

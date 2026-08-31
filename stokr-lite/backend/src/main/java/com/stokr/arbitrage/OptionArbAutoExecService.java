@@ -1764,4 +1764,60 @@ public class OptionArbAutoExecService {
             this.status = status;
         }
     }
+
+    // --- MULTI-TENANT OVERLOAD ---
+    public Map<String, Object> manualExecuteLive(OptionArbOpportunity opp, int lots, String broker, Long paramUserId) {
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        if (opp == null) {
+            result.put("status", "ERROR");
+            result.put("message", "Opportunity not found");
+            return result;
+        }
+        
+        long openCount = positionRepo.countOpenLive();
+        int maxOpen = ((Number) getSettings().getOrDefault("maxOpenPositions", 1)).intValue();
+        if (openCount >= maxOpen) {
+            result.put("status", "ERROR");
+            result.put("message", "Already have " + openCount + "/" + maxOpen + " open positions.");
+            return result;
+        }
+
+        com.stokr.broker.BrokerAccount account;
+        com.stokr.broker.BrokerAdapter adapter;
+        try {
+            java.util.List<com.stokr.broker.BrokerAccount> accounts = brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(paramUserId, broker, "ACTIVE");
+            if (accounts.isEmpty()) { result.put("status", "ERROR"); result.put("message", "No " + broker + " account found for user"); return result; }
+            account = accounts.get(0);
+            adapter = brokerService.getAdapter(broker);
+        } catch (Exception e) {
+            result.put("status", "ERROR");
+            result.put("message", "Broker setup failed: " + e.getMessage());
+            return result;
+        }
+
+        java.util.List<Map<String, Object>> legs = opp.getLegList();
+        boolean isMultiLeg = legs != null && !legs.isEmpty();
+
+        boolean opened = isMultiLeg
+                ? executeMultiLegTrade(account, adapter, opp, lots, paramUserId, legs)
+                : executeTrade(account, adapter, opp, lots, paramUserId);
+
+        if (opened) {
+            result.put("status", "SUCCESS");
+            result.put("underlying", opp.getUnderlying());
+            result.put("strike", opp.getStrike());
+            result.put("action", opp.getAction());
+            result.put("message", opp.getUnderlying() + " " + opp.getStrike() + " " + opp.getAction() + " entered LIVE via " + broker);
+        } else {
+            String detail = positionRepo.findByOpportunityIdIn(java.util.List.of(opp.getId())).stream()
+                    .filter(p -> p.getErrorMessage() != null)
+                    .reduce((first, second) -> second)
+                    .map(LivePosition::getErrorMessage)
+                    .orElse(null);
+            result.put("status", "ERROR");
+            result.put("message", detail != null ? detail : "Live order failed");
+        }
+        return result;
+    }
+
 }
