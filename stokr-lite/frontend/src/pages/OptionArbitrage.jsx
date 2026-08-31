@@ -7445,7 +7445,52 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
                               <span className="font-bold text-slate-800 text-xs uppercase block">Signal Breakdown:</span>
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
                               {opp.description && <p className="text-[10px] text-slate-500">{opp.description}</p>}
-                              <ArbitrageSignalPayoffChart opp={opp} />
+                              <div className="flex flex-wrap gap-4 mb-2">
+                                <div className="bg-slate-50 p-2 rounded border text-[10px]">
+                                  <span className="text-slate-500 uppercase block font-bold">Detected At</span>
+                                  <span className="font-mono font-bold">{new Date(opp.scanTime || opp.entryTime || Date.now()).toLocaleString()}</span>
+                                </div>
+                                <div className="bg-slate-50 p-2 rounded border text-[10px]">
+                                  <span className="text-slate-500 uppercase block font-bold">Expiry Date</span>
+                                  <span className="font-mono font-bold">{opp.expiryDate || opp.expiry || '--'}</span>
+                                </div>
+                                <div className="bg-slate-50 p-2 rounded border text-[10px]">
+                                  <span className="text-slate-500 uppercase block font-bold">Strike(s)</span>
+                                  <span className="font-mono font-bold text-indigo-700">{opp.strike || '--'}</span>
+                                </div>
+                                <div className="bg-slate-50 p-2 rounded border text-[10px]">
+                                  <span className="text-slate-500 uppercase block font-bold">Base Lot Size</span>
+                                  <span className="font-mono font-bold">{opp.lotSize || opp.qty || '--'}</span>
+                                </div>
+                              </div>
+                              
+                              {opp.costBreakdown && (
+                                <div className="text-[10px] font-mono text-slate-600 flex flex-wrap gap-3 my-2 bg-slate-100 p-2 rounded-lg border border-slate-200">
+                                  <span className="font-bold uppercase text-slate-500 w-full mb-1">Costs & Net Edge Breakdown</span>
+                                  {Object.entries(opp.costBreakdown).map(([k,v]) => <span key={k} className="bg-white px-2 py-0.5 rounded border border-slate-200">{k}: ₹{v}</span>)}
+                                </div>
+                              )}
+                              
+                              {(() => {
+                                let oppToPass = opp;
+                                if ((!Array.isArray(opp.legList) || opp.legList.length < 2) && typeof opp.legs === 'string') {
+                                  const legStrs = opp.legs.split('|').map(s => s.trim()).filter(Boolean);
+                                  const legList = legStrs.map(ls => {
+                                    let side = ls.includes('BUY') ? 'BUY' : 'SELL';
+                                    let type = ls.includes('CE') ? 'CE' : ls.includes('PE') ? 'PE' : 'FUT';
+                                    let priceMatch = ls.match(/@\s+([\d.]+)/);
+                                    let price = priceMatch ? Number(priceMatch[1]) : 0;
+                                    let strikeMatch = type !== 'FUT' ? ls.match(/(\d+(?:\.\d+)?)\s+(?:CE|PE)/) : null;
+                                    let strike = strikeMatch ? Number(strikeMatch[1]) : (type === 'FUT' ? 0 : opp.strike);
+                                    if (price > 0) return { side, optionType: type, strike, price, qty: 1 };
+                                    return null;
+                                  }).filter(Boolean);
+                                  if (legList.length >= 2) {
+                                    oppToPass = { ...opp, legList };
+                                  }
+                                }
+                                return <ArbitrageSignalPayoffChart opp={oppToPass} />;
+                              })()}
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-md transition">
                                   ⚡ Submit ({executionBroker})
