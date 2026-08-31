@@ -7370,6 +7370,18 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
   });
 
   const opps = data?.opportunities || [];
+  
+  const allIds = opps.filter(o => o.id).map(o => o.id);
+  const { data: livePnlRes } = useQuery({
+    queryKey: ['top-picks-live-pnl', allIds.join(',')],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: allIds.join(',') } });
+      return { pnlMap: res.data?.pnlMap || {}, statusMap: res.data?.statusMap || {}, exitTimeMap: res.data?.exitTimeMap || {} };
+    },
+    refetchInterval: 10000,
+    enabled: allIds.length > 0
+  });
+  const pnlMap = livePnlRes?.pnlMap || {};
 
   return (
     <div className="space-y-4 w-full">
@@ -7426,6 +7438,8 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
                   const isExp = expandedId === (opp.id || idx);
                   const edgeVal = opp.edgeAfterCosts || 0;
                   const isLive = opp.status === 'RUNNING';
+                  const livePnl = opp.id && pnlMap[String(opp.id)] != null ? Number(pnlMap[String(opp.id)]) : null;
+                  const pnlDisplay = livePnl != null ? livePnl : (opp.currentPnl != null ? opp.currentPnl : (opp.pnlAfterCosts != null ? Number(opp.pnlAfterCosts) : null));
                   
                   const fmtTime = (d) => {
                     if (!d) return '--';
@@ -7450,9 +7464,9 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
                           </span>
                         </td>
                         <td className="px-2 py-1.5 text-right font-mono text-[11px]">
-                          {opp.currentPnl ? (
-                            <span className={opp.currentPnl >= 0 ? 'text-emerald-600 font-bold' : 'text-red-500 font-bold'}>
-                              ₹{opp.currentPnl > 0 ? '+' : ''}{Math.round(opp.currentPnl).toLocaleString('en-IN')}
+                          {pnlDisplay != null ? (
+                            <span className={pnlDisplay >= 0 ? 'text-emerald-600 font-bold' : 'text-red-500 font-bold'}>
+                              ₹{pnlDisplay > 0 ? '+' : ''}{Math.round(pnlDisplay).toLocaleString('en-IN')}
                             </span>
                           ) : <span className="text-slate-400">--</span>}
                         </td>
