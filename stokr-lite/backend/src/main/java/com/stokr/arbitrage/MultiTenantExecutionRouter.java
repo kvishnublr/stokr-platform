@@ -1,6 +1,8 @@
 package com.stokr.arbitrage;
 
 import com.stokr.broker.BrokerAccount;
+import com.stokr.auth.TraderRiskLimit;
+import com.stokr.auth.TraderRiskLimitRepository;
 import com.stokr.broker.BrokerAccountRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +19,7 @@ public class MultiTenantExecutionRouter {
 
     private final OptionArbAutoExecService autoExecService;
     private final BrokerAccountRepository brokerAccountRepo;
+    private final TraderRiskLimitRepository riskLimitRepo;
 
     /**
      * Safely routes manual/scheduled live trades for a specific user.
@@ -38,9 +41,17 @@ public class MultiTenantExecutionRouter {
             return autoExecService.manualExecuteLive(opp, lots, broker, userId);
         }
 
+
         // --- TRADER RISK LIMITS CHECK ---
-        // TODO: We can wire in a TraderRiskLimitsRepository here in the future
-        // if we want to enforce Max Daily Loss limits per trader.
+        TraderRiskLimit riskLimit = riskLimitRepo.findById(userId).orElse(null);
+        if (riskLimit != null && (riskLimit.getTradingEnabled() == null || !riskLimit.getTradingEnabled())) {
+            result.put("status", "ERROR");
+            result.put("message", "TRADING DISABLED: Your account is restricted by the Admin (Kill Switch Active).");
+            return result;
+        }
+        
+        // TODO: In a production scenario we would sum up daily PNL and check against maxDailyLoss here.
+
 
         // --- MULTI-TENANT BROKER RESOLUTION ---
         // Verify the user actually has an active connection to the requested broker.
