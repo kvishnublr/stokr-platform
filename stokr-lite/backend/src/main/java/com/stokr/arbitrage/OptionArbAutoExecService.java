@@ -460,11 +460,9 @@ public class OptionArbAutoExecService {
             if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
                     .anyMatch(p -> "PAPER".equals(p.getBroker()) && opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
 
-
             int strategyMaxLots = ((Number) settings.getOrDefault(prefix + "MaxLots", 9999)).intValue();
             int globalMaxLots = ((Number) settings.getOrDefault("maxOpenPositions", 9999)).intValue();
             
-            // Count open paper positions for this strategy
             long openPaperStrategy = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
                     .filter(p -> "PAPER".equals(p.getBroker()) && opp.getStrategyType().equals(p.getStrategyType()))
                     .count();
@@ -474,6 +472,8 @@ public class OptionArbAutoExecService {
                     .filter(p -> "PAPER".equals(p.getBroker()))
                     .count();
             if (openPaperTotal >= globalMaxLots) continue;
+
+
             int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
             int lotSize = getLotSize(opp.getUnderlying());
 
@@ -640,19 +640,12 @@ public class OptionArbAutoExecService {
                     .anyMatch(p -> opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
 
 
+
             int strategyMaxLots = ((Number) settings.getOrDefault(prefix + "MaxLots", 9999)).intValue();
-            int globalMaxLots = ((Number) settings.getOrDefault("maxOpenPositions", 9999)).intValue();
-            
-            // Count open paper positions for this strategy
-            long openPaperStrategy = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
-                    .filter(p -> "PAPER".equals(p.getBroker()) && opp.getStrategyType().equals(p.getStrategyType()))
+            long openStrategyPos = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(userId, "OPEN").stream()
+                    .filter(p -> broker.equals(p.getBroker()) && opp.getStrategyType().equals(p.getStrategyType()))
                     .count();
-            if (openPaperStrategy >= strategyMaxLots) continue;
-            
-            long openPaperTotal = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
-                    .filter(p -> "PAPER".equals(p.getBroker()))
-                    .count();
-            if (openPaperTotal >= globalMaxLots) continue;
+            if (openStrategyPos >= strategyMaxLots) continue;
             int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
             List<Map<String, Object>> legs = opp.getLegList();
             boolean isMultiLeg = legs != null && !legs.isEmpty();
