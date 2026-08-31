@@ -2100,7 +2100,11 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const liveIds = new Set(liveOpps.map(o => o.id));
   historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
-  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  let maxTime = 0;
+  allOpps.forEach(o => { const t = new Date(o.scanTime || o.entryTime || 0).getTime(); if (t > maxTime) maxTime = t; });
+  const maxDateStr = maxTime > 0 ? new Date(maxTime).toISOString().split('T')[0] : null;
+  const todayOpps = maxDateStr ? allOpps.filter(o => { const t = o.scanTime || o.entryTime; return t ? String(t).startsWith(maxDateStr) : true; }) : allOpps;
+  const filteredByUnderlying = underlying === 'ALL' ? todayOpps : todayOpps.filter(o => o.underlying === underlying);
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
@@ -2498,7 +2502,11 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const liveIds = new Set(liveOpps.map(o => o.id));
   historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
-  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  let maxTime = 0;
+  allOpps.forEach(o => { const t = new Date(o.scanTime || o.entryTime || 0).getTime(); if (t > maxTime) maxTime = t; });
+  const maxDateStr = maxTime > 0 ? new Date(maxTime).toISOString().split('T')[0] : null;
+  const todayOpps = maxDateStr ? allOpps.filter(o => { const t = o.scanTime || o.entryTime; return t ? String(t).startsWith(maxDateStr) : true; }) : allOpps;
+  const filteredByUnderlying = underlying === 'ALL' ? todayOpps : todayOpps.filter(o => o.underlying === underlying);
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
@@ -2913,7 +2921,11 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
   const liveIds = new Set(liveOpps.map(o => o.id));
   historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
-  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  let maxTime = 0;
+  allOpps.forEach(o => { const t = new Date(o.scanTime || o.entryTime || 0).getTime(); if (t > maxTime) maxTime = t; });
+  const maxDateStr = maxTime > 0 ? new Date(maxTime).toISOString().split('T')[0] : null;
+  const todayOpps = maxDateStr ? allOpps.filter(o => { const t = o.scanTime || o.entryTime; return t ? String(t).startsWith(maxDateStr) : true; }) : allOpps;
+  const filteredByUnderlying = underlying === 'ALL' ? todayOpps : todayOpps.filter(o => o.underlying === underlying);
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
@@ -3899,7 +3911,11 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
   const liveIds = new Set(liveOpps.map(o => o.id));
   historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
-  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  let maxTime = 0;
+  allOpps.forEach(o => { const t = new Date(o.scanTime || o.entryTime || 0).getTime(); if (t > maxTime) maxTime = t; });
+  const maxDateStr = maxTime > 0 ? new Date(maxTime).toISOString().split('T')[0] : null;
+  const todayOpps = maxDateStr ? allOpps.filter(o => { const t = o.scanTime || o.entryTime; return t ? String(t).startsWith(maxDateStr) : true; }) : allOpps;
+  const filteredByUnderlying = underlying === 'ALL' ? todayOpps : todayOpps.filter(o => o.underlying === underlying);
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
@@ -4750,7 +4766,11 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
   const liveIds = new Set(liveOpps.map(o => o.id));
   historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
-  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  let maxTime = 0;
+  allOpps.forEach(o => { const t = new Date(o.scanTime || o.entryTime || 0).getTime(); if (t > maxTime) maxTime = t; });
+  const maxDateStr = maxTime > 0 ? new Date(maxTime).toISOString().split('T')[0] : null;
+  const todayOpps = maxDateStr ? allOpps.filter(o => { const t = o.scanTime || o.entryTime; return t ? String(t).startsWith(maxDateStr) : true; }) : allOpps;
+  const filteredByUnderlying = underlying === 'ALL' ? todayOpps : todayOpps.filter(o => o.underlying === underlying);
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
@@ -5436,7 +5456,11 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
   const liveIds = new Set(liveOpps.map(o => o.id));
   historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
-  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  let maxTime = 0;
+  allOpps.forEach(o => { const t = new Date(o.scanTime || o.entryTime || 0).getTime(); if (t > maxTime) maxTime = t; });
+  const maxDateStr = maxTime > 0 ? new Date(maxTime).toISOString().split('T')[0] : null;
+  const todayOpps = maxDateStr ? allOpps.filter(o => { const t = o.scanTime || o.entryTime; return t ? String(t).startsWith(maxDateStr) : true; }) : allOpps;
+  const filteredByUnderlying = underlying === 'ALL' ? todayOpps : todayOpps.filter(o => o.underlying === underlying);
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
