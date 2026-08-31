@@ -719,10 +719,12 @@ function AutoExecSettingsPanel({ executionBroker }) {
   const [settings, setSettings] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  const { data } = useQuery({
+  
+  const { data, isLoading, isError } = useQuery({
+
     queryKey: ['autoExecSettings', executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'],
     queryFn: async () => {
-      const res = await client.get('/option-arbitrage/auto-execute/settings');
+      const res = await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } });
       return res.data;
     },
     refetchInterval: 30000,
@@ -742,7 +744,11 @@ function AutoExecSettingsPanel({ executionBroker }) {
     setSaving(false);
   };
 
+  
+  if (isLoading) return <div className="p-4 text-center text-xs text-slate-500">Loading settings...</div>;
+  if (isError) return <div className="p-4 text-center text-xs text-red-500 font-bold">Failed to load settings. Please refresh the page.</div>;
   if (!settings) return null;
+
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
@@ -873,7 +879,9 @@ function AutoExecSettingsPanel({ executionBroker }) {
 function AutoRollSettingsPanel({ executionBroker }) {
   const [settings, setSettings] = useState(null);
 
-  const { data } = useQuery({
+  
+  const { data, isLoading, isError } = useQuery({
+
     queryKey: ['autoExecSettings', executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'],
     queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
     refetchInterval: 30000,
@@ -891,7 +899,11 @@ function AutoRollSettingsPanel({ executionBroker }) {
     }
   };
 
+  
+  if (isLoading) return <div className="p-4 text-center text-xs text-slate-500">Loading settings...</div>;
+  if (isError) return <div className="p-4 text-center text-xs text-red-500 font-bold">Failed to load settings. Please refresh the page.</div>;
   if (!settings) return null;
+
 
   const underlyings = [
     { key: 'nifty', label: 'NIFTY', dot: 'bg-blue-500' },
@@ -978,7 +990,9 @@ function AutoRollSettingsPanel({ executionBroker }) {
 function StrategyAutoTradePanel({ prefix, label, accent = 'indigo', executionBroker }) {
   const [settings, setSettings] = useState(null);
 
-  const { data } = useQuery({
+  
+  const { data, isLoading, isError } = useQuery({
+
     queryKey: ['autoExecSettings', executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'],
     queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
     refetchInterval: 30000,
@@ -996,7 +1010,11 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo', executionBro
     }
   };
 
+  
+  if (isLoading) return <div className="p-4 text-center text-xs text-slate-500">Loading settings...</div>;
+  if (isError) return <div className="p-4 text-center text-xs text-red-500 font-bold">Failed to load settings. Please refresh the page.</div>;
   if (!settings) return null;
+
 
   const underlyings = [
     { key: prefix + 'Nifty', label: 'NIFTY', dot: 'bg-blue-500' },
