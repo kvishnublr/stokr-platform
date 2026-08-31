@@ -6302,7 +6302,8 @@ function VolSurfaceView() {
                   const maxIV = Math.max(...rows.map(r => Math.max(r.ceIv || 0, r.peIv || 0)));
                   const ceH = maxIV > 0 ? ((row.ceIv || 0) / maxIV) * 100 : 0;
                   const peH = maxIV > 0 ? ((row.peIv || 0) / maxIV) * 100 : 0;
-                  const isATM = row.strike === Math.round(spot / OptionChainService_getStep(underlying)) * OptionChainService_getStep(underlying);
+                  const step = underlying === 'BANKNIFTY' ? 100 : underlying === 'MIDCPNIFTY' ? 25 : 50;
+                  const isATM = row.strike === Math.round(spot / step) * step;
                   return (
                     <div key={idx} className="flex-1 flex flex-col items-center gap-0.5" title={`Strike: ${row.strike}
 CE IV: ${row.ceIv}%
