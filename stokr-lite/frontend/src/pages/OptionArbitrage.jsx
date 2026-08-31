@@ -1255,7 +1255,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                   const pnl = p.currentPnl || 0;
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
-                  const PAYOFF_CHART_TYPES = ['BUTTERFLY_SPREAD', 'BOX_SPREAD', 'VERTICAL_SPREAD', 'CONDOR_SPREAD', 'IRON_CONDOR'];
+                  const PAYOFF_CHART_TYPES = ['BUTTERFLY_SPREAD', 'BOX_SPREAD', 'VERTICAL_SPREAD', 'CONDOR_SPREAD', 'IRON_CONDOR', 'CALENDAR_SPREAD'];
                   const canShowPayoff = PAYOFF_CHART_TYPES.includes(p.strategyType) && Array.isArray(p.legList) && p.legList.length >= 2;
                   const isExpanded = expandedPosId === p.id;
                   return (
@@ -3620,6 +3620,25 @@ function AutoRollPendingPanel() {
    on the opportunity. Model-free: this is the guaranteed convexity-bound payoff, not a
    Black-Scholes probability estimate, so there's no "Today" curve or POP here -- the whole
    point of a real arbitrage signal is that it's non-negative everywhere, at any settlement. */
+function cdfNormal(x) {
+  var t = 1 / (1 + 0.2316419 * Math.abs(x));
+  var d = 0.3989423 * Math.exp(-x * x / 2);
+  var prob = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  if (x > 0) prob = 1 - prob;
+  return prob;
+}
+
+function blackScholesPrice(S, K, t, r, v, type) {
+  if (t <= 0) return type === 'PE' ? Math.max(K - S, 0) : Math.max(S - K, 0);
+  var d1 = (Math.log(S / K) + (r + v * v / 2) * t) / (v * Math.sqrt(t));
+  var d2 = d1 - v * Math.sqrt(t);
+  if (type === 'PE') {
+    return K * Math.exp(-r * t) * cdfNormal(-d2) - S * cdfNormal(-d1);
+  } else {
+    return S * cdfNormal(d1) - K * Math.exp(-r * t) * cdfNormal(d2);
+  }
+}
+
 function ArbitrageSignalPayoffChart({ opp }) {
   const chartRef = useRef(null);
   const [hover, setHover] = useState(null);
@@ -3662,8 +3681,17 @@ function ArbitrageSignalPayoffChart({ opp }) {
         if (optType === 'FUT') return sum + sign * x * (Number(leg.qty) || 1);
         const strike = Number(leg.strike);
         const isPe = optType === 'PE';
-        const intrinsic = isPe ? Math.max(strike - x, 0) : Math.max(x - strike, 0);
-        return sum + sign * intrinsic * (Number(leg.qty) || 1);
+        
+        let val = 0;
+        // T+0 (or T+nearExpiry) logic for Calendar Spreads
+        if (opp.strategyType === 'CALENDAR_SPREAD' && leg.symbol === opp.farSymbol) {
+            const farT = Math.max(((opp.farDte || 7) - (opp.nearDte || 0)) / 365.0, 0.0027);
+            const farVol = (opp.farIV || 20) / 100.0;
+            val = blackScholesPrice(x, strike, farT, 0.07, farVol, isPe ? 'PE' : 'CE');
+        } else {
+            val = isPe ? Math.max(strike - x, 0) : Math.max(x - strike, 0);
+        }
+        return sum + sign * val * (Number(leg.qty) || 1);
       }, 0);
       const pnl = payoff - cost;
       points.push({ x, y: pnl });
@@ -5892,6 +5920,7 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
                                 BUY NEAR ({opp.nearSymbol} @ ₹{opp.nearPrice}) | SELL FAR ({opp.farSymbol} @ ₹{opp.farPrice})
                               </p>
+                              <ArbitrageSignalPayoffChart opp={opp} />
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   ⏳ Submit ({executionBroker})
