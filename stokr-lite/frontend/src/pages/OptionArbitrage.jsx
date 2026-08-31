@@ -691,7 +691,7 @@ export default function OptionArbitrage() {
         {activeTab === 'bidparity' && <BidParityView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
         {activeTab === 'autotrade' && (
           <div className="space-y-4">
-            <AutoExecSettingsPanel />
+            <AutoExecSettingsPanel executionBroker={executionBroker} />
             <AutoRollSettingsPanel executionBroker={executionBroker} />
           </div>
         )}
@@ -715,7 +715,7 @@ export default function OptionArbitrage() {
 }
 
 /* Auto-Execute Settings Panel */
-function AutoExecSettingsPanel() {
+function AutoExecSettingsPanel({ executionBroker }) {
   const [settings, setSettings] = useState(null);
   const [saving, setSaving] = useState(false);
 
