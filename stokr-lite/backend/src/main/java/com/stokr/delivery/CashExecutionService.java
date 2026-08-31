@@ -27,14 +27,15 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CashExecutionService {
 
-    private static final double CAPITAL_PER_TRADE = 25000.0;
+    
 
     private final CashPositionRepository positionRepo;
     private final ZerodhaSpotPriceFetcher spotFetcher;
     private final BrokerService brokerService;
     private final BrokerAccountRepository brokerAccountRepo;
+    @org.springframework.context.annotation.Lazy @org.springframework.beans.factory.annotation.Autowired private CashScannerService cashScannerService;
 
-    public Map<String, Object> execute(String symbol, String strategyType, double targetPrice, double stopLossPrice, String broker) {
+    public Map<String, Object> execute(String symbol, String strategyType, double targetPrice, double stopLossPrice, String broker, double capital) {
         Map<String, Object> result = new LinkedHashMap<>();
         if (symbol == null || symbol.isBlank()) {
             result.put("status", "ERROR");
@@ -56,7 +57,7 @@ public class CashExecutionService {
             return result;
         }
 
-        int qty = (int) Math.floor(CAPITAL_PER_TRADE / ltp);
+        int qty = (int) Math.floor(capital / ltp);
         if (qty < 1) qty = 1;
 
         CashPosition pos = CashPosition.builder()
@@ -231,6 +232,54 @@ public class CashExecutionService {
             positionRepo.save(pos);
             log.info("{}: {} {} squared off @ {} -- P&L Rs{}", hitTarget ? "TARGET_HIT" : "STOP_LOSS",
                     pos.getSymbol(), pos.getQuantity(), ltp, Math.round(pnl));
+        }
+    }
+
+    /** Auto execute Paper trades for Cash Surge and Cash Swing - max 10 trades, 10k each */
+    @Scheduled(fixedDelayString = "60000", initialDelay = 60000)
+    public void autoPaperTradeCashSignals() {
+        LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
+
+        List<CashPosition> openPositions = positionRepo.findAllOpen();
+        long openPaperCount = openPositions.stream().filter(p -> "PAPER".equals(p.getBroker())).count();
+        if (openPaperCount >= 10) return;
+
+        List<String> openPaperSymbols = new java.util.ArrayList<>(openPositions.stream()
+                .filter(p -> "PAPER".equals(p.getBroker()))
+                .map(CashPosition::getSymbol)
+                .toList());
+
+        try {
+            List<Map<String, Object>> surgeOpps = cashScannerService.scanCashSurge();
+            List<Map<String, Object>> swingOpps = cashScannerService.scanCashSwing();
+            
+            for (Map<String, Object> opp : surgeOpps) {
+                if (openPaperCount >= 10) break;
+                String symbol = (String) opp.get("symbol");
+                if (!openPaperSymbols.contains(symbol)) {
+                    double target = opp.get("targetPrice") instanceof Number n ? n.doubleValue() : 0;
+                    double sl = opp.get("stopLossPrice") instanceof Number n ? n.doubleValue() : 0;
+                    execute(symbol, "CASH_SURGE", target, sl, "PAPER", 10000.0);
+                    openPaperCount++;
+                    openPaperSymbols.add(symbol); // prevent duplicate in same run
+                }
+            }
+            
+            for (Map<String, Object> opp : swingOpps) {
+                if (openPaperCount >= 10) break;
+                String symbol = (String) opp.get("symbol");
+                if (!openPaperSymbols.contains(symbol)) {
+                    double target = opp.get("targetPrice") instanceof Number n ? n.doubleValue() : 0;
+                    double sl = opp.get("stopLossPrice") instanceof Number n ? n.doubleValue() : 0;
+                    execute(symbol, "CASH_SWING", target, sl, "PAPER", 10000.0);
+                    openPaperCount++;
+                    openPaperSymbols.add(symbol);
+                }
+            }
+            
+        } catch(Exception e) {
+            log.error("Auto paper trade failed: {}", e.getMessage());
         }
     }
 }

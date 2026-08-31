@@ -1,7 +1,7 @@
 import { useState, useEffect, Fragment } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
-import { LivePositionsSection, BrokerPositionsPanel, STRATEGY_LABELS } from './OptionArbitrage';
+import { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS } from './OptionArbitrage';
 
 const TABS = [
   { id: 'mine', label: '📊 My Positions' },
@@ -342,10 +342,30 @@ export default function Positions() {
         ))}
       </div>
 
-      {activeTab === 'mine' && <LivePositionsSection executionBroker={executionBroker} defaultExpanded />}
+      {activeTab === 'mine' && (
+          <MyPositionsTab executionBroker={executionBroker} />
+        )}
       {activeTab === 'broker' && <BrokerPositionsPanel executionBroker={executionBroker} defaultExpanded />}
       {activeTab === 'history' && <PositionsHistoryPanel />}
       {activeTab === 'performance' && <StrategyPerformancePanel />}
+    </div>
+  );
+}
+
+function MyPositionsTab({ executionBroker }) {
+  const [assetClass, setAssetClass] = useState('FNO');
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <button onClick={() => setAssetClass('FNO')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${assetClass === 'FNO' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>FNO Positions</button>
+        <button onClick={() => setAssetClass('CASH')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${assetClass === 'CASH' ? 'bg-orange-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>Cash Positions</button>
+      </div>
+      {assetClass === 'FNO' && <LivePositionsSection executionBroker={executionBroker} defaultExpanded />}
+      {assetClass === 'CASH' && (
+         <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+           <CashPositionsSection />
+         </div>
+      )}
     </div>
   );
 }

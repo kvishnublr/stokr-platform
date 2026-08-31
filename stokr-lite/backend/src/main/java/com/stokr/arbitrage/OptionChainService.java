@@ -26,7 +26,7 @@ public class OptionChainService {
 
     private static final double RISK_FREE_RATE = 0.065;
     private static final double MIN_PARITY_DEVIATION = 0.5;
-    private static final double MIN_EDGE_AFTER_COSTS = 300.0;
+    private static final double MIN_EDGE_AFTER_COSTS = 0.0;
 
     private final ConcurrentHashMap<String, Long> cooldownMap = new ConcurrentHashMap<>();
 
@@ -180,7 +180,7 @@ public class OptionChainService {
         return quotes;
     }
 
-    public int getATMStrike(String underlying, double spotPrice) {
+    public static int getATMStrike(String underlying, double spotPrice) {
         int step = getStrikeStep(underlying);
         return (int) (Math.round(spotPrice / step) * step);
     }
@@ -212,8 +212,8 @@ public class OptionChainService {
         Integer dynamic = DYNAMIC_LOT_SIZES.get(key);
         if (dynamic != null && dynamic > 0) return dynamic;
         return switch (key) {
-            case "NIFTY" -> 65;
-            case "BANKNIFTY" -> 30;
+            case "NIFTY" -> 25;
+            case "BANKNIFTY" -> 15;
             case "MIDCPNIFTY" -> 50;
             case "FINNIFTY" -> 25;
             default -> 25;
@@ -278,7 +278,7 @@ public class OptionChainService {
         return expiryDay;
     }
 
-    private List<String> buildNfoSymbolCandidates(String underlying, LocalDate expiryDate, int strike, String type) {
+    public List<String> buildNfoSymbolCandidates(String underlying, LocalDate expiryDate, int strike, String type) {
         String cleanUnderlying = underlying.replace(" ", "");
         int yy = expiryDate.getYear() % 100;
         String mon = expiryDate.getMonth().name().substring(0, 3);

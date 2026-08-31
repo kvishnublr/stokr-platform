@@ -22,7 +22,7 @@ public class BidParityService {
 
     private static final double RISK_FREE_RATE = 0.065;
     private static final double MIN_PARITY_DEVIATION_BID = 1.5;
-    private static final double MIN_EDGE_AFTER_COSTS = 1000.0;
+    private static final double MIN_EDGE_AFTER_COSTS = 0.0;
     private static final int MIN_VOLUME = 500;
     private static final int MIN_OI = 2000;
 
@@ -73,6 +73,10 @@ public class BidParityService {
      */
     @Scheduled(cron = "0/15 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledScan() {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+            return;
+        }
         try {
             scanBidParity("ALL");
         } catch (Exception e) {
@@ -115,7 +119,7 @@ public class BidParityService {
 
         double[] spotFut = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
         double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
-        double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : spot;
+        double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : 0; // DO NOT fall back to spot!
 
         Double lastFut = lastValidFut.get(underlying);
         if (lastFut != null && lastFut > 0 && fut > 0) {
@@ -129,7 +133,7 @@ public class BidParityService {
         if (fut > 0) lastValidFut.put(underlying, fut);
 
         if (spot <= 0 && fut > 0) spot = fut;
-        if (fut <= 0 && spot > 0) fut = spot;
+        // if (fut <= 0 && spot > 0) fut = spot; // NEVER fall back FUT to SPOT for arbitrage!
 
         if (spot <= 0 || fut <= 0) {
             log.info("Skipping {}: spot={} or fut={} invalid", underlying, spot, fut);

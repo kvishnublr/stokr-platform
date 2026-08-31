@@ -90,46 +90,65 @@ public class OptionArbAutoExecService {
             defaults.put(u + "AutoRollMaxRolls", 2);
         }
 
-        // Load persisted settings from DB, overlay on defaults
+        // Map defaults to PAPER and LIVE namespaces
+        autoExecSettings.put("PAPER", new ConcurrentHashMap<>(defaults));
+        autoExecSettings.put("LIVE", new ConcurrentHashMap<>(defaults));
+        autoExecSettings.put("global", new ConcurrentHashMap<>(defaults));
+
+        // Load persisted settings from DB
         try {
             List<AutoExecSetting> dbSettings = autoExecSettingRepo.findAll();
             for (AutoExecSetting s : dbSettings) {
-                String key = s.getSettingKey();
+                String fullKey = s.getSettingKey();
                 String val = s.getSettingValue();
-                if ("enabled".equals(key)) defaults.put(key, Boolean.parseBoolean(val));
-                else if (key.endsWith("Enabled")) defaults.put(key, Boolean.parseBoolean(val));
+                
+                String profileKey = "PAPER";
+                String key = fullKey;
+                if (fullKey.startsWith("PAPER_")) { profileKey = "PAPER"; key = fullKey.substring(6); }
+                else if (fullKey.startsWith("LIVE_")) { profileKey = "LIVE"; key = fullKey.substring(5); }
+                else continue; // Ignore old global settings
+                
+                Map<String, Object> targetMap = autoExecSettings.get(profileKey);
+                
+                if ("enabled".equals(key)) targetMap.put(key, Boolean.parseBoolean(val));
+                else if (key.endsWith("Enabled")) targetMap.put(key, Boolean.parseBoolean(val));
                 else if (key.endsWith("MinEdge") || key.equals("maxDailyLoss") || key.equals("rolloverThresholdPct") || key.equals("autoExitThresholdPct"))
-                    defaults.put(key, Double.parseDouble(val));
+                    targetMap.put(key, Double.parseDouble(val));
                 else if (key.endsWith("Lots") || key.equals("maxOpenPositions") || key.endsWith("AutoRollBreachMinutes") || key.endsWith("AutoRollMaxRolls"))
-                    defaults.put(key, Integer.parseInt(val));
-                else defaults.put(key, val);
+                    targetMap.put(key, Integer.parseInt(val));
+                else targetMap.put(key, val);
             }
             log.info("Loaded {} auto-exec settings from DB", dbSettings.size());
         } catch (Exception e) {
             log.debug("Failed to load auto-exec settings from DB: {}", e.getMessage());
         }
-
-        autoExecSettings.put("global", defaults);
     }
 
     public Map<String, Object> getSettings() {
-        return new LinkedHashMap<>(autoExecSettings.getOrDefault("global", Map.of()));
+        return getSettings("PAPER");
+    }
+    public Map<String, Object> getSettings(String mode) {
+        String key = "LIVE".equalsIgnoreCase(mode) ? "LIVE" : "PAPER";
+        return new LinkedHashMap<>(autoExecSettings.getOrDefault(key, Map.of()));
     }
 
-    public void updateSetting(String key, String value) {
-        Map<String, Object> s = autoExecSettings.computeIfAbsent("global", k -> new LinkedHashMap<>());
-        if ("enabled".equals(key)) s.put("enabled", Boolean.parseBoolean(value));
-        else if (key.endsWith("Enabled")) s.put(key, Boolean.parseBoolean(value));
-        else if (key.endsWith("MinEdge") || key.equals("maxDailyLoss") || key.equals("rolloverThresholdPct") || key.equals("autoExitThresholdPct")) s.put(key, Double.parseDouble(value));
-        else if (key.endsWith("Lots") || key.equals("maxOpenPositions") || key.endsWith("AutoRollBreachMinutes") || key.endsWith("AutoRollMaxRolls")) s.put(key, Integer.parseInt(value));
-        else s.put(key, value);
+    public void updateSetting(String mode, String key, String value) {
+        String profileKey = "LIVE".equalsIgnoreCase(mode) ? "LIVE" : "PAPER";
+        Map<String, Object> settings = autoExecSettings.computeIfAbsent(profileKey, k -> new ConcurrentHashMap<>());
+        
+        if ("enabled".equals(key)) settings.put("enabled", Boolean.parseBoolean(value));
+        else if (key.endsWith("Enabled")) settings.put(key, Boolean.parseBoolean(value));
+        else if (key.endsWith("MinEdge") || key.equals("maxDailyLoss") || key.equals("rolloverThresholdPct") || key.equals("autoExitThresholdPct")) settings.put(key, Double.parseDouble(value));
+        else if (key.endsWith("Lots") || key.equals("maxOpenPositions") || key.endsWith("AutoRollBreachMinutes") || key.endsWith("AutoRollMaxRolls")) settings.put(key, Integer.parseInt(value));
+        else settings.put(key, value);
 
         // Persist to DB
         try {
-            AutoExecSetting dbSetting = autoExecSettingRepo.findBySettingKey(key)
+            String dbKey = profileKey + "_" + key;
+            AutoExecSetting dbSetting = autoExecSettingRepo.findBySettingKey(dbKey)
                     .orElse(new AutoExecSetting());
-            dbSetting.setSettingKey(key);
-            dbSetting.setSettingValue(String.valueOf(s.get(key)));
+            dbSetting.setSettingKey(dbKey);
+            dbSetting.setSettingValue(String.valueOf(settings.get(key)));
             autoExecSettingRepo.save(dbSetting);
         } catch (Exception e) {
             log.error("Failed to persist setting {} to DB: {}", key, e.getMessage());
@@ -419,14 +438,119 @@ public class OptionArbAutoExecService {
     }
 
     public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) {
-        Map<String, Object> settings = getSettings();
+        evaluateAndExecuteForMode(newOpps, "PAPER", autoExecSettings.getOrDefault("PAPER", Map.of()));
+        evaluateAndExecuteForMode(newOpps, "LIVE", autoExecSettings.getOrDefault("LIVE", Map.of()));
+    }
+    
+
+    private void executePaperTrades(List<OptionArbOpportunity> newOpps, Map<String, Object> settings) {
+        long currentOpen = positionRepo.countOpenLive(); 
+        for (OptionArbOpportunity opp : newOpps) {
+            if (opp.getUnderlying() == null || opp.getEdgeAfterCosts() == null) continue;
+
+            String prefix = strategyPrefix(opp.getStrategyType());
+            String key = prefix + capitalize(opp.getUnderlying());
+            boolean enabled = Boolean.TRUE.equals(settings.get(key + "Enabled"));
+            if (!enabled) continue;
+
+            double minEdge = ((Number) settings.getOrDefault(key + "MinEdge", 800.0)).doubleValue();
+            if (opp.getEdgeAfterCosts().doubleValue() < minEdge) continue;
+            if (opp.getExpiryDate() == null || opp.getStrike() == null) continue;
+
+            if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
+                    .anyMatch(p -> "PAPER".equals(p.getBroker()) && opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
+
+            int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
+            int lotSize = getLotSize(opp.getUnderlying());
+
+            opp.setStatus("RUNNING");
+            oppRepo.save(opp);
+
+            List<Map<String, Object>> legs = opp.getLegList();
+            boolean isMultiLeg = legs != null && !legs.isEmpty();
+
+            if (isMultiLeg) {
+                List<String> symbols = new ArrayList<>();
+                List<Map<String, Object>> resolvedLegs = new ArrayList<>();
+                for (Map<String, Object> leg : legs) {
+                    int strike = ((Number) leg.get("strike")).intValue();
+                    String optionType = (String) leg.get("optionType");
+                    String sym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), strike, optionType);
+                    Map<String, Object> resolved = new java.util.LinkedHashMap<>(leg);
+                    resolved.put("symbol", sym);
+                    resolvedLegs.add(resolved);
+                    if (sym != null) symbols.add(sym);
+                }
+                Map<String, OptionChainService.OptionQuote> legQuotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
+                double entryCost = 0;
+                for (Map<String, Object> leg : resolvedLegs) {
+                    String sym = (String) leg.get("symbol");
+                    double live = (sym != null && legQuotes.containsKey(sym) && legQuotes.get(sym).lastPrice > 0)
+                        ? legQuotes.get(sym).lastPrice
+                        : (leg.get("price") instanceof Number n ? n.doubleValue() : 0);
+                    leg.put("price", live);
+                    int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+                    boolean isBuy = "BUY".equals(leg.get("side"));
+                    entryCost += (isBuy ? live : -live) * qtyMult;
+                }
+                entryCost = Math.abs(entryCost) * lotSize * lots;
+
+                LivePosition livePos = LivePosition.builder()
+                    .userId(1L).broker("PAPER").opportunityId(opp.getId())
+                    .underlying(opp.getUnderlying()).strike(opp.getStrike()).action(opp.getAction())
+                    .strategyType(opp.getStrategyType()).lots(lots).lotSize(lotSize)
+                    .targetEdge(opp.getEdgeAfterCosts()).entryCost(BigDecimal.valueOf(entryCost))
+                    .status("OPEN").enteredAt(LocalDateTime.now()).createdAt(LocalDateTime.now()).build();
+                livePos.setLegs(resolvedLegs);
+                positionRepo.save(livePos);
+                addLog("EXEC", "PAPER", "Auto-executed PAPER trade for " + opp.getUnderlying() + " (" + resolvedLegs.size() + " legs)");
+            } else {
+                double ceLive = 0, peLive = 0;
+                String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
+                String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
+                Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(List.of(ceSymbol, peSymbol));
+                if (quotes.containsKey(ceSymbol) && quotes.get(ceSymbol).lastPrice > 0) ceLive = quotes.get(ceSymbol).lastPrice;
+                if (quotes.containsKey(peSymbol) && quotes.get(peSymbol).lastPrice > 0) peLive = quotes.get(peSymbol).lastPrice;
+                if (ceLive > 0) opp.setCeEntryPrice(BigDecimal.valueOf(ceLive));
+                if (peLive > 0) opp.setPeEntryPrice(BigDecimal.valueOf(peLive));
+
+                String futSymbol = optionChainService.buildNfoFutSymbol(opp.getUnderlying(), opp.getExpiryDate());
+                double futLive = 0;
+                if (futSymbol != null) {
+                    try {
+                        var futQuotes = optionChainService.fetchQuotes(List.of(futSymbol));
+                        if (futQuotes.containsKey(futSymbol) && futQuotes.get(futSymbol).lastPrice > 0) futLive = futQuotes.get(futSymbol).lastPrice;
+                    } catch (Exception ignored) {}
+                }
+                
+                LivePosition livePos = LivePosition.builder()
+                    .userId(1L).broker("PAPER").opportunityId(opp.getId())
+                    .underlying(opp.getUnderlying()).strike(opp.getStrike()).action(opp.getAction())
+                    .strategyType(opp.getStrategyType()).lots(lots).lotSize(lotSize)
+                    .ceEntryPrice(ceLive > 0 ? BigDecimal.valueOf(ceLive) : null)
+                    .peEntryPrice(peLive > 0 ? BigDecimal.valueOf(peLive) : null)
+                    .futEntryPrice(futLive > 0 ? BigDecimal.valueOf(futLive) : null)
+                    .futSymbol(futSymbol).ceSymbol(ceSymbol).peSymbol(peSymbol)
+                    .targetEdge(opp.getEdgeAfterCosts())
+                    .entryCost(BigDecimal.valueOf((ceLive + peLive + futLive) * lotSize))
+                    .status("OPEN").enteredAt(LocalDateTime.now()).createdAt(LocalDateTime.now()).build();
+                positionRepo.save(livePos);
+                addLog("EXEC", "PAPER", "Auto-executed PAPER Bid Parity trade for " + opp.getUnderlying());
+            }
+        }
+    }
+
+    private void evaluateAndExecuteForMode(List<OptionArbOpportunity> newOpps, String mode, Map<String, Object> settings) {
         if (!Boolean.TRUE.equals(settings.get("enabled"))) return;
 
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
         if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
 
         String broker = (String) settings.getOrDefault("broker", "NAVIA");
-        if ("PAPER".equalsIgnoreCase(broker)) return;
+        if ("PAPER".equalsIgnoreCase(broker) || "PAPER".equalsIgnoreCase(mode)) {
+            executePaperTrades(newOpps, settings);
+            return;
+        }
         int maxPositions = (int) settings.getOrDefault("maxOpenPositions", 1);
         long currentOpen = positionRepo.countOpenLive();
         if (currentOpen >= maxPositions) return;
@@ -1034,15 +1158,15 @@ public class OptionArbAutoExecService {
             List<PlannedLeg> orderPlan;
             if (isConversion) {
                 orderPlan = List.of(
-                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.BUY, ceQty, 0.0, "ce"),
-                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.SELL, futQty, 0.0, "fut"),
-                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.SELL, peQty, 0.0, "pe")
+                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.BUY, ceQty, opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() * 1.05 : 0.0, "ce"),
+                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.SELL, futQty, opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() * 0.95 : 0.0, "fut"),
+                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.SELL, peQty, opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() * 0.95 : 0.0, "pe")
                 );
             } else {
                 orderPlan = List.of(
-                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.BUY, peQty, 0.0, "pe"),
-                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.BUY, futQty, 0.0, "fut"),
-                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.SELL, ceQty, 0.0, "ce")
+                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.BUY, peQty, opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() * 1.05 : 0.0, "pe"),
+                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.BUY, futQty, opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() * 1.05 : 0.0, "fut"),
+                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.SELL, ceQty, opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() * 0.95 : 0.0, "ce")
                 );
             }
 
@@ -1160,9 +1284,15 @@ public class OptionArbAutoExecService {
                 int qtyMult = spec.get("qty") instanceof Number n ? n.intValue() : 1;
                 String symbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), strike, optionType);
                 int qty = lots * lotSize * qtyMult;
+                double specPrice = spec.get("price") instanceof Number n ? n.doubleValue() : 0.0;
+                // Apply 5% buffer: BUY +5%, SELL -5%. Converts MARKET to guaranteed-fill LIMIT.
+                double bufferedPrice = specPrice > 0
+                        ? ("BUY".equals(side) ? Math.ceil(specPrice * 1.05 * 20) / 20.0
+                                              : Math.floor(specPrice * 0.95 * 20) / 20.0)
+                        : 0.0;
                 PlannedLeg planned = new PlannedLeg(symbol,
                         "BUY".equals(side) ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL,
-                        qty, 0.0, optionType + strike);
+                        qty, bufferedPrice, optionType + strike);
                 pairs.add(new LegPair(spec, planned));
             }
 
@@ -1176,11 +1306,15 @@ public class OptionArbAutoExecService {
             List<PlacedLeg> placedLegs = new ArrayList<>();
             for (LegPair pair : pairs) {
                 PlannedLeg leg = pair.planned();
+                // Use LIMIT with buffered price if available, else MARKET
+                BrokerOrderRequest.OrderType orderType = leg.price() > 0
+                        ? BrokerOrderRequest.OrderType.LIMIT
+                        : BrokerOrderRequest.OrderType.MARKET;
                 BrokerOrderRequest req = BrokerOrderRequest.builder()
                         .symbol(leg.symbol()).exchange("NFO")
                         .side(leg.side())
                         .quantity(leg.quantity()).price(leg.price())
-                        .orderType(BrokerOrderRequest.OrderType.MARKET)
+                        .orderType(orderType)
                         .productType("NRML").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
 
@@ -1328,12 +1462,16 @@ public class OptionArbAutoExecService {
         for (Map<String, Object> leg : legs) {
             String symbol = (String) leg.get("symbol");
             if (symbol == null || !quotes.containsKey(symbol)) continue;
-            double current = quotes.get(symbol).lastPrice;
+            OptionChainService.OptionQuote q = quotes.get(symbol);
+            double bid = q.bid > 0 ? q.bid : q.lastPrice;
+            double ask = q.ask > 0 ? q.ask : q.lastPrice;
             double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
-            if (current <= 0 || entry <= 0) continue;
+            if (q.lastPrice <= 0 || entry <= 0) continue;
             int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
             String side = (String) leg.get("side");
-            double legPnl = "BUY".equals(side) ? (current - entry) : (entry - current);
+            // To close a BUY leg, we must SELL at the BID
+            // To close a SELL leg, we must BUY at the ASK
+            double legPnl = "BUY".equals(side) ? (bid - entry) : (entry - ask);
             pnl += legPnl * qtyMult;
         }
         return pnl * lotSize * lots;
@@ -1548,10 +1686,22 @@ public class OptionArbAutoExecService {
     }
 
     private double computePnl(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes) {
+        double ceBid = 0, ceAsk = 0, peBid = 0, peAsk = 0, futBid = 0, futAsk = 0;
         double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
-        if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
-        if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) peCurrent = quotes.get(pos.getPeSymbol()).lastPrice;
-        if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) futCurrent = quotes.get(pos.getFutSymbol()).lastPrice;
+
+        if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) {
+            OptionChainService.OptionQuote q = quotes.get(pos.getCeSymbol());
+            ceCurrent = q.lastPrice; ceBid = q.bid > 0 ? q.bid : q.lastPrice; ceAsk = q.ask > 0 ? q.ask : q.lastPrice;
+        }
+        if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) {
+            OptionChainService.OptionQuote q = quotes.get(pos.getPeSymbol());
+            peCurrent = q.lastPrice; peBid = q.bid > 0 ? q.bid : q.lastPrice; peAsk = q.ask > 0 ? q.ask : q.lastPrice;
+        }
+        if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) {
+            OptionChainService.OptionQuote q = quotes.get(pos.getFutSymbol());
+            futCurrent = q.lastPrice; futBid = q.bid > 0 ? q.bid : q.lastPrice; futAsk = q.ask > 0 ? q.ask : q.lastPrice;
+        }
+
         double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
         double peEntry = pos.getPeEntryPrice() != null ? pos.getPeEntryPrice().doubleValue() : 0;
         double futEntry = pos.getFutEntryPrice() != null ? pos.getFutEntryPrice().doubleValue() : 0;
@@ -1559,19 +1709,32 @@ public class OptionArbAutoExecService {
         int lots = pos.getLots() != null ? pos.getLots() : 1;
         String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
         double pnl = 0;
+
         if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
             if (action.contains("BUY CE +")) {
-                if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
-                if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
+                if (ceCurrent > 0 && ceEntry > 0) pnl += ceBid - ceEntry;
+                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peAsk;
+                if (futCurrent > 0 && futEntry > 0) pnl += futBid > 0 ? (futEntry > futCurrent ? (futEntry - futAsk) : (futBid - futEntry)) : (futCurrent - futEntry);
+                // Actually, if it's BUY CE + SELL PE + SELL FUT, we sold fut. Exit = buy fut at ask
+                if (action.contains("SELL FUT")) {
+                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futAsk;
+                } else if (action.contains("BUY FUT")) {
+                    if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
+                }
             } else if (action.contains("SELL CE +")) {
-                if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
-                if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
-                if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
+                if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceAsk;
+                if (peCurrent > 0 && peEntry > 0) pnl += peBid - peEntry;
+                if (action.contains("SELL FUT")) {
+                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futAsk;
+                } else if (action.contains("BUY FUT")) {
+                    if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
+                } else {
+                    if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry; // Fallback
+                }
             } else {
-                if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
-                if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
+                if (ceCurrent > 0 && ceEntry > 0) pnl += ceBid - ceEntry;
+                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peAsk;
+                if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
             }
         }
         return pnl * lotSize * lots;
@@ -1601,4 +1764,60 @@ public class OptionArbAutoExecService {
             this.status = status;
         }
     }
+
+    // --- MULTI-TENANT OVERLOAD ---
+    public Map<String, Object> manualExecuteLive(OptionArbOpportunity opp, int lots, String broker, Long paramUserId) {
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        if (opp == null) {
+            result.put("status", "ERROR");
+            result.put("message", "Opportunity not found");
+            return result;
+        }
+        
+        long openCount = positionRepo.countOpenLive();
+        int maxOpen = ((Number) getSettings().getOrDefault("maxOpenPositions", 1)).intValue();
+        if (openCount >= maxOpen) {
+            result.put("status", "ERROR");
+            result.put("message", "Already have " + openCount + "/" + maxOpen + " open positions.");
+            return result;
+        }
+
+        com.stokr.broker.BrokerAccount account;
+        com.stokr.broker.BrokerAdapter adapter;
+        try {
+            java.util.List<com.stokr.broker.BrokerAccount> accounts = brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(paramUserId, broker, "ACTIVE");
+            if (accounts.isEmpty()) { result.put("status", "ERROR"); result.put("message", "No " + broker + " account found for user"); return result; }
+            account = accounts.get(0);
+            adapter = brokerService.getAdapter(broker);
+        } catch (Exception e) {
+            result.put("status", "ERROR");
+            result.put("message", "Broker setup failed: " + e.getMessage());
+            return result;
+        }
+
+        java.util.List<Map<String, Object>> legs = opp.getLegList();
+        boolean isMultiLeg = legs != null && !legs.isEmpty();
+
+        boolean opened = isMultiLeg
+                ? executeMultiLegTrade(account, adapter, opp, lots, paramUserId, legs)
+                : executeTrade(account, adapter, opp, lots, paramUserId);
+
+        if (opened) {
+            result.put("status", "SUCCESS");
+            result.put("underlying", opp.getUnderlying());
+            result.put("strike", opp.getStrike());
+            result.put("action", opp.getAction());
+            result.put("message", opp.getUnderlying() + " " + opp.getStrike() + " " + opp.getAction() + " entered LIVE via " + broker);
+        } else {
+            String detail = positionRepo.findByOpportunityIdIn(java.util.List.of(opp.getId())).stream()
+                    .filter(p -> p.getErrorMessage() != null)
+                    .reduce((first, second) -> second)
+                    .map(LivePosition::getErrorMessage)
+                    .orElse(null);
+            result.put("status", "ERROR");
+            result.put("message", detail != null ? detail : "Live order failed");
+        }
+        return result;
+    }
+
 }

@@ -1,3 +1,4 @@
+import ErrorBoundary from '../components/ErrorBoundary';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
@@ -46,6 +47,27 @@ export function showToast(message, type = 'info', duration, title) {
   // just glimpsed for 4 seconds while looking away from a trading screen.
   const resolvedDuration = duration != null ? duration : (type === 'error' ? 9000 : type === 'warning' ? 7000 : 4500);
   _notifyToast({ id, message, type, duration: resolvedDuration, title });
+}
+
+/* Live-deploy confirm modal, wired the same way as the toasts above.
+   The "⚡ Deploy" buttons live inside ~10 separate view components (BidParityView,
+   HistoryView, each spread view...) which all called a bare `setPendingLiveDeploy` that was
+   never defined in their scope or passed as a prop -- a ReferenceError the moment any of
+   those views rendered, which is why clicking History blanked the page. Routing through a
+   module-level emitter (exactly the existing showToast idiom in this file) fixes every call
+   site at once without threading the same two props through every component in between. */
+let _deployListeners = [];
+export function requestLiveDeploy(opp) { _deployListeners.forEach(fn => fn(opp)); }
+// Every child call site references this bare name; keep it working as a module function.
+const setPendingLiveDeploy = requestLiveDeploy;
+
+/** Subscribes the page's existing pendingLiveDeploy state to the emitter above. */
+function useLiveDeployRequests(setPending) {
+  useEffect(() => {
+    const handler = (opp) => setPending(opp);
+    _deployListeners.push(handler);
+    return () => { _deployListeners = _deployListeners.filter(f => f !== handler); };
+  }, [setPending]);
 }
 
 function useToastState() {
@@ -131,7 +153,7 @@ function ToastCard({ t, dismiss }) {
 }
 
 
-function LiveExecutionModal({ opp, onClose, onConfirm }) {
+function LiveExecutionModal({ opp, executionBroker, onClose, onConfirm }) {
   const [loading, setLoading] = useState(true);
   const [funds, setFunds] = useState(null);
   
@@ -139,7 +161,7 @@ function LiveExecutionModal({ opp, onClose, onConfirm }) {
     let active = true;
     const fetchFunds = async () => {
       try {
-        const broker = opp.broker || 'PAPER';
+        const broker = opp.broker || executionBroker || 'PAPER';
         const res = await client.get('/option-arbitrage/funds', { params: { broker } });
         if (active) {
           setFunds(res.data);
@@ -163,7 +185,7 @@ function LiveExecutionModal({ opp, onClose, onConfirm }) {
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
         <div className="bg-slate-900 px-5 py-4 flex items-center justify-between">
           <h3 className="text-white font-black text-lg flex items-center gap-2">
-            <span>⚡</span> Deploy Live Arbitrage
+            {executionBroker === "PAPER" ? <span>📝 Deploy Paper Trade</span> : <span>⚡ Deploy Live Arbitrage</span>}
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition">✖</button>
         </div>
@@ -226,7 +248,7 @@ function LiveExecutionModal({ opp, onClose, onConfirm }) {
             disabled={loading || isShortfall}
             className="px-5 py-2 font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
           >
-            Confirm Deployment
+            {executionBroker === "PAPER" ? "Confirm Paper Trade" : "Confirm Live Deployment"}
           </button>
         </div>
       </div>
@@ -257,7 +279,31 @@ export default function OptionArbitrage() {
   const [underlyings, setUnderlyings] = useState(['ALL']);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [executionBroker, setExecutionBroker] = useState('PAPER');
+  const [liveBrokerPref, setLiveBrokerPref] = useState('ZERODHA');
+  
+  const handleTradeModeChange = (mode) => {
+    if (mode === 'PAPER') {
+      changeExecutionBroker('PAPER');
+    } else {
+      changeExecutionBroker(liveBrokerPref);
+    }
+  };
+  
+  const handleLiveBrokerChange = (broker) => {
+    setLiveBrokerPref(broker);
+    changeExecutionBroker(broker);
+  };
   const [pendingLiveDeploy, setPendingLiveDeploy] = useState(null);
+  // Child views (BidParityView, HistoryView, each spread view) fire deploy requests through
+  // the module-level emitter rather than a threaded prop -- see requestLiveDeploy above.
+  // Bypass modal entirely for Paper trades
+  useLiveDeployRequests((opp) => {
+    if (executionBroker === 'PAPER') {
+      handleExecuteInline(opp, 1);
+    } else {
+      setPendingLiveDeploy(opp);
+    }
+  });
   const [isTestingBroker, setIsTestingBroker] = useState(false);
   const [maxSignals, setMaxSignals] = useState(() => {
     const saved = localStorage.getItem('stokr_max_signals');
@@ -288,7 +334,7 @@ export default function OptionArbitrage() {
   const testBrokerConnection = async () => {
     setIsTestingBroker(true);
     try {
-      const res = await client.post('/brokers/test-execution', { broker: executionBroker });
+      const res = await client.post('/brokers/test-connection', { broker: executionBroker });
       if (res.data?.ok) {
         showToast(res.data.message, 'success');
       } else {
@@ -460,9 +506,33 @@ export default function OptionArbitrage() {
     }
   };
 
+
+  // PREFETCH / BACKGROUND SCANNING
+  // The user requested that all scanners run continuously in the background so tabs load instantly.
+  const bgInterval = autoRefresh ? 30000 : false;
+  useQuery({ queryKey: ['bid-parity-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/parity/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
+  useQuery({ queryKey: ['box-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/box-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
+  useQuery({ queryKey: ['vertical-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/vertical-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
+  useQuery({ queryKey: ['butterfly-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/butterfly-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
+  useQuery({ queryKey: ['condor-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/condor-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
+  useQuery({ queryKey: ['iron-condor-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/iron-condor/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
+  useQuery({ queryKey: ['cash-surge-scan'], queryFn: async () => (await client.get('/option-arbitrage/cash-trade/surge-scan')).data, refetchInterval: bgInterval });
+  useQuery({ queryKey: ['cash-momentum-scan'], queryFn: async () => (await client.get('/option-arbitrage/cash-trade/momentum-scan')).data, refetchInterval: bgInterval });
   return (
     <div className="w-full max-w-full space-y-5 font-sans text-slate-900">
       <ToastContainer toasts={toasts} dismiss={dismissToast} />
+
+      {pendingLiveDeploy && (
+        <LiveExecutionModal
+          opp={pendingLiveDeploy}
+          executionBroker={executionBroker}
+          onClose={() => setPendingLiveDeploy(null)}
+          onConfirm={() => {
+            setPendingLiveDeploy(null);
+            handleExecuteInline(pendingLiveDeploy, 1);
+          }}
+        />
+      )}
 
       {/* Top Header Card */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 md:p-5 shadow-xl border border-slate-800 flex flex-wrap items-center justify-between gap-4">
@@ -486,22 +556,37 @@ export default function OptionArbitrage() {
             <span className="font-bold text-white">Zerodha Kite Connect</span>
           </div>
 
-          <div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs">
-            <span className="text-slate-300 font-medium">Execution Broker:</span>
-            <select
-              value={executionBroker}
-              onChange={(e) => changeExecutionBroker(e.target.value)}
-              className="bg-slate-900 text-amber-300 font-bold border border-slate-700 rounded-lg px-2 py-1 outline-none text-xs"
-            >
-              <option value="PAPER">📝 Paper Trading (Virtual ₹1 Cr)</option>
-              <option value="NAVIA">⚡ Navia Markets</option>
-              <option value="MOTILALOSWAL">🟣 Motilal Oswal</option>
-              <option value="ICICI_DIRECT">🏦 ICICI Direct Breeze</option>
-              <option value="ZERODHA">🚀 Zerodha Kite</option>
-              <option value="DHAN">🎯 DhanHQ</option>
-              <option value="FYERS">🔥 Fyers API</option>
-            </select>
-          </div>
+          {/* Trade Mode Toggle */}
+<div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs">
+  <span className="text-slate-300 font-medium">Trade Mode:</span>
+  <select
+    value={executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'}
+    onChange={(e) => handleTradeModeChange(e.target.value)}
+    className="bg-slate-900 text-amber-300 font-bold border border-slate-700 rounded-lg px-2 py-1 outline-none text-xs"
+  >
+    <option value="PAPER">📝 Paper Trading</option>
+    <option value="LIVE">🔴 Live Execution</option>
+  </select>
+</div>
+
+{/* Live Broker Selection */}
+{executionBroker !== 'PAPER' && (
+<div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs transition-all">
+  <span className="text-red-300 font-medium">Live Broker:</span>
+  <select
+    value={executionBroker}
+    onChange={(e) => handleLiveBrokerChange(e.target.value)}
+    className="bg-red-900/30 text-red-300 font-bold border border-red-700/50 rounded-lg px-2 py-1 outline-none text-xs"
+  >
+    <option value="ZERODHA">Zerodha Kite Connect</option>
+    <option value="NAVIA">Navia Markets</option>
+    <option value="MOTILALOSWAL">Motilal Oswal</option>
+    <option value="ICICIDIRECT">ICICI Direct Breeze</option>
+    <option value="DHAN">DhanHQ</option>
+    <option value="FYERS">Fyers API</option>
+  </select>
+</div>
+)}
 
           <button
             onClick={testBrokerConnection}
@@ -517,6 +602,7 @@ export default function OptionArbitrage() {
       <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           {[
+            { key: 'top-picks', label: '🔥 Top Picks' },
             { key: 'live', label: '⚡ Live Scan' },
             { key: 'bidparity', label: '🎯 Bid Parity' },
             { key: 'box', label: '💎 Box Spread' },
@@ -597,41 +683,48 @@ export default function OptionArbitrage() {
             condorSpreadOpportunities={condorSpreadOpportunities}
             summary={summary}
             scanLoading={scanLoading}
-            handleExecuteInline={handleExecuteInline}
+            handleExecuteInline={setPendingLiveDeploy}
             executionBroker={executionBroker}
           />
         )}
 
-        {activeTab === 'bidparity' && <BidParityView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
+        {activeTab === 'bidparity' && <BidParityView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
         {activeTab === 'autotrade' && (
           <div className="space-y-4">
-            <AutoExecSettingsPanel />
-            <AutoRollSettingsPanel />
+            <AutoExecSettingsPanel executionBroker={executionBroker} />
+            <AutoRollSettingsPanel executionBroker={executionBroker} />
           </div>
         )}
         {activeTab === 'papertrades' && <PaperTradesView />}
-        {activeTab === 'box' && <BoxSpreadView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'vertical' && <VerticalSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'butterfly' && <ButterflySpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'condorspread' && <CondorSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'ironcondor' && <IronCondorView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'cashsurge' && <CashSurgeView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'cashswing' && <CashSwingView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'history' && <HistoryView calendarOpportunities={calendarOpportunities} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} underlyings={underlyings} />}
+        {activeTab === 'box' && <BoxSpreadView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'vertical' && <VerticalSpreadView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'butterfly' && <ButterflySpreadView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'condorspread' && <CondorSpreadView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'ironcondor' && <IronCondorView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'calendar' && <CalendarSpreadView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'syntheticarb' && <SyntheticArbView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'ivmonitor' && <IVMonitorView />}
+        {activeTab === 'volsurface' && <VolSurfaceView />}
+        {activeTab === 'cashsurge' && <CashSurgeView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'cashswing' && <CashSwingView handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />}
+        {activeTab === 'top-picks' && <TopPicksView executionBroker={executionBroker} handleExecuteInline={setPendingLiveDeploy} />}
+        {activeTab === 'history' && <ErrorBoundary><HistoryView calendarOpportunities={calendarOpportunities} handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} underlyings={underlyings} /></ErrorBoundary>}
       </div>
     </div>
   );
 }
 
 /* Auto-Execute Settings Panel */
-function AutoExecSettingsPanel() {
+function AutoExecSettingsPanel({ executionBroker }) {
   const [settings, setSettings] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  const { data } = useQuery({
-    queryKey: ['autoExecSettings'],
+  
+  const { data, isLoading, isError } = useQuery({
+
+    queryKey: ['autoExecSettings', executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'],
     queryFn: async () => {
-      const res = await client.get('/option-arbitrage/auto-execute/settings');
+      const res = await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } });
       return res.data;
     },
     refetchInterval: 30000,
@@ -642,7 +735,7 @@ function AutoExecSettingsPanel() {
   const updateSetting = async (key, value) => {
     setSaving(true);
     try {
-      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}`);
+      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}&mode=${executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'}`);
       setSettings(prev => ({ ...prev, [key]: value }));
       showToast(`Setting updated: ${key} = ${value}`, 'success');
     } catch (e) {
@@ -651,7 +744,11 @@ function AutoExecSettingsPanel() {
     setSaving(false);
   };
 
+  
+  if (isLoading) return <div className="p-4 text-center text-xs text-slate-500">Loading settings...</div>;
+  if (isError) return <div className="p-4 text-center text-xs text-red-500 font-bold">Failed to load settings. Please refresh the page.</div>;
   if (!settings) return null;
+
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
@@ -779,12 +876,14 @@ function AutoExecSettingsPanel() {
 /* Auto-Roll on Breakeven Breach -- Butterfly only, configured per underlying (same pattern
    as the Auto-Execute Engine cards above). Off by default; each symbol has its own
    enable/breach-window/max-rolls so e.g. NIFTY can run this while BANKNIFTY stays manual. */
-function AutoRollSettingsPanel() {
+function AutoRollSettingsPanel({ executionBroker }) {
   const [settings, setSettings] = useState(null);
 
-  const { data } = useQuery({
-    queryKey: ['autoExecSettings'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+  
+  const { data, isLoading, isError } = useQuery({
+
+    queryKey: ['autoExecSettings', executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'],
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
     refetchInterval: 30000,
   });
 
@@ -792,7 +891,7 @@ function AutoRollSettingsPanel() {
 
   const updateSetting = async (key, value) => {
     try {
-      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}`);
+      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}&mode=${executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'}`);
       setSettings(prev => ({ ...prev, [key]: value }));
       showToast(`Setting updated: ${key} = ${value}`, 'success');
     } catch (e) {
@@ -800,7 +899,11 @@ function AutoRollSettingsPanel() {
     }
   };
 
+  
+  if (isLoading) return <div className="p-4 text-center text-xs text-slate-500">Loading settings...</div>;
+  if (isError) return <div className="p-4 text-center text-xs text-red-500 font-bold">Failed to load settings. Please refresh the page.</div>;
   if (!settings) return null;
+
 
   const underlyings = [
     { key: 'nifty', label: 'NIFTY', dot: 'bg-blue-500' },
@@ -809,6 +912,8 @@ function AutoRollSettingsPanel() {
     { key: 'midcpnifty', label: 'MIDCPNIFTY', dot: 'bg-amber-500' },
   ];
   const activeCount = underlyings.filter(u => settings[u.key + 'AutoRollEnabled']).length;
+
+
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -882,12 +987,14 @@ function AutoRollSettingsPanel() {
    sub-tab. Each strategy (Bid Parity/Box/Vertical/Butterfly/Condor/Iron Condor) reads/writes
    its own settings-key prefix (e.g. "box" -> boxNiftyEnabled/boxNiftyMinEdge/boxNiftyLots),
    completely independent of every other strategy's thresholds for the same underlying. */
-function StrategyAutoTradePanel({ prefix, label, accent = 'indigo' }) {
+function StrategyAutoTradePanel({ prefix, label, accent = 'indigo', executionBroker }) {
   const [settings, setSettings] = useState(null);
 
-  const { data } = useQuery({
-    queryKey: ['autoExecSettings'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+  
+  const { data, isLoading, isError } = useQuery({
+
+    queryKey: ['autoExecSettings', executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'],
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
     refetchInterval: 30000,
   });
 
@@ -895,7 +1002,7 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo' }) {
 
   const updateSetting = async (key, value) => {
     try {
-      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}`);
+      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}&mode=${executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'}`);
       setSettings(prev => ({ ...prev, [key]: value }));
       showToast(`Setting updated: ${key} = ${value}`, 'success');
     } catch (e) {
@@ -903,7 +1010,11 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo' }) {
     }
   };
 
+  
+  if (isLoading) return <div className="p-4 text-center text-xs text-slate-500">Loading settings...</div>;
+  if (isError) return <div className="p-4 text-center text-xs text-red-500 font-bold">Failed to load settings. Please refresh the page.</div>;
   if (!settings) return null;
+
 
   const underlyings = [
     { key: prefix + 'Nifty', label: 'NIFTY', dot: 'bg-blue-500' },
@@ -916,6 +1027,8 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo' }) {
     indigo: { grad: 'from-indigo-500 to-violet-600', bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700', btn: 'bg-indigo-500', ring: 'focus:ring-indigo-500 focus:border-indigo-500', glow: 'shadow-indigo-200' },
     emerald: { grad: 'from-emerald-500 to-teal-600', bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-700', btn: 'bg-emerald-500', ring: 'focus:ring-emerald-500 focus:border-emerald-500', glow: 'shadow-emerald-200' },
   }[accent] || { grad: 'from-indigo-500 to-violet-600', bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700', btn: 'bg-indigo-500', ring: 'focus:ring-indigo-500 focus:border-indigo-500', glow: 'shadow-indigo-200' };
+
+
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -934,9 +1047,27 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo' }) {
       </div>
 
       <div className="p-4 space-y-3">
-        <p className="text-[10px] text-slate-400">
-          Requires the master Engine switch (main Auto-Trade tab) to be ON, with a live broker selected there.
-        </p>
+        <div className="flex flex-col gap-2 mb-3">
+  <div className="flex items-center justify-between">
+    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wider uppercase bg-slate-100 border border-slate-200">
+      <span className="text-slate-500">Configuring Profile:</span>
+      <span className={executionBroker === 'PAPER' ? 'text-blue-600' : 'text-red-600'}>
+        {executionBroker === 'PAPER' ? '📝 Paper Trading' : `🔴 Live Execution (${executionBroker})`}
+      </span>
+    </div>
+    
+    <div className="flex items-center gap-2">
+      <label className="text-[10px] font-bold text-slate-500 uppercase">Max Overall Lots</label>
+      <input type="number" value={settings[prefix + 'MaxLots'] ?? 3} min={1} max={20}
+        onChange={(e) => setSettings(prev => ({ ...prev, [prefix + 'MaxLots']: Number(e.target.value) }))}
+        onBlur={(e) => updateSetting(prefix + 'MaxLots', e.target.value)}
+        className="w-16 px-2 py-1 text-xs font-mono font-bold border border-slate-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-indigo-500" />
+    </div>
+  </div>
+  <p className="text-[10px] text-slate-400">
+    Requires the master Engine switch (main Auto-Trade tab) to be ON.
+  </p>
+</div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {underlyings.map(u => {
             const enabled = !!settings[u.key + 'Enabled'];
@@ -1008,7 +1139,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
       const res = await client.get('/option-arbitrage/live-positions');
       return res.data;
     },
-    refetchInterval: 2000,
+    refetchInterval: 1000,
     staleTime: 1000,
   });
 
@@ -1020,8 +1151,10 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   const isToday = (p) => typeof p.enteredAt === 'string' && p.enteredAt.slice(0, 10) === todayIST;
 
-  const allPositions = (data?.positions || []).filter(isToday);
   const isPaper = (p) => !p.broker || p.broker === 'PAPER';
+  // LIVE positions are actual money and must ALWAYS be shown in My Positions as long as they are OPEN.
+  // Only PAPER positions should be filtered by today to avoid cluttering with stale simulated trades.
+  const allPositions = (data?.positions || []).filter(p => !isPaper(p) || isToday(p));
   const positions = brokerFilter === 'ALL' ? allPositions
     : brokerFilter === 'PAPER' ? allPositions.filter(isPaper)
     : allPositions.filter(p => !isPaper(p));
@@ -1140,7 +1273,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                   const pnl = p.currentPnl || 0;
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
-                  const PAYOFF_CHART_TYPES = ['BUTTERFLY_SPREAD', 'BOX_SPREAD', 'VERTICAL_SPREAD', 'CONDOR_SPREAD', 'IRON_CONDOR'];
+                  const PAYOFF_CHART_TYPES = ['BUTTERFLY_SPREAD', 'BOX_SPREAD', 'VERTICAL_SPREAD', 'CONDOR_SPREAD', 'IRON_CONDOR', 'CALENDAR_SPREAD'];
                   const canShowPayoff = PAYOFF_CHART_TYPES.includes(p.strategyType) && Array.isArray(p.legList) && p.legList.length >= 2;
                   const isExpanded = expandedPosId === p.id;
                   return (
@@ -1256,6 +1389,8 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
    instead of discovered by surprise later. */
 function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
   const [collapsed, setCollapsed] = useState(!defaultExpanded);
+  const [expandedGroupId, setExpandedGroupId] = useState(null);
+  const [smartExitTargets, setSmartExitTargets] = useState({});
   const broker = executionBroker && executionBroker !== 'PAPER' ? executionBroker : 'ZERODHA';
 
   const { data, refetch, isFetching } = useQuery({
@@ -1264,11 +1399,107 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
       const res = await client.get('/option-arbitrage/broker-positions', { params: { broker } });
       return res.data;
     },
-    refetchInterval: 5000,
+    refetchInterval: 1000,
     staleTime: 2000,
   });
 
   const positions = data?.positions || [];
+
+  // Group positions by Underlying + Expiry
+  const groups = React.useMemo(() => {
+    const map = new Map();
+    positions.forEach(p => {
+      // e.g. FINNIFTY26AUG26150CE
+      const m = p.symbol.match(/^([A-Z]+)(\d{2}[A-Z]{3}|\d{2}[A-Z]{3}\d{2}|\d{5,})(\d+)(CE|PE)$/);
+      let underlying = p.symbol;
+      let expiry = 'UNKNOWN';
+      let parsedStrike = 0;
+      let parsedOptionType = 'CE';
+      
+      if (m) {
+        underlying = m[1];
+        expiry = m[2];
+        parsedStrike = parseInt(m[3], 10);
+        parsedOptionType = m[4];
+      }
+
+      const groupId = `${underlying}_${expiry}`;
+      if (!map.has(groupId)) {
+        map.set(groupId, {
+          id: groupId,
+          underlying,
+          expiry,
+          positions: [],
+          unrealizedPnl: 0,
+          realizedPnl: 0
+        });
+      }
+      
+      const group = map.get(groupId);
+      group.positions.push({
+        ...p,
+        parsedStrike,
+        parsedOptionType
+      });
+      group.unrealizedPnl += (p.unrealizedPnl || 0);
+      group.executablePnl = (group.executablePnl || 0) + (p.executablePnl || p.unrealizedPnl || 0);
+      group.realizedPnl += (p.realizedPnl || 0);
+    });
+    return Array.from(map.values());
+  }, [positions]);
+
+  React.useEffect(() => {
+    groups.forEach(g => {
+      const target = smartExitTargets[g.id];
+      if (target?.enabled && !target?.triggered && g.executablePnl >= target.value) {
+        setSmartExitTargets(prev => ({ ...prev, [g.id]: { ...prev[g.id], triggered: true } }));
+        handleGroupExit(g, true);
+      }
+    });
+  }, [groups, smartExitTargets]);
+
+
+  const handleGroupExit = async (group, bypassConfirm = false) => {
+    if (!bypassConfirm && !window.confirm(`Close all positions for ${group.underlying} ${group.expiry} at MARKET?`)) return;
+    
+    const legList = group.positions.map(p => {
+      const isLong = p.qty > 0;
+      return {
+        strike: p.parsedStrike,
+        optionType: p.parsedOptionType,
+        side: isLong ? 'SELL' : 'BUY', // Opposite to close
+        qty: Math.abs(p.qty),
+        price: 0,
+        symbol: p.symbol
+      };
+    });
+
+    const exitOpp = {
+      underlying: group.underlying,
+      strategyType: 'MANUAL_EXIT',
+      legList: legList,
+      description: `Exit ${group.underlying} ${group.expiry} Group`,
+      edgeAfterCosts: 0
+    };
+
+    try {
+      const res = await client.post('/option-arbitrage/paper-trade/execute', {
+        ...exitOpp,
+        lots: 1,
+        broker: broker
+      });
+      if (res.data?.status === 'SUCCESS') {
+        alert('Exit orders placed successfully!');
+        refetch();
+      } else {
+        alert('Failed to place exit orders: ' + res.data?.message);
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+  };
+
+
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1277,7 +1508,7 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
           <span className="text-lg">🏦</span>
           <h3 className="text-sm font-black text-slate-800">{broker} Broker Positions (Ground Truth)</h3>
           <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full">{positions.length}</span>
-          <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-bold rounded-full">5s tick</span>
+          <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-bold rounded-full">1s tick</span>
           {data?.error && (
             <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 text-[10px] font-bold rounded-full">{data.error}</span>
           )}
@@ -1294,40 +1525,142 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
         <div className="p-8 text-center text-slate-400 text-sm font-semibold">No open positions at {broker} right now</div>
       )}
 
-      {!collapsed && positions.length > 0 && (
+      {!collapsed && groups.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-[11px] text-left">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold">
               <tr>
-                <th className="px-3 py-2">Symbol</th>
-                <th className="px-3 py-2">Exchange</th>
-                <th className="px-3 py-2">Product</th>
-                <th className="px-3 py-2 text-right">Qty</th>
-                <th className="px-3 py-2 text-right">Avg Price</th>
-                <th className="px-3 py-2 text-right">Last Price</th>
-                <th className="px-3 py-2 text-right">Unrealized P&amp;L</th>
-                <th className="px-3 py-2 text-right">Realized P&amp;L</th>
+                <th className="px-3 py-2">Set / Underlying</th>
+                <th className="px-3 py-2">Expiry</th>
+                <th className="px-3 py-2 text-center">Legs</th>
+                <th className="px-3 py-2 text-right" title="Based on LTP (like Zerodha)">LTP P&L</th>
+                <th className="px-3 py-2 text-right" title="Calculated using real Bid/Ask prices">Executable P&L</th>
+                <th className="px-3 py-2 text-right">Realized P&L</th>
+                <th className="px-3 py-2 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {positions.map((p, i) => (
-                <tr key={i} className="hover:bg-slate-50">
-                  <td className="px-3 py-2 font-bold text-slate-800">{p.symbol}</td>
-                  <td className="px-3 py-2 text-slate-500">{p.exchange}</td>
-                  <td className="px-3 py-2">
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold border bg-slate-100 text-slate-600 border-slate-300">{p.productType}</span>
-                  </td>
-                  <td className={`px-3 py-2 text-right font-mono font-bold ${p.quantity >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{p.quantity}</td>
-                  <td className="px-3 py-2 text-right font-mono">₹{Number(p.avgPrice || 0).toFixed(2)}</td>
-                  <td className="px-3 py-2 text-right font-mono">₹{Number(p.lastPrice || 0).toFixed(2)}</td>
-                  <td className={`px-3 py-2 text-right font-mono font-bold ${Number(p.unrealizedPnl || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    ₹{Math.round(Number(p.unrealizedPnl || 0)).toLocaleString('en-IN')}
-                  </td>
-                  <td className={`px-3 py-2 text-right font-mono font-bold ${Number(p.realizedPnl || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    ₹{Math.round(Number(p.realizedPnl || 0)).toLocaleString('en-IN')}
-                  </td>
-                </tr>
-              ))}
+              {groups.map((g) => {
+                const isExpanded = expandedGroupId === g.id;
+                
+                // Build a fake opp for the payoff chart
+                const fakeOpp = {
+                  underlying: g.underlying,
+                  strategyType: 'BOX_SPREAD', // Force it to draw payoff chart
+                  lotSize: 1, // Qty is absolute
+                  legList: g.positions.map(p => ({
+                    strike: p.parsedStrike,
+                    optionType: p.parsedOptionType,
+                    side: p.qty > 0 ? 'BUY' : 'SELL',
+                    qty: Math.abs(p.qty),
+                    price: p.avgPrice
+                  }))
+                };
+
+                return (
+                  <React.Fragment key={g.id}>
+                    <tr onClick={() => setExpandedGroupId(isExpanded ? null : g.id)}
+                      className={`hover:bg-slate-50 cursor-pointer ${isExpanded ? 'bg-fuchsia-50/60' : ''}`}>
+                      <td className="px-3 py-2 font-bold text-slate-800 flex items-center gap-2">
+                        <span className="text-slate-400 text-[10px]">{isExpanded ? '▼' : '▶'}</span>
+                        {g.underlying}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-slate-600">{g.expiry}</td>
+                      <td className="px-3 py-2 text-center">
+                        <span className="px-2 py-0.5 bg-slate-100 rounded-full font-bold text-slate-600">{g.positions.length}</span>
+                      </td>
+                      <td className={`px-3 py-2 text-right font-bold ${g.unrealizedPnl > 0 ? 'text-emerald-600' : g.unrealizedPnl < 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                        {g.unrealizedPnl > 0 ? '+' : ''}{g.unrealizedPnl.toFixed(2)}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-bold ${g.executablePnl > 0 ? 'text-emerald-600' : g.executablePnl < 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                        {g.executablePnl > 0 ? '+' : ''}{g.executablePnl.toFixed(2)}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-bold ${g.realizedPnl > 0 ? 'text-emerald-600' : g.realizedPnl < 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                        {g.realizedPnl > 0 ? '+' : ''}{g.realizedPnl.toFixed(2)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex flex-col gap-1 items-end">
+                          <button onClick={(e) => { e.stopPropagation(); handleGroupExit(g); }} 
+                            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg font-bold text-[10px] shadow-sm transition-all transform active:scale-95">
+                            EXIT SET
+                          </button>
+                          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                            <label className="text-[9px] font-bold text-slate-500">Smart Exit ≥</label>
+                            <input 
+                              type="number" 
+                              className="w-16 px-1 py-0.5 text-[10px] border border-slate-300 rounded"
+                              value={smartExitTargets[g.id]?.value || ''}
+                              placeholder="₹ Target"
+                              onChange={e => setSmartExitTargets(prev => ({ ...prev, [g.id]: { ...prev[g.id], value: Number(e.target.value) } }))}
+                            />
+                            <input 
+                              type="checkbox" 
+                              checked={smartExitTargets[g.id]?.enabled || false}
+                              onChange={e => setSmartExitTargets(prev => ({ ...prev, [g.id]: { ...prev[g.id], enabled: e.target.checked, triggered: false } }))}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan="6" className="p-0 bg-slate-50 border-b-2 border-indigo-100">
+                          <ErrorBoundary><div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+                              <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">Individual Legs</h4>
+                              <table className="w-full text-[10px] text-left">
+                                <thead className="bg-slate-50 text-slate-500">
+                                  <tr>
+                                    <th className="px-2 py-1">Symbol</th>
+                                    <th className="px-2 py-1 text-right">Qty</th>
+                                    <th className="px-2 py-1 text-right">Avg</th>
+                                    <th className="px-2 py-1 text-right">LTP</th>
+                                    <th className="px-2 py-1 text-right" title="Based on LTP (like Zerodha)">LTP P&L</th>
+                                    <th className="px-2 py-1 text-right" title="Based on real Bids/Asks">Exec P&L</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {g.positions.map((p, i) => (
+                                    <tr key={i}>
+                                      <td className="px-2 py-1 font-mono font-bold text-slate-700">{p.symbol}</td>
+                                      <td className={`px-2 py-1 text-right font-bold ${p.qty > 0 ? 'text-blue-600' : 'text-rose-600'}`}>{p.qty > 0 ? '+'+p.qty : p.qty}</td>
+                                      <td className="px-2 py-1 text-right">{p.avgPrice}</td>
+                                      <td className="px-2 py-1 text-right">{p.lastPrice}</td>
+                                      <td className={`px-2 py-1 text-right font-bold ${p.unrealizedPnl > 0 ? 'text-emerald-600' : p.unrealizedPnl < 0 ? 'text-red-600' : ''}`}>
+                                        {p.unrealizedPnl != null ? Number(p.unrealizedPnl).toFixed(2) : '--'}
+                                      </td>
+                                      <td className={`px-2 py-1 text-right font-bold ${p.executablePnl > 0 ? 'text-emerald-600' : p.executablePnl < 0 ? 'text-red-600' : ''}`}>
+                                        {p.executablePnl != null ? Number(p.executablePnl).toFixed(2) : '--'}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                                <tfoot className="bg-slate-100/80 border-t border-slate-200 font-black">
+                                  <tr>
+                                    <td colSpan="4" className="px-2 py-1.5 text-right uppercase text-slate-500">Total Set P&L</td>
+                                    <td className={`px-2 py-1.5 text-right ${g.positions.reduce((s, p) => s + (p.unrealizedPnl || 0), 0) > 0 ? 'text-emerald-600' : g.positions.reduce((s, p) => s + (p.unrealizedPnl || 0), 0) < 0 ? 'text-red-600' : ''}`}>
+                                      {Number(g.positions.reduce((s, p) => s + (p.unrealizedPnl || 0), 0)).toFixed(2)}
+                                    </td>
+                                    <td className={`px-2 py-1.5 text-right ${g.executablePnl > 0 ? 'text-emerald-600' : g.executablePnl < 0 ? 'text-red-600' : ''}`}>
+                                      {Number(g.executablePnl).toFixed(2)}
+                                    </td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            </div>
+                            <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+                               <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">Set Payoff Chart</h4>
+                               <div className="h-48">
+                                 <ArbitrageSignalPayoffChart opp={fakeOpp} />
+                               </div>
+                            </div>
+                          </div></ErrorBoundary>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1344,12 +1677,14 @@ function CashPositionsSection() {
       const res = await client.get('/option-arbitrage/cash-positions');
       return res.data;
     },
-    refetchInterval: 5000,
+    refetchInterval: 1000,
     staleTime: 2000,
   });
 
   const positions = data?.positions || [];
   if (positions.length === 0) return null;
+
+
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1723,6 +2058,12 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const [histPage, setHistPage] = useState(0);
   const PAGE_SIZE = 200;
 
+  const { data: livePositionsData } = useQuery({
+    queryKey: ['live-positions-global-cache'],
+    queryFn: async () => (await client.get('/option-arbitrage/live-positions')).data,
+    refetchInterval: 1000
+  });
+
   const { data: liveData, isLoading } = useQuery({
     queryKey: ['bid-parity-scan', underlying],
     queryFn: async () => {
@@ -1834,9 +2175,9 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       </div>
 
       {subTab === 'autotrade' ? (
-        <StrategyAutoTradePanel prefix="bidParity" label="Bid Parity" accent="indigo" />
+        <StrategyAutoTradePanel executionBroker={executionBroker} prefix="bidParity" label="Bid Parity" accent="indigo" />
       ) : subTab === 'history' ? (
-        <HistoryView lockedStrategy="PARITY" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <ErrorBoundary><HistoryView lockedStrategy="PARITY" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} /></ErrorBoundary>
       ) : (
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -1897,6 +2238,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                 <tr>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('scanTime')}>Time{sortIcon('scanTime')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strike')}>Strike{sortIcon('strike')}</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right">CE</th>
@@ -1989,7 +2331,89 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                                   {Object.entries(opp.costBreakdown).map(([k,v]) => <span key={k}>{k}: ₹{v}</span>)}
                                 </div>
                               )}
-                              <ArbitrageSignalPayoffChart opp={opp} />
+                              
+                                {(() => {
+                                  let oppToPass = opp;
+                                  if ((!Array.isArray(opp.legList) || opp.legList.length < 2) && typeof opp.legs === 'string') {
+                                    const legStrs = opp.legs.split('|').map(s => s.trim()).filter(Boolean);
+                                    const legList = legStrs.map(ls => {
+                                      let side = ls.includes('BUY') ? 'BUY' : 'SELL';
+                                      let type = ls.includes('CE') ? 'CE' : ls.includes('PE') ? 'PE' : 'FUT';
+                                      let priceMatch = ls.match(/@\s+([\d.]+)/);
+                                      let price = priceMatch ? Number(priceMatch[1]) : 0;
+                                      let strikeMatch = type !== 'FUT' ? ls.match(/(\d+(?:\.\d+)?)\s+(?:CE|PE)/) : null;
+                                      let strike = strikeMatch ? Number(strikeMatch[1]) : (type === 'FUT' ? 0 : opp.strike);
+                                      if (price > 0) { return { side, optionType: type, strike, price, qty: 1 }; }
+                                      return null;
+                                    }).filter(Boolean);
+                                    if (legList.length >= 2) {
+                                      oppToPass = { ...opp, legList, strategyType: 'CONVERSION' }; // Use CONVERSION to force it to render properly if needed
+                                    }
+                                  }
+                                  
+                                  const existingPos = oppToPass.existingOpenPosition ? livePositionsData?.positions?.find(p => p.opportunityId === oppToPass.id) : null;
+                                  
+                                  return (
+                                    <>
+                                      {existingPos && (
+                                        <div className="my-3 p-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl flex items-center justify-between">
+                                          <div>
+                                            <span className="font-bold text-emerald-800 text-[10px] uppercase block mb-1">Current Active Trade P&L</span>
+                                            <span className={`font-mono text-2xl font-black ${existingPos.currentPnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                              {existingPos.currentPnl > 0 ? '+' : ''}₹{existingPos.currentPnl?.toFixed(2)}
+                                            </span>
+                                            <span className="text-xs font-bold text-slate-500 ml-2">({existingPos.lots} lots on {existingPos.broker})</span>
+                                          </div>
+                                          <div>
+                                             <button onClick={(e) => { e.stopPropagation(); client.post(`/option-arbitrage/positions/${existingPos.id}/exit`).then(()=>alert('Exit orders sent')).catch(e=>alert(e.message)) }} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-black shadow-md">
+                                                EXIT POSITION
+                                             </button>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {oppToPass.status === 'EXITED' && (
+                                        <div className="my-3 p-3 bg-red-50/50 border border-red-200 rounded-xl">
+                                          <div className="flex items-center justify-between mb-3 border-b border-red-100 pb-2">
+                                            <span className="font-bold text-red-800 text-[10px] uppercase block tracking-wider">Trade Exited</span>
+                                            <span className="text-[10px] text-slate-500 font-mono bg-white px-2 py-0.5 rounded border border-slate-200">
+                                              {oppToPass.exitTime ? new Date(oppToPass.exitTime).toLocaleString() : 'Time Unknown'}
+                                            </span>
+                                          </div>
+                                          
+                                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                                            <div className="bg-white p-2.5 rounded-lg border border-red-100 shadow-sm">
+                                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">CE Exit Price</span>
+                                              <span className="font-mono text-sm font-black text-slate-700">{oppToPass.ceExitPrice ? '₹' + oppToPass.ceExitPrice : '--'}</span>
+                                            </div>
+                                            <div className="bg-white p-2.5 rounded-lg border border-red-100 shadow-sm">
+                                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">PE Exit Price</span>
+                                              <span className="font-mono text-sm font-black text-slate-700">{oppToPass.peExitPrice ? '₹' + oppToPass.peExitPrice : '--'}</span>
+                                            </div>
+                                            <div className="bg-white p-2.5 rounded-lg border border-red-100 shadow-sm">
+                                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">FUT Exit Price</span>
+                                              <span className="font-mono text-sm font-black text-slate-700">{oppToPass.futExitPrice ? '₹' + oppToPass.futExitPrice : '--'}</span>
+                                            </div>
+                                            <div className="bg-emerald-50 p-2.5 rounded-lg border border-emerald-200 shadow-sm">
+                                              <span className="text-[9px] text-emerald-800 font-bold uppercase block mb-1">Realized P&L</span>
+                                              <span className={`font-mono text-sm font-black ${oppToPass.pnlAmount > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                {oppToPass.pnlAmount > 0 ? '+' : ''}₹{oppToPass.pnlAmount || oppToPass.pnlAfterCosts || 0}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {Array.isArray(oppToPass.legList) && oppToPass.legList.length >= 2 ? (
+                                        <div className="mt-3">
+                                          <span className="font-bold text-slate-800 text-xs uppercase block mb-2">Simulated Payoff Chart</span>
+                                          <ArbitrageSignalPayoffChart opp={oppToPass} />
+                                        </div>
+                                      ) : null}
+                                    </>
+                                  );
+                                })()}
+
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-amber-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   ⚡ Submit ({executionBroker})
@@ -2149,9 +2573,9 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       </div>
 
       {subTab === 'autotrade' ? (
-        <StrategyAutoTradePanel prefix="box" label="Box Spread" accent="indigo" />
+        <StrategyAutoTradePanel executionBroker={executionBroker} prefix="box" label="Box Spread" accent="indigo" />
       ) : subTab === 'history' ? (
-        <HistoryView lockedStrategy="BOX" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <HistoryView lockedStrategy="BOX" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
       ) : subTab === 'nearmiss' ? (
         <BoxNearMissPanel />
       ) : (
@@ -2215,6 +2639,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                 <tr>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('scanTime')}>Time{sortIcon('scanTime')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2">Strike Pair</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right">CE</th>
@@ -2407,6 +2832,7 @@ function BoxNearMissPanel() {
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                 <tr>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strikes')}>Strikes{sortIcon('strikes')}</th>
                   <th className="px-2 py-2">Direction</th>
                   <th className="px-2 py-2 text-right">Width</th>
@@ -2535,7 +2961,7 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
       </div>
 
       {subTab === 'autotrade' ? (
-        <StrategyAutoTradePanel prefix="vertical" label="Vertical Spread" accent="indigo" />
+        <StrategyAutoTradePanel executionBroker={executionBroker} prefix="vertical" label="Vertical Spread" accent="indigo" />
       ) : subTab === 'history' ? (
         <div className="space-y-3">
           <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl w-fit">
@@ -2551,11 +2977,11 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
           {historyMode === 'candidates' ? (
             <CandidateHistoryPanel strategyType="VERTICAL_SPREAD" label="Vertical Spread" />
           ) : (
-            <HistoryView lockedStrategy="VERTICAL" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+            <HistoryView lockedStrategy="VERTICAL" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
           )}
         </div>
       ) : subTab === 'candidates' ? (
-        <VerticalCandidatesPanel handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <VerticalCandidatesPanel handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
       ) : (
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -2596,6 +3022,7 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
                 <tr>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('scanTime')}>Time{sortIcon('scanTime')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2">Strike Pair</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right text-emerald-600 font-bold cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('edge')}>Net Edge{sortIcon('edge')}</th>
@@ -2671,6 +3098,7 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
                               )}
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
                               <p className="text-[10px] text-slate-500">{opp.description}</p>
+                              <ArbitrageSignalPayoffChart opp={opp} />
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-teal-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   ⚡ Submit ({executionBroker})
@@ -2730,7 +3158,7 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
 
   const { data: execSettings } = useQuery({
     queryKey: ['autoExecSettingsForVerticalCandidates'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
     refetchInterval: 60000
   });
 
@@ -3060,6 +3488,7 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
                 <tr>
                   <th className="px-2 py-2"></th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strikes')}>Strikes{sortIcon('strikes')}</th>
                   <th className="px-2 py-2">Type</th>
                   <th className="px-2 py-2">Direction</th>
@@ -3085,6 +3514,7 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
                         <input type="checkbox" checked={isSel} onChange={() => toggle(key)} className="w-3.5 h-3.5" />
                       </td>
                       <td className="px-2 py-1.5 font-bold text-slate-800">{c.underlying}</td>
+                      <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{c.expiryDate ? c.expiryDate.substring(5) : '--'}</td>
                       <td className="px-2 py-1.5 font-bold text-slate-700">{c.strikes}</td>
                       <td className="px-2 py-1.5 text-slate-600">{c.optionType}</td>
                       <td className="px-2 py-1.5 text-[10px] text-slate-500">{c.direction}</td>
@@ -3208,6 +3638,25 @@ function AutoRollPendingPanel() {
    on the opportunity. Model-free: this is the guaranteed convexity-bound payoff, not a
    Black-Scholes probability estimate, so there's no "Today" curve or POP here -- the whole
    point of a real arbitrage signal is that it's non-negative everywhere, at any settlement. */
+function cdfNormal(x) {
+  var t = 1 / (1 + 0.2316419 * Math.abs(x));
+  var d = 0.3989423 * Math.exp(-x * x / 2);
+  var prob = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  if (x > 0) prob = 1 - prob;
+  return prob;
+}
+
+function blackScholesPrice(S, K, t, r, v, type) {
+  if (t <= 0) return type === 'PE' ? Math.max(K - S, 0) : Math.max(S - K, 0);
+  var d1 = (Math.log(S / K) + (r + v * v / 2) * t) / (v * Math.sqrt(t));
+  var d2 = d1 - v * Math.sqrt(t);
+  if (type === 'PE') {
+    return K * Math.exp(-r * t) * cdfNormal(-d2) - S * cdfNormal(-d1);
+  } else {
+    return S * cdfNormal(d1) - K * Math.exp(-r * t) * cdfNormal(d2);
+  }
+}
+
 function ArbitrageSignalPayoffChart({ opp }) {
   const chartRef = useRef(null);
   const [hover, setHover] = useState(null);
@@ -3250,8 +3699,17 @@ function ArbitrageSignalPayoffChart({ opp }) {
         if (optType === 'FUT') return sum + sign * x * (Number(leg.qty) || 1);
         const strike = Number(leg.strike);
         const isPe = optType === 'PE';
-        const intrinsic = isPe ? Math.max(strike - x, 0) : Math.max(x - strike, 0);
-        return sum + sign * intrinsic * (Number(leg.qty) || 1);
+        
+        let val = 0;
+        // T+0 (or T+nearExpiry) logic for Calendar Spreads
+        if (opp.strategyType === 'CALENDAR_SPREAD' && leg.symbol === opp.farSymbol) {
+            const farT = Math.max(((opp.farDte || 7) - (opp.nearDte || 0)) / 365.0, 0.0027);
+            const farVol = (opp.farIV || 20) / 100.0;
+            val = blackScholesPrice(x, strike, farT, 0.07, farVol, isPe ? 'PE' : 'CE');
+        } else {
+            val = isPe ? Math.max(strike - x, 0) : Math.max(x - strike, 0);
+        }
+        return sum + sign * val * (Number(leg.qty) || 1);
       }, 0);
       const pnl = payoff - cost;
       points.push({ x, y: pnl });
@@ -3469,7 +3927,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
 
   return (
     <div className="space-y-4 w-full">
-      <AutoRollPendingPanel handleExecuteInline={handleExecuteInline} />
+      <AutoRollPendingPanel handleExecuteInline={setPendingLiveDeploy} />
       <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl w-fit">
         <button onClick={() => setSubTab('signals')}
           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'signals' ? 'bg-fuchsia-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
@@ -3504,16 +3962,16 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
           {historyMode === 'candidates' ? (
             <CandidateHistoryPanel strategyType="BUTTERFLY_SPREAD" label="Butterfly Spread" />
           ) : (
-            <HistoryView lockedStrategy="BUTTERFLY" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+            <HistoryView lockedStrategy="BUTTERFLY" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
           )}
         </div>
       ) : subTab === 'autotrade' ? (
         <div className="space-y-4">
-          <StrategyAutoTradePanel prefix="butterfly" label="Butterfly Spread" accent="indigo" />
-          <AutoRollSettingsPanel />
+          <StrategyAutoTradePanel executionBroker={executionBroker} prefix="butterfly" label="Butterfly Spread" accent="indigo" />
+          <AutoRollSettingsPanel executionBroker={executionBroker} />
         </div>
       ) : subTab === 'candidates' ? (
-        <ButterflyCandidatesPanel handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <ButterflyCandidatesPanel handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
       ) : (
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -3554,6 +4012,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
                 <tr>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('scanTime')}>Time{sortIcon('scanTime')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2">Strikes</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right text-emerald-600 font-bold cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('edge')}>Net Edge{sortIcon('edge')}</th>
@@ -3690,9 +4149,45 @@ function MarketClosedCandidates({ strategyType, reason }) {
     },
   });
 
+  const [sortConfig, setSortConfig] = useState({ key: 'snapshotTime', direction: 'desc' });
+
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    setSortConfig({ key, direction });
+  };
+
   const rows = data?.items || [];
+  
+  const sortedRows = [...rows].sort((a, b) => {
+    let valA = a[sortConfig.key];
+    let valB = b[sortConfig.key];
+    
+    if (sortConfig.key === 'payoff') {
+        valA = a.topMaxLoss ? (a.topMaxProfit || 0) / Math.abs(a.topMaxLoss) : 0;
+        valB = b.topMaxLoss ? (b.topMaxProfit || 0) / Math.abs(b.topMaxLoss) : 0;
+    }
+
+    if (valA == null) return 1;
+    if (valB == null) return -1;
+    if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
+
   const totalSightings = rows.reduce((s, r) => s + (Number(r.candidateCount) || 0), 0);
   const peak = rows.reduce((best, r) => (Number(r.topPop) || 0) > (Number(best?.topPop) || 0) ? r : best, null);
+
+  const SortIndicator = ({ columnKey }) => {
+    if (sortConfig.key !== columnKey) return null;
+    return <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>;
+  };
+
+  const Th = ({ children, columnKey, className = "" }) => (
+    <th className={`px-2 py-2 cursor-pointer hover:bg-slate-100 ${className}`} onClick={() => handleSort(columnKey)}>
+      {children} <SortIndicator columnKey={columnKey} />
+    </th>
+  );
 
   return (
     <div className="p-6">
@@ -3729,35 +4224,40 @@ function MarketClosedCandidates({ strategyType, reason }) {
 
           <div className="overflow-x-auto">
             <table className="w-full text-[11px] text-left border-collapse">
-              <thead className="bg-slate-50 border-y border-slate-200 font-bold text-slate-600 uppercase">
+              <thead className="bg-slate-50 border-y border-slate-200 font-bold text-slate-600 uppercase select-none">
                 <tr>
-                  <th className="px-2 py-2">Time</th>
-                  <th className="px-2 py-2">Symbol</th>
-                  <th className="px-2 py-2 text-right">Count</th>
-                  <th className="px-2 py-2">Top Strikes</th>
-                  <th className="px-2 py-2">Type</th>
-                  <th className="px-2 py-2 text-right">Model POP</th>
-                  <th className="px-2 py-2 text-right">Cost/Lot</th>
-                  <th className="px-2 py-2 text-right">Max Profit</th>
-                  <th className="px-2 py-2 text-right">Max Loss</th>
+                  <Th columnKey="snapshotTime">Time</Th>
+                  <Th columnKey="underlying">Symbol</Th>
+                  <Th columnKey="candidateCount" className="text-right">Count</Th>
+                  <Th columnKey="topStrikes">Top Strikes</Th>
+                  <Th columnKey="topOptionType">Type</Th>
+                  <Th columnKey="topPop" className="text-right">Model POP</Th>
+                  <Th columnKey="topCostPerLot" className="text-right">Cost/Lot</Th>
+                  <Th columnKey="topMaxProfit" className="text-right">Max Profit</Th>
+                  <Th columnKey="topMaxLoss" className="text-right">Max Loss</Th>
+                  <Th columnKey="payoff" className="text-right">Payoff</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {rows.slice().reverse().map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50">
-                    <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{fmtTime(r.snapshotTime)}</td>
-                    <td className="px-2 py-1.5 font-bold text-slate-800">{r.underlying}</td>
-                    <td className="px-2 py-1.5 text-right font-mono font-bold text-indigo-600">{r.candidateCount}</td>
-                    <td className="px-2 py-1.5 font-mono text-slate-700">{r.topStrikes || '--'}</td>
-                    <td className="px-2 py-1.5 text-slate-600">{r.topOptionType || '--'}</td>
-                    <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
-                      {r.topPop != null ? `${Math.round(r.topPop)}%` : '--'}
-                    </td>
-                    <td className="px-2 py-1.5 text-right font-mono">{r.topCostPerLot != null ? `₹${Math.round(r.topCostPerLot).toLocaleString('en-IN')}` : '--'}</td>
-                    <td className="px-2 py-1.5 text-right font-mono text-emerald-700">{r.topMaxProfit != null ? `₹${Math.round(r.topMaxProfit).toLocaleString('en-IN')}` : '--'}</td>
-                    <td className="px-2 py-1.5 text-right font-mono text-red-600">{r.topMaxLoss != null ? `₹${Math.round(r.topMaxLoss).toLocaleString('en-IN')}` : '--'}</td>
-                  </tr>
-                ))}
+                {sortedRows.map((r) => {
+                  const payoff = r.topMaxLoss ? (r.topMaxProfit || 0) / Math.abs(r.topMaxLoss) : null;
+                  return (
+                    <tr key={r.id} className="hover:bg-slate-50">
+                      <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{fmtTime(r.snapshotTime)}</td>
+                      <td className="px-2 py-1.5 font-bold text-slate-800">{r.underlying}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold text-indigo-600">{r.candidateCount}</td>
+                      <td className="px-2 py-1.5 font-mono text-slate-700">{r.topStrikes || '--'}</td>
+                      <td className="px-2 py-1.5 text-slate-600">{r.topOptionType || '--'}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
+                        {r.topPop != null ? `${Math.round(r.topPop)}%` : '--'}
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-mono">{r.topCostPerLot != null ? `₹${Math.round(r.topCostPerLot).toLocaleString('en-IN')}` : '--'}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-emerald-700">{r.topMaxProfit != null ? `₹${Math.round(r.topMaxProfit).toLocaleString('en-IN')}` : '--'}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-red-600">{r.topMaxLoss != null ? `₹${Math.round(r.topMaxLoss).toLocaleString('en-IN')}` : '--'}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold text-sky-600">{payoff != null ? `${payoff.toFixed(2)}x` : '--'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -3793,7 +4293,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
   // if it moves against me" has an honest answer instead of a guess.
   const { data: execSettings } = useQuery({
     queryKey: ['autoExecSettingsForCandidates'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
     refetchInterval: 60000
   });
 
@@ -4138,6 +4638,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
                 <tr>
                   <th className="px-2 py-2"></th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strikes')}>Strikes{sortIcon('strikes')}</th>
                   <th className="px-2 py-2">Type</th>
                   <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('costRatio')}>Cost/Width{sortIcon('costRatio')}</th>
@@ -4163,6 +4664,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
                         <input type="checkbox" checked={isSel} onChange={() => toggle(key)} className="w-3.5 h-3.5" />
                       </td>
                       <td className="px-2 py-1.5 font-bold text-slate-800">{c.underlying}</td>
+                      <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{c.expiryDate ? c.expiryDate.substring(5) : '--'}</td>
                       <td className="px-2 py-1.5 font-bold text-slate-700">{c.strikes}</td>
                       <td className="px-2 py-1.5 text-slate-600">{c.optionType}</td>
                       <td className="px-2 py-1.5 text-right font-mono">{Math.round(c.costRatio * 100)}%</td>
@@ -4310,13 +4812,13 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
           {historyMode === 'candidates' ? (
             <CandidateHistoryPanel strategyType="CONDOR_SPREAD" label="Condor Spread" />
           ) : (
-            <HistoryView lockedStrategy="CONDORSPREAD" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+            <HistoryView lockedStrategy="CONDORSPREAD" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
           )}
         </div>
       ) : subTab === 'autotrade' ? (
-        <StrategyAutoTradePanel prefix="condor" label="Condor Spread" accent="indigo" />
+        <StrategyAutoTradePanel executionBroker={executionBroker} prefix="condor" label="Condor Spread" accent="indigo" />
       ) : subTab === 'candidates' ? (
-        <CondorCandidatesPanel handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <CondorCandidatesPanel handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
       ) : (
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -4357,6 +4859,7 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
                 <tr>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('scanTime')}>Time{sortIcon('scanTime')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2">Strikes</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right text-emerald-600 font-bold cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('edge')}>Net Edge{sortIcon('edge')}</th>
@@ -4435,6 +4938,7 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
                               )}
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
                               <p className="text-[10px] text-slate-500">{opp.description}</p>
+                              <ArbitrageSignalPayoffChart opp={opp} />
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-cyan-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   ⚡ Submit ({executionBroker})
@@ -4494,7 +4998,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
 
   const { data: execSettings } = useQuery({
     queryKey: ['autoExecSettingsForCondorCandidates'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
     refetchInterval: 60000
   });
 
@@ -4823,6 +5327,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
                 <tr>
                   <th className="px-2 py-2"></th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strikes')}>Strikes{sortIcon('strikes')}</th>
                   <th className="px-2 py-2">Type</th>
                   <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('costRatio')}>Cost/Width{sortIcon('costRatio')}</th>
@@ -4848,6 +5353,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
                         <input type="checkbox" checked={isSel} onChange={() => toggle(key)} className="w-3.5 h-3.5" />
                       </td>
                       <td className="px-2 py-1.5 font-bold text-slate-800">{c.underlying}</td>
+                      <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{c.expiryDate ? c.expiryDate.substring(5) : '--'}</td>
                       <td className="px-2 py-1.5 font-bold text-slate-700">{c.strikes}</td>
                       <td className="px-2 py-1.5 text-slate-600">{c.optionType}</td>
                       <td className="px-2 py-1.5 text-right font-mono">{Math.round(c.costRatio * 100)}%</td>
@@ -5004,9 +5510,9 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
       </div>
 
       {subTab === 'history' ? (
-        <HistoryView lockedStrategy="CONDOR" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <HistoryView lockedStrategy="CONDOR" handleExecuteInline={setPendingLiveDeploy} executionBroker={executionBroker} />
       ) : subTab === 'autotrade' ? (
-        <StrategyAutoTradePanel prefix="ironCondor" label="Iron Condor" accent="indigo" />
+        <StrategyAutoTradePanel executionBroker={executionBroker} prefix="ironCondor" label="Iron Condor" accent="indigo" />
       ) : (
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -5432,6 +5938,7 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
                                 BUY NEAR ({opp.nearSymbol} @ ₹{opp.nearPrice}) | SELL FAR ({opp.farSymbol} @ ₹{opp.farPrice})
                               </p>
+                              <ArbitrageSignalPayoffChart opp={opp} />
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   ⏳ Submit ({executionBroker})
@@ -5447,6 +5954,412 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* SYNTHETIC FUTURES ARB VIEW */
+function SyntheticArbView({ handleExecuteInline, executionBroker }) {
+  const [underlying, setUnderlying] = useState('ALL');
+  const [expandedId, setExpandedId] = useState(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['synthetic-arb-scan', underlying],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/synthetic-arb/scan', { params: { underlying } });
+      return res.data;
+    },
+    refetchInterval: 15000
+  });
+
+  const opps = data?.opportunities || [];
+  const marketClosed = data?.marketClosed;
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-bold text-slate-800">🔄 Synthetic Futures Arbitrage</h2>
+          <p className="text-[10px] text-slate-500">Exploits Put-Call Parity: when Synthetic Futures Price != Actual Futures Price</p>
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            <button
+              key={u}
+              onClick={() => setUnderlying(u)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                underlying === u ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {u}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
+        {isLoading ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Synthetic Futures Arb...</div>
+        ) : marketClosed ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">🕒 Market closed. Scanner runs 9:15 AM - 3:30 PM IST.</div>
+        ) : opps.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No synthetic futures arbitrage detected</div>
+        ) : (
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-xs text-left border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Strike</th>
+                  <th className="px-2 py-2">Direction</th>
+                  <th className="px-2 py-2 text-right">Synthetic</th>
+                  <th className="px-2 py-2 text-right">Futures</th>
+                  <th className="px-2 py-2 text-right">Edge (pts)</th>
+                  <th className="px-2 py-2 text-right text-emerald-600 font-bold">Edge (₹)</th>
+                  <th className="px-2 py-2 text-right">Confidence</th>
+                  <th className="px-2 py-2 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {opps.slice(0, 30).map((opp, idx) => {
+                  const isExp = expandedId === idx;
+                  return (
+                    <React.Fragment key={idx}>
+                      <tr
+                        onClick={() => setExpandedId(isExp ? null : idx)}
+                        className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}
+                      >
+                        <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
+                        <td className="px-2 py-1.5">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            opp.direction === 'BUY_SYNTHETIC' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                          }`}>{opp.direction}</span>
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-600">₹{Number(opp.synthPrice || 0).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-600">₹{Number(opp.futPrice || 0).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-700">{Number(opp.edgePoints || 0).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">+₹{Math.round(Number(opp.edgeRs || 0)).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-indigo-600 font-bold">{Number(opp.confidence || 0).toFixed(0)}%</td>
+                        <td className="px-2 py-1.5 text-center">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
+                            className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded shadow-sm"
+                          >
+                            🔄 Execute
+                          </button>
+                        </td>
+                      </tr>
+                      {isExp && (
+                        <tr className="bg-indigo-50/40 border-b border-indigo-100">
+                          <td colSpan={9} className="p-3">
+                            <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
+                              <span className="font-bold text-slate-800 text-xs uppercase block">Leg Breakdown:</span>
+                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.action}</p>
+                              <div className="grid grid-cols-4 gap-2 text-[10px]">
+                                <div><span className="text-slate-500">CE Bid/Ask:</span> <span className="font-bold">₹{opp.ceBid} / ₹{opp.ceAsk}</span></div>
+                                <div><span className="text-slate-500">PE Bid/Ask:</span> <span className="font-bold">₹{opp.peBid} / ₹{opp.peAsk}</span></div>
+                                <div><span className="text-slate-500">Lot Size:</span> <span className="font-bold">{opp.lotSize}</span></div>
+                                <div><span className="text-slate-500">Txn Cost:</span> <span className="font-bold">₹{opp.txnCost}</span></div>
+                              </div>
+                              <div className="flex justify-end pt-1">
+                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold shadow-md">
+                                  🔄 Submit ({executionBroker})
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* IV MONITOR VIEW */
+function IVMonitorView() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['iv-rank-current'],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/iv-rank/current');
+      return res.data;
+    },
+    refetchInterval: 30000
+  });
+
+  const [histUnderlying, setHistUnderlying] = useState('NIFTY');
+  const { data: histData } = useQuery({
+    queryKey: ['iv-rank-history', histUnderlying],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/iv-rank/history', { params: { underlying: histUnderlying, days: 30 } });
+      return res.data;
+    },
+    refetchInterval: 60000
+  });
+
+  const underlyings = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+
+  const getRegimeColor = (regime) => {
+    if (regime === 'LOW') return 'bg-emerald-100 text-emerald-700 border-emerald-300';
+    if (regime === 'HIGH') return 'bg-red-100 text-red-700 border-red-300';
+    return 'bg-amber-100 text-amber-700 border-amber-300';
+  };
+
+  const getIVRankColor = (rank) => {
+    if (rank > 60) return 'text-emerald-600';
+    if (rank > 35) return 'text-amber-600';
+    return 'text-red-500';
+  };
+
+  return (
+    <div className="space-y-4 w-full">
+      <div>
+        <h2 className="text-base font-bold text-slate-800">📈 IV Rank Monitor & Regime Detector</h2>
+        <p className="text-[10px] text-slate-500">Tracks implied vol rank, realized vol, and market regime across all underlyings</p>
+      </div>
+
+      {isLoading ? (
+        <div className="p-12 text-center text-slate-400 text-sm font-semibold">Loading IV data...</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          {underlyings.map(u => {
+            const d = data?.[u];
+            if (!d) return (
+              <div key={u} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+                <h3 className="font-bold text-slate-800">{u}</h3>
+                <p className="text-xs text-slate-400 mt-2">No data available yet. Market may be closed.</p>
+              </div>
+            );
+            return (
+              <div key={u} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-slate-800 text-sm">{u}</h3>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${getRegimeColor(d.regime)}`}>
+                    {d.regime}
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase">IV Rank</span>
+                    <span className={`text-lg font-black ${getIVRankColor(d.ivRank)}`}>{Number(d.ivRank).toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div className={`h-2 rounded-full ${d.ivRank > 60 ? 'bg-emerald-500' : d.ivRank > 35 ? 'bg-amber-500' : 'bg-red-400'}`}
+                      style={{ width: `${Math.min(100, d.ivRank)}%` }}
+                    ></div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[10px]">
+                  <div className="bg-slate-50 rounded-lg p-2">
+                    <span className="text-slate-500 block">ATM IV</span>
+                    <span className="font-bold text-slate-800 text-sm">{Number(d.atmIV).toFixed(1)}%</span>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2">
+                    <span className="text-slate-500 block">Realized Vol (5d)</span>
+                    <span className="font-bold text-slate-800 text-sm">{Number(d.rv5d).toFixed(1)}%</span>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2">
+                    <span className="text-slate-500 block">IV/RV Ratio</span>
+                    <span className={`font-bold text-sm ${d.ivRvRatio > 1.2 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {Number(d.ivRvRatio).toFixed(2)}x
+                    </span>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2">
+                    <span className="text-slate-500 block">Spot</span>
+                    <span className="font-bold text-slate-800 text-sm">₹{Number(d.spotPrice).toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+
+                <div className={`rounded-lg p-2 text-[10px] font-bold text-center ${
+                  d.sellPremiumOk ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'
+                }`}>
+                  {d.sellPremiumOk ? '✅ OK to sell premium (Butterfly/Condor)' : '⚠️ WAIT — IV too cheap to sell'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* IV History Table */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-slate-800 text-sm">IV History (last 30 days)</h3>
+          <div className="flex gap-1">
+            {underlyings.map(u => (
+              <button key={u} onClick={() => setHistUnderlying(u)}
+                className={`px-2 py-1 rounded-lg text-[10px] font-bold ${histUnderlying === u ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+              >{u}</button>
+            ))}
+          </div>
+        </div>
+        {histData && histData.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2 text-left">Time</th>
+                  <th className="px-2 py-2 text-right">ATM IV</th>
+                  <th className="px-2 py-2 text-right">CE IV</th>
+                  <th className="px-2 py-2 text-right">PE IV</th>
+                  <th className="px-2 py-2 text-right">RV (5d)</th>
+                  <th className="px-2 py-2 text-right">IV Rank</th>
+                  <th className="px-2 py-2 text-right">IV/RV</th>
+                  <th className="px-2 py-2 text-center">Regime</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {histData.slice(0, 50).map((row, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50">
+                    <td className="px-2 py-1 text-slate-600">{new Date(row.snapshot_time).toLocaleString()}</td>
+                    <td className="px-2 py-1 text-right font-mono font-bold">{Number(row.atm_iv).toFixed(1)}%</td>
+                    <td className="px-2 py-1 text-right font-mono">{Number(row.atm_iv_ce).toFixed(1)}%</td>
+                    <td className="px-2 py-1 text-right font-mono">{Number(row.atm_iv_pe).toFixed(1)}%</td>
+                    <td className="px-2 py-1 text-right font-mono">{Number(row.realized_vol_5d).toFixed(1)}%</td>
+                    <td className="px-2 py-1 text-right font-mono font-bold">{Number(row.iv_rank).toFixed(0)}%</td>
+                    <td className="px-2 py-1 text-right font-mono">{Number(row.iv_rv_ratio).toFixed(2)}</td>
+                    <td className="px-2 py-1 text-center">
+                      <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${getRegimeColor(row.regime)}`}>{row.regime}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="p-6 text-center text-slate-400 text-sm">No IV history recorded yet. Data will populate every 30 minutes during market hours.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* VOL SURFACE VIEW */
+function VolSurfaceView() {
+  const [underlying, setUnderlying] = useState('NIFTY');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['vol-surface-scan', underlying],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/vol-surface/scan', { params: { underlying } });
+      return res.data;
+    },
+    refetchInterval: 30000
+  });
+
+  const rows = data?.rows || [];
+  const spot = data?.spotPrice || 0;
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-bold text-slate-800">🌊 Volatility Surface</h2>
+          <p className="text-[10px] text-slate-500">IV smile across strikes - detect skew anomalies and mispriced options</p>
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            <button
+              key={u}
+              onClick={() => setUnderlying(u)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                underlying === u ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {u}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
+        {isLoading ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">Loading volatility surface...</div>
+        ) : rows.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No vol surface data for {underlying}</div>
+        ) : (
+          <>
+            {/* Visual IV Chart */}
+            <div className="p-4 border-b border-slate-200">
+              <h3 className="text-xs font-bold text-slate-600 uppercase mb-3">IV Smile (CE vs PE)</h3>
+              <div className="flex items-end gap-1 h-32">
+                {rows.map((row, idx) => {
+                  const maxIV = Math.max(...rows.map(r => Math.max(r.ceIv || 0, r.peIv || 0)));
+                  const ceH = maxIV > 0 ? ((row.ceIv || 0) / maxIV) * 100 : 0;
+                  const peH = maxIV > 0 ? ((row.peIv || 0) / maxIV) * 100 : 0;
+                  const isATM = row.strike === Math.round(spot / OptionChainService_getStep(underlying)) * OptionChainService_getStep(underlying);
+                  return (
+                    <div key={idx} className="flex-1 flex flex-col items-center gap-0.5" title={`Strike: ${row.strike}
+CE IV: ${row.ceIv}%
+PE IV: ${row.peIv}%`}>
+                      <div className="flex gap-px w-full">
+                        <div className="flex-1 bg-blue-400 rounded-t-sm" style={{ height: `${ceH}%`, minHeight: '2px' }}></div>
+                        <div className="flex-1 bg-pink-400 rounded-t-sm" style={{ height: `${peH}%`, minHeight: '2px' }}></div>
+                      </div>
+                      <span className={`text-[8px] ${isATM ? 'font-bold text-indigo-600' : 'text-slate-400'}`}>{row.strike}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-3 mt-2 text-[9px] text-slate-500">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 bg-blue-400 rounded-sm"></span> CE IV</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 bg-pink-400 rounded-sm"></span> PE IV</span>
+                <span className="ml-auto">Spot: ₹{Number(spot).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            {/* Data Table */}
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                  <tr>
+                    <th className="px-2 py-2">Strike</th>
+                    <th className="px-2 py-2 text-right">Moneyness</th>
+                    <th className="px-2 py-2 text-right text-blue-600">CE IV %</th>
+                    <th className="px-2 py-2 text-right text-pink-600">PE IV %</th>
+                    <th className="px-2 py-2 text-right">Avg IV %</th>
+                    <th className="px-2 py-2 text-right">CE Price</th>
+                    <th className="px-2 py-2 text-right">PE Price</th>
+                    <th className="px-2 py-2 text-right">CE Bid</th>
+                    <th className="px-2 py-2 text-right">CE Ask</th>
+                    <th className="px-2 py-2 text-right">PE Bid</th>
+                    <th className="px-2 py-2 text-right">PE Ask</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.map((row, idx) => {
+                    const isATM = Math.abs(row.moneyness || 0) < 0.005;
+                    return (
+                      <tr key={idx} className={`${isATM ? 'bg-indigo-50/50 font-bold' : 'hover:bg-slate-50'}`}>
+                        <td className="px-2 py-1.5 font-bold text-slate-800">{row.strike}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-500">{(row.moneyness * 100).toFixed(2)}%</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-blue-600">{Number(row.ceIv).toFixed(1)}%</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-pink-600">{Number(row.peIv).toFixed(1)}%</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-700">{Number(row.avgIv).toFixed(1)}%</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-600">₹{Number(row.cePrice).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-600">₹{Number(row.pePrice).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-500">{Number(row.ceBid).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-500">{Number(row.ceAsk).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-500">{Number(row.peBid).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-500">{Number(row.peAsk).toFixed(1)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -5472,7 +6385,7 @@ function PaperTradesView() {
       const res = await client.get('/option-arbitrage/paper-trades', { params });
       return res.data;
     },
-    refetchInterval: 5000,
+    refetchInterval: 1000,
   });
 
   const positions = data?.positions || [];
@@ -5588,6 +6501,7 @@ function PaperTradesView() {
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('enteredAt')}>Entry Time{sortIcon('enteredAt')}</th>
                   <th className="px-2 py-2">Mode</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strike')}>Strike{sortIcon('strike')}</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right">CE Entry</th>
@@ -6406,4 +7320,116 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
     </div>
   );
 }
-export { LivePositionsSection, BrokerPositionsPanel, STRATEGY_LABELS };
+export { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS };
+
+function TopPicksView({ executionBroker, handleExecuteInline }) {
+  const [underlying, setUnderlying] = React.useState('ALL');
+  const [minEdge, setMinEdge] = React.useState(500);
+  const [expandedId, setExpandedId] = React.useState(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['top-picks', underlying, minEdge],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/top-picks', { params: { underlying, minEdge } });
+      return res.data;
+    },
+    refetchInterval: 10000
+  });
+
+  const opps = data?.opportunities || [];
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-base font-bold text-slate-800">🔥 Top Alpha Signals</h2>
+          <p className="text-xs text-slate-500">Aggregated highest-probability guaranteed setups across all strategies</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+              <button key={u} onClick={() => setUnderlying(u)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+                {u}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+            <span className="text-xs font-bold text-slate-500 pl-2">EDGE ≥</span>
+            {[500, 1000, 2000].map(v => (
+              <button key={v} onClick={() => setMinEdge(v)}
+                className={`px-2 py-0.5 rounded text-xs font-bold transition ${minEdge === v ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+                ₹{v}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        {isLoading ? (
+          <div className="p-8 text-center text-slate-500 font-mono text-sm animate-pulse">Scanning all markets...</div>
+        ) : opps.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 font-mono text-sm">No Alpha signals for {underlying} (Edge ≥ ₹{minEdge})</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[800px]">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-black text-slate-400 tracking-wider">
+                  <th className="px-3 py-2">Strategy</th>
+                  <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Action</th>
+                  <th className="px-2 py-2 text-right">Net Edge</th>
+                  <th className="px-2 py-2 text-center">Status</th>
+                  <th className="px-2 py-2 text-center"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-sm">
+                {opps.map((opp, idx) => {
+                  const isExp = expandedId === (opp.id || idx);
+                  const edgeVal = opp.edgeAfterCosts || 0;
+                  const isLive = opp.status === 'RUNNING';
+                  return (
+                    <React.Fragment key={opp.id || idx}>
+                      <tr onClick={() => setExpandedId(isExp ? null : (opp.id || idx))} className={`transition cursor-pointer ${isExp ? 'bg-orange-50/70 border-l-4 border-orange-600' : 'hover:bg-slate-50'}`}>
+                        <td className="px-3 py-2 font-bold text-orange-700 text-xs">{opp.type || 'SIGNAL'}</td>
+                        <td className="px-2 py-2 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-2 font-bold text-slate-600 truncate max-w-[200px] text-xs">{opp.action}</td>
+                        <td className="px-2 py-2 text-right font-mono font-bold text-emerald-600">+₹{Math.round(edgeVal).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-2 text-center">
+                          <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${isLive ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                            {isLive ? '🟢 RUNNING' : 'NEW'}
+                          </span>
+                        </td>
+                        <td className="px-2 py-2 text-center">
+                          <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-2 py-0.5 bg-orange-600 hover:bg-orange-700 text-white text-[10px] font-bold rounded shadow-sm transition">⚡ Deploy</button>
+                        </td>
+                      </tr>
+                      {isExp && (
+                        <tr className="bg-orange-50/40 border-b border-orange-100">
+                          <td colSpan={6} className="p-3">
+                            <div className="bg-white rounded-xl p-3 border border-orange-200 shadow-md space-y-2">
+                              <span className="font-bold text-slate-800 text-xs uppercase block">Signal Breakdown:</span>
+                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
+                              {opp.description && <p className="text-[10px] text-slate-500">{opp.description}</p>}
+                              <ArbitrageSignalPayoffChart opp={opp} />
+                              <div className="flex justify-end pt-1">
+                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-md transition">
+                                  ⚡ Submit ({executionBroker})
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

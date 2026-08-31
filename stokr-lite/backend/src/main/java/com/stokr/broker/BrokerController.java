@@ -40,7 +40,7 @@ public class BrokerController {
         return ResponseEntity.ok(Map.of("status", "ok", "executionBroker", this.executionBroker));
     }
 
-    @PostMapping("/test-execution")
+    @PostMapping("/test-connection")
     public ResponseEntity<Map<String, Object>> testExecution(@RequestBody Map<String, String> body) {
         String broker = body.getOrDefault("broker", "PAPER");
         try {

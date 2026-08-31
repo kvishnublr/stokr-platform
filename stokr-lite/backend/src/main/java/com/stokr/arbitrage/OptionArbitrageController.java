@@ -1,4 +1,5 @@
 package com.stokr.arbitrage;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -6,6 +7,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import com.stokr.auth.AuthUser;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -31,8 +34,12 @@ public class OptionArbitrageController {
     private final ButterflySpreadService butterflySpreadService;
     private final CondorSpreadService condorSpreadService;
     private final CalendarSpreadService calendarSpreadService;
+    private final IVRankService ivRankService;
+    private final SyntheticFuturesArbService syntheticArbService;
+    private final VolSurfaceService volSurfaceService;
     private final ZerodhaSpotPriceFetcher spotFetcher;
     private final OptionArbAutoExecService autoExecService;
+    @Autowired private MultiTenantExecutionRouter executionRouter;
     private final LivePositionRepository livePositionRepo;
     private final OptionArbOpportunityRepository oppRepo;
     private final com.stokr.delivery.CashScannerService cashScannerService;
@@ -53,6 +60,9 @@ public class OptionArbitrageController {
                                      ButterflySpreadService butterflySpreadService,
                                      CondorSpreadService condorSpreadService,
                                      CalendarSpreadService calendarSpreadService,
+                                     IVRankService ivRankService,
+                                     SyntheticFuturesArbService syntheticArbService,
+                                     VolSurfaceService volSurfaceService,
                                      ZerodhaSpotPriceFetcher spotFetcher,
                                      OptionArbAutoExecService autoExecService,
                                      LivePositionRepository livePositionRepo,
@@ -71,6 +81,9 @@ public class OptionArbitrageController {
         this.butterflySpreadService = butterflySpreadService;
         this.condorSpreadService = condorSpreadService;
         this.calendarSpreadService = calendarSpreadService;
+        this.ivRankService = ivRankService;
+        this.syntheticArbService = syntheticArbService;
+        this.volSurfaceService = volSurfaceService;
         this.spotFetcher = spotFetcher;
         this.autoExecService = autoExecService;
         this.livePositionRepo = livePositionRepo;
@@ -435,18 +448,116 @@ public class OptionArbitrageController {
     @GetMapping("/calendar/scan")
     public ResponseEntity<Map<String, Object>> scanCalendarSpread(
             @RequestParam(defaultValue = "ALL") String underlying) {
-        // Disabled: CalendarSpreadService's "expected carry" benchmark has no basis in option
-        // pricing theory (real time-value comes from vega/theta, not futures cost-of-carry),
-        // so its reported "edge" does not represent a genuine arbitrage opportunity. Re-enable
-        // only after the pricing model is rebuilt and the strategy is honestly relabeled.
-        return ResponseEntity.ok(Map.of(
-            "timestamp", System.currentTimeMillis(),
-            "underlying", underlying,
-            "disabled", true,
-            "opportunities", Collections.emptyList(),
-            "count", 0,
-            "reason", "Calendar Spread is temporarily disabled pending a pricing model review."
-        ));
+        LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. Calendar spread scanner runs 9:15 AM - 3:30 PM IST."
+            ));
+        }
+        try {
+            List<Map<String, Object>> opps = calendarSpreadService.scanCalendarSpreads(underlying);
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "opportunities", opps,
+                "count", opps.size()
+            ));
+        } catch (Exception e) {
+            log.error("Calendar scan failed: {}", e.getMessage());
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "error", e.getMessage()
+            ));
+        }
+    }
+
+
+    @GetMapping("/iv-rank/current")
+    public ResponseEntity<Map<String, Object>> getIVRankCurrent() {
+        try {
+            Map<String, Object> data = ivRankService.getAllIVData();
+            return ResponseEntity.ok(data);
+        } catch (Exception e) {
+            log.error("IV rank fetch failed: {}", e.getMessage());
+            return ResponseEntity.ok(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/iv-rank/history")
+    public ResponseEntity<List<Map<String, Object>>> getIVHistory(
+            @RequestParam(defaultValue = "NIFTY") String underlying,
+            @RequestParam(defaultValue = "30") int days) {
+        return ResponseEntity.ok(ivRankService.getIVHistory(underlying, days));
+    }
+
+    @GetMapping("/iv-rank/snapshot")
+    public ResponseEntity<Map<String, Object>> recordIVSnapshot() {
+        ivRankService.recordIVSnapshots();
+        return ResponseEntity.ok(Map.of("status", "recorded", "timestamp", System.currentTimeMillis()));
+    }
+
+    @GetMapping("/synthetic-arb/scan")
+    public ResponseEntity<Map<String, Object>> scanSyntheticArb(
+            @RequestParam(defaultValue = "ALL") String underlying) {
+        LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "opportunities", Collections.emptyList(),
+                "count", 0
+            ));
+        }
+        try {
+            List<Map<String, Object>> opps = syntheticArbService.scanSyntheticArb(underlying);
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "opportunities", opps,
+                "count", opps.size()
+            ));
+        } catch (Exception e) {
+            log.error("Synthetic arb scan failed: {}", e.getMessage());
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "error", e.getMessage()
+            ));
+        }
+    }
+
+    @GetMapping("/vol-surface/scan")
+    public ResponseEntity<Map<String, Object>> scanVolSurface(
+            @RequestParam(defaultValue = "NIFTY") String underlying) {
+        try {
+            String spotKey = switch (underlying.toUpperCase()) {
+                case "BANKNIFTY" -> "NSE:NIFTY BANK";
+                case "MIDCPNIFTY" -> "NSE:NIFTY MID SELECT";
+                case "FINNIFTY" -> "NSE:NIFTY FIN SERVICE";
+                default -> "NSE:NIFTY 50";
+            };
+            String futKey = FuturesKeyResolver.resolveFuturesKey(underlying, spotFetcher, spotKey);
+            double[] sf = spotFetcher.getSpotAndFutures(spotKey, futKey);
+            double spot = (sf != null && sf.length > 0 && sf[0] > 0) ? sf[0] : 0;
+            double fut = (sf != null && sf.length > 1 && sf[1] > 0) ? sf[1] : spot;
+            Map<String, Object> surface = volSurfaceService.getVolSurface(underlying, spot, fut);
+            surface.put("timestamp", System.currentTimeMillis());
+            return ResponseEntity.ok(surface);
+        } catch (Exception e) {
+            log.error("Vol surface scan failed: {}", e.getMessage());
+            return ResponseEntity.ok(Map.of("error", e.getMessage()));
+        }
     }
 
     @GetMapping("/iron-condor/scan")
@@ -660,7 +771,8 @@ public class OptionArbitrageController {
         double targetPrice = body.get("targetPrice") instanceof Number n ? n.doubleValue() : 0;
         double stopLossPrice = body.get("stopLossPrice") instanceof Number n ? n.doubleValue() : 0;
         String broker = (String) body.getOrDefault("broker", "PAPER");
-        Map<String, Object> result = cashExecutionService.execute(symbol, strategyType, targetPrice, stopLossPrice, broker);
+        double capital = body.get("capital") instanceof Number n ? n.doubleValue() : 25000.0;
+        Map<String, Object> result = cashExecutionService.execute(symbol, strategyType, targetPrice, stopLossPrice, broker, capital);
         addAuditLog("CASH_TRADE", result.get("status") != null ? result.get("status").toString() : "ERROR",
             "Cash trade " + symbol + " via " + broker + ": " + result.get("message"));
         return ResponseEntity.ok(result);
@@ -1246,8 +1358,8 @@ public class OptionArbitrageController {
     }
 
     @GetMapping("/auto-execute/settings")
-    public ResponseEntity<Map<String, Object>> getSettings() {
-        return ResponseEntity.ok(autoExecService.getSettings());
+    public ResponseEntity<Map<String, Object>> getSettings(@RequestParam(defaultValue = "PAPER") String mode) {
+        return ResponseEntity.ok(autoExecService.getSettings(mode));
     }
 
     /**
@@ -1395,9 +1507,9 @@ public class OptionArbitrageController {
     }
 
     @PostMapping("/auto-execute/settings")
-    public ResponseEntity<Map<String, Object>> updateSetting(@RequestParam String key, @RequestParam String value) {
+    public ResponseEntity<Map<String, Object>> updateSetting(@RequestParam String key, @RequestParam String value, @RequestParam(defaultValue = "PAPER") String mode) {
         try {
-            autoExecService.updateSetting(key, value);
+            autoExecService.updateSetting(mode, key, value);
             addAuditLog("SETTINGS", "INFO", "Updated setting '" + key + "' = " + value);
         } catch (Exception e) {
             log.error("Failed to update setting: {}", e.getMessage());
@@ -1446,8 +1558,53 @@ public class OptionArbitrageController {
             com.stokr.broker.BrokerAccount account = accounts.get(0);
             com.stokr.broker.BrokerAdapter adapter = brokerService.getAdapter(broker);
             List<com.stokr.broker.BrokerPosition> positions = adapter.getPositions(account.getAccessToken());
+            
+            List<String> symbols = positions.stream().map(com.stokr.broker.BrokerPosition::symbol).toList();
+            Map<String, OptionChainService.OptionQuote> fetchedQuotes;
+            try {
+                fetchedQuotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
+            } catch (Exception e) {
+                fetchedQuotes = Map.of();
+            }
+            final Map<String, OptionChainService.OptionQuote> quotes = fetchedQuotes;
+            
+            List<Map<String, Object>> enhancedPositions = positions.stream().map(p -> {
+                Map<String, Object> map = new java.util.LinkedHashMap<>();
+                map.put("symbol", p.symbol());
+                map.put("exchange", p.exchange());
+                map.put("quantity", p.quantity());
+                map.put("qty", p.quantity()); // Alias for frontend
+                map.put("avgPrice", p.avgPrice());
+                OptionChainService.OptionQuote q = quotes.get(p.symbol());
+                double ltp = q != null && q.lastPrice > 0 ? q.lastPrice : p.lastPrice().doubleValue();
+                map.put("lastPrice", ltp);
+                
+                // Recompute unrealizedPnl based on the live LTP so it matches Kite Live precisely
+                double liveUnrealizedPnl = (ltp - p.avgPrice().doubleValue()) * p.quantity();
+                map.put("unrealizedPnl", liveUnrealizedPnl);
+                
+                map.put("realizedPnl", p.realizedPnl());
+                map.put("productType", p.productType());
+                double bid = q != null ? q.bid : p.lastPrice().doubleValue();
+                double ask = q != null ? q.ask : p.lastPrice().doubleValue();
+                if (bid <= 0) bid = p.lastPrice().doubleValue();
+                if (ask <= 0) ask = p.lastPrice().doubleValue();
+                map.put("bid", bid);
+                map.put("ask", ask);
+                
+                double executablePnl = 0;
+                if (p.quantity() > 0) {
+                    executablePnl = (bid - p.avgPrice().doubleValue()) * p.quantity();
+                } else if (p.quantity() < 0) {
+                    executablePnl = (p.avgPrice().doubleValue() - ask) * Math.abs(p.quantity());
+                }
+                map.put("executablePnl", executablePnl);
+                
+                return map;
+            }).toList();
+            
             resp.put("broker", broker);
-            resp.put("positions", positions);
+            resp.put("positions", enhancedPositions);
             resp.put("count", positions.size());
             resp.put("fetchedAt", System.currentTimeMillis());
         } catch (Exception e) {
@@ -1965,7 +2122,9 @@ public class OptionArbitrageController {
     }
 
     @PostMapping(value = "/paper-trade/execute", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<Map<String, Object>> executePaperTrade(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<Map<String, Object>> executePaperTrade(@RequestBody Map<String, Object> body, Authentication auth) {
+        Long userId = 1L;
+        if (auth != null && auth.getPrincipal() instanceof AuthUser) { userId = ((AuthUser)auth.getPrincipal()).getId(); }
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         try {
@@ -2039,7 +2198,8 @@ public class OptionArbitrageController {
             if (broker != null && !broker.isBlank() && !"PAPER".equalsIgnoreCase(broker)) {
                 // Real broker selected -- place an actual order via the same engine auto-exec
                 // uses, dispatching on legList presence for the correct leg shape.
-                Map<String, Object> liveResult = autoExecService.manualExecuteLive(opp, lots, broker);
+                opp.setUserId(userId);
+                Map<String, Object> liveResult = executionRouter.executeTradeForUser(opp, lots, broker, userId);
                 resp.putAll(liveResult);
                 addAuditLog("MANUAL_LIVE_TRADE", resp.get("status") != null ? resp.get("status").toString() : "ERROR",
                     "Manual LIVE trade via " + broker + " for " + opp.getUnderlying() + " " + opp.getStrike()
@@ -2312,14 +2472,111 @@ public class OptionArbitrageController {
     public ResponseEntity<Map<String, Object>> getBrokerFunds(@RequestParam String broker) {
         Map<String, Object> resp = new LinkedHashMap<>();
         try {
-            resp.put("availableCash", 1500000.0);
+            List<com.stokr.broker.BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");
+            if (accounts.isEmpty()) {
+                resp.put("error", "No active account found for broker " + broker);
+                return ResponseEntity.ok(resp);
+            }
+            com.stokr.broker.BrokerAccount account = accounts.get(0);
+            com.stokr.broker.BrokerAdapter adapter = brokerService.getAdapter(broker);
+            java.math.BigDecimal margin = adapter.getAvailableMargin(account.getAccessToken());
+            resp.put("availableCash", margin != null ? margin.doubleValue() : 0.0);
             resp.put("broker", broker);
         } catch (Exception e) {
             resp.put("error", e.getMessage());
         }
         return ResponseEntity.ok(resp);
     }
-
+    @GetMapping("/top-picks")
+    public ResponseEntity<Map<String, Object>> scanTopPicks(
+            @RequestParam(defaultValue = "ALL") String underlying,
+            @RequestParam(defaultValue = "1000.0") double minEdge) {
+        
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        boolean marketClosed = nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
+        
+        List<Map<String, Object>> allOpps = new ArrayList<>();
+        
+        if (!marketClosed) {
+            try {
+                List<Map<String, Object>> parity = bidParityService.scanBidParity(underlying);
+                if (parity != null) allOpps.addAll(parity);
+            } catch (Exception e) { e.printStackTrace(); }
+            try {
+                List<Map<String, Object>> box = boxSpreadService.scanBoxSpread(underlying);
+                if (box != null) allOpps.addAll(box);
+            } catch (Exception e) { e.printStackTrace(); }
+            try {
+                List<Map<String, Object>> vertical = verticalSpreadService.scanVerticalSpread(underlying);
+                if (vertical != null) allOpps.addAll(vertical);
+            } catch (Exception e) { e.printStackTrace(); }
+            try {
+                List<Map<String, Object>> butterfly = butterflySpreadService.scanButterflySpread(underlying);
+                if (butterfly != null) allOpps.addAll(butterfly);
+            } catch (Exception e) { e.printStackTrace(); }
+            try {
+                List<Map<String, Object>> condor = condorSpreadService.scanCondorSpread(underlying);
+                if (condor != null) allOpps.addAll(condor);
+            } catch (Exception e) { e.printStackTrace(); }
+            try {
+                List<String> targets = "ALL".equalsIgnoreCase(underlying) ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY") : List.of(underlying);
+                for (String u : targets) {
+                    try { allOpps.addAll(scanIronCondorForUnderlying(u)); } catch (Exception e) { e.printStackTrace(); }
+                }
+            } catch (Exception e) { e.printStackTrace(); }
+        } else {
+            try {
+                var result = historyService.getHistoryByDate(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
+                if (result != null) {
+                    allOpps.addAll(result.stream()
+                        .filter(opp -> "ALL".equalsIgnoreCase(underlying) || underlying.equalsIgnoreCase(opp.getUnderlying()))
+                        .map(OptionArbOpportunity::toMap)
+                        .toList());
+                }
+            } catch (Exception e) { e.printStackTrace(); }
+        }
+        
+        System.out.println("allOpps size: " + allOpps.size());
+        List<Map<String, Object>> filtered = new ArrayList<>();
+        for (Map<String, Object> opp : allOpps) {
+            if (opp.get("edgeAfterCosts") instanceof Number) {
+                double edge = ((Number) opp.get("edgeAfterCosts")).doubleValue();
+                if (edge >= minEdge) {
+                    filtered.add(opp);
+                }
+            }
+        }
+        
+        filtered.sort((a, b) -> {
+            double edgeA = ((Number) a.get("edgeAfterCosts")).doubleValue();
+            double edgeB = ((Number) b.get("edgeAfterCosts")).doubleValue();
+            return Double.compare(edgeB, edgeA);
+        });
+        
+        if (filtered.size() > 25) {
+            filtered = filtered.subList(0, 25);
+        }
+        
+        markExistingPositions(filtered);
+        System.out.println("filtered size: " + filtered.size());
+        
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", marketClosed);
+        resp.put("opportunities", filtered);
+        resp.put("count", filtered.size());
+        
+        if (marketClosed) {
+            try {
+                var testResult = historyService.getHistoryByDate(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
+                resp.put("debug_result_size", testResult != null ? testResult.size() : -1);
+                resp.put("debug_allOpps_size", allOpps.size());
+            } catch(Exception e) { resp.put("debug_error", e.getMessage()); }
+        }
+        
+        return ResponseEntity.ok(resp);
+    }
     @GetMapping("/margin-check")
     public ResponseEntity<Map<String, Object>> marginCheck(
             @RequestParam String underlying,

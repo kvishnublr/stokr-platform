@@ -106,7 +106,7 @@ public class BidParityTickTrigger {
         int step = OptionChainService.getStrikeStep(underlying);
 
         Map<String, Integer> toSubscribe = new LinkedHashMap<>();
-        for (int i = -5; i <= 5; i++) {
+        for (int i = -2; i <= 2; i++) {
             int strike = atmStrike + i * step;
             addIfKnown(toSubscribe, optionChainService.buildNfoSymbol(underlying, expiry, strike, "CE"), underlying);
             addIfKnown(toSubscribe, optionChainService.buildNfoSymbol(underlying, expiry, strike, "PE"), underlying);
