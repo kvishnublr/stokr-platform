@@ -779,7 +779,7 @@ function AutoExecSettingsPanel({ executionBroker }) {
 
       <div className="flex flex-wrap gap-4 items-center pt-1 border-t border-slate-100">
         <div className="space-y-1">
-          <label className="text-[9px] font-bold text-slate-500 uppercase">Max Open Positions</label>
+          <label className="text-[9px] font-bold text-slate-500 uppercase">Max Open Sets</label>
           <input type="number" value={settings.maxOpenPositions || 5} min={1} max={20}
             onChange={(e) => setSettings(prev => ({ ...prev, maxOpenPositions: Number(e.target.value) }))}
             onBlur={(e) => updateSetting('maxOpenPositions', e.target.value)}
@@ -1955,6 +1955,7 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
                           </span>
                         </td>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{opp.expiryDate || opp.expiry || '--'}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
                         <td className="px-2 py-1.5 font-bold text-purple-700">{opp.action}</td>
                         <td className="px-2 py-1.5 text-right font-mono text-slate-600">{ceVal}</td>
@@ -2278,6 +2279,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                         className={`transition cursor-pointer ${isExp ? 'bg-amber-50/70 border-l-4 border-amber-600' : 'hover:bg-slate-50'}`}>
                         <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{timeStr}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{opp.expiryDate || opp.expiry || '--'}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
                         <td className="px-2 py-1.5 font-bold text-purple-700 truncate max-w-[120px]">{opp.action}</td>
                         <td className="px-2 py-1.5 text-right font-mono">{ceVal}</td>
@@ -5599,6 +5601,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
                         className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}>
                         <td className="px-2 py-1.5 text-slate-600 font-mono whitespace-nowrap">{fmtTime(opp.scanTime)}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{opp.expiryDate || opp.expiry || '--'}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
                         <td className="px-2 py-1.5 font-mono text-xs text-slate-600 max-w-[200px] truncate" title={opp.action}>{opp.action}</td>
                         <td className={`px-2 py-1.5 text-right font-mono font-bold ${edge >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{edge >= 0 ? '+' : ''}₹{Math.round(edge)}</td>
@@ -6036,6 +6039,7 @@ function SyntheticArbView({ handleExecuteInline, executionBroker }) {
                         className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}
                       >
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{opp.expiryDate || opp.expiry || '--'}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
                         <td className="px-2 py-1.5">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
