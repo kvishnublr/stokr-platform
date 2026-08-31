@@ -1,10 +1,66 @@
+import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import client from '../../api/client';
 
+
+function TraderRiskEditor({ userId }) {
+  const qc = useQueryClient();
+  const { data: risk, isLoading } = useQuery({
+    queryKey: ['trader-risk', userId],
+    queryFn: () => client.get(`/admin/users/${userId}/risk`).then(r => r.data)
+  });
+  const [maxLoss, setMaxLoss] = useState('');
+  const [tradingEnabled, setTradingEnabled] = useState(true);
+
+  // Sync state when data loads
+  if (risk && maxLoss === '' && typeof risk.maxDailyLoss !== 'undefined') {
+    setMaxLoss(risk.maxDailyLoss);
+    setTradingEnabled(risk.tradingEnabled);
+  }
+
+  const patchRisk = useMutation({
+    mutationFn: (body) => client.patch(`/admin/users/${userId}/risk`, body).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['trader-risk', userId] })
+  });
+
+  if (isLoading) return <div className="p-4 text-xs text-slate-500">Loading limits...</div>;
+
+  return (
+    <div className="bg-white rounded-xl p-4 border border-indigo-100 shadow-inner flex items-end gap-6 w-full max-w-3xl">
+      <div className="flex-1">
+        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Max Daily Loss (₹)</label>
+        <input 
+          type="number" 
+          value={maxLoss} 
+          onChange={e => setMaxLoss(e.target.value)}
+          className="w-full bg-slate-50 border-2 border-slate-200 rounded-lg px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-indigo-400 focus:bg-white transition-all"
+        />
+      </div>
+      <div>
+        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Trading Kill Switch</label>
+        <button 
+          onClick={() => setTradingEnabled(!tradingEnabled)}
+          className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all border-2 ${tradingEnabled ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'}`}
+        >
+          {tradingEnabled ? '✅ ALLOW TRADING' : '🚫 TRADING BLOCKED'}
+        </button>
+      </div>
+      <button 
+        disabled={patchRisk.isPending}
+        onClick={() => patchRisk.mutate({ maxDailyLoss: Number(maxLoss), tradingEnabled })}
+        className="px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-indigo-700 transition-all border-2 border-indigo-700"
+      >
+        {patchRisk.isPending ? 'Saving...' : '💾 Save Limits'}
+      </button>
+    </div>
+  );
+}
+
 export default function AdminUsers() {
   const qc = useQueryClient();
-  const [confirmId, setConfirmId] = useState(null); // user id pending role change confirm
+  const [confirmId, setConfirmId] = useState(null);
+  const [expandedUserId, setExpandedUserId] = useState(null); // user id pending role change confirm
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['admin-users'],
@@ -87,6 +143,7 @@ export default function AdminUsers() {
               </tr>
             )}
             {users?.map((u, i) => (
+              <React.Fragment key={u.id}>
               <tr key={u.id} style={{ animationDelay: `${i * 50}ms`, animation: 'fadeInUp 0.3s ease forwards', opacity: 0 }}>
                 <td style={{ padding: '14px 20px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -129,9 +186,24 @@ export default function AdminUsers() {
                       style={{ padding: '6px 12px', borderRadius: '8px', border: '2px solid rgba(99,102,241,0.2)', background: 'rgba(99,102,241,0.07)', color: '#4f46e5', fontWeight: 700, cursor: patch.isPending ? 'default' : 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
                       {u.role === 'ADMIN' ? '👤 Demote' : '👑 Promote'}
                     </button>
+
+                    <button
+                      onClick={() => setExpandedUserId(expandedUserId === u.id ? null : u.id)}
+                      title="Manage Risk Limits"
+                      style={{ padding: '6px 12px', borderRadius: '8px', border: '2px solid rgba(245,158,11,0.2)', background: 'rgba(245,158,11,0.07)', color: '#d97706', fontWeight: 700, cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                      ⚙️ Risk Limits
+                    </button>
                   </div>
                 </td>
               </tr>
+              {expandedUserId === u.id && (
+                <tr className="bg-indigo-50/30">
+                  <td colSpan="5" className="p-4 border-b border-indigo-100">
+                    <TraderRiskEditor userId={u.id} />
+                  </td>
+                </tr>
+              )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
