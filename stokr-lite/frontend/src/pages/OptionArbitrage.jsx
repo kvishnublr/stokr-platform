@@ -6553,7 +6553,7 @@ function PaperTradesView() {
                   
                   let entryDetails = <span className="text-slate-400">--</span>;
                   if (pos.entryCost != null && pos.entryCost !== 0) {
-                     entryDetails = <span className="font-mono font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shadow-sm">Net: ?{Number(pos.entryCost).toLocaleString()}</span>;
+                     entryDetails = <span className="font-mono font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shadow-sm">Net: ₹{Number(pos.entryCost).toLocaleString()}</span>;
                   } else if (pos.ceEntryPrice != null || pos.peEntryPrice != null || pos.futEntryPrice != null) {
                      entryDetails = (
                        <div className="flex flex-col gap-0.5 text-[9px] font-mono text-slate-600 items-end">
@@ -6593,8 +6593,8 @@ function PaperTradesView() {
                         </td>
                         <td className="px-3 py-2.5 text-right font-mono font-black text-sm">
                           {pnl !== 0
-                            ? <span className={pnl >= 0 ? 'text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100' : 'text-red-600 bg-red-50 px-2 py-0.5 rounded-md border border-red-100'}>{pnl >= 0 ? '+' : ''}?{Math.round(pnl).toLocaleString('en-IN')}</span>
-                            : <span className="text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">?0</span>}
+                            ? <span className={pnl >= 0 ? 'text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100' : 'text-red-600 bg-red-50 px-2 py-0.5 rounded-md border border-red-100'}>{pnl >= 0 ? '+' : ''}₹{Math.round(pnl).toLocaleString('en-IN')}</span>
+                            : <span className="text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">₹0</span>}
                         </td>
                         <td className="px-3 py-2.5 text-center font-mono text-[10px] text-slate-400">{pos.exitedAt ? fmtTime(pos.exitedAt) : '--'}</td>
                       </tr>
@@ -6608,12 +6608,12 @@ function PaperTradesView() {
                                 <div><span className="text-slate-500">PE Symbol:</span> <span className="font-bold">{pos.peSymbol || '--'}</span></div>
                                 <div><span className="text-slate-500">FUT Symbol:</span> <span className="font-bold">{pos.futSymbol || '--'}</span></div>
                                 <div><span className="text-slate-500">Lot Size:</span> <span className="font-bold">{pos.lotSize}</span></div>
-                                <div><span className="text-slate-500">Target Edge:</span> <span className="font-bold">?{pos.targetEdge != null ? Math.round(pos.targetEdge) : '--'}</span></div>
+                                <div><span className="text-slate-500">Target Edge:</span> <span className="font-bold">₹{pos.targetEdge != null ? Math.round(pos.targetEdge) : '--'}</span></div>
                                 <div><span className="text-slate-500">Strategy:</span> <span className="font-bold">{pos.strategyType || '--'}</span></div>
                                 <div><span className="text-slate-500">CE Exit:</span> <span className="font-bold">{pos.ceExitPrice != null ? Number(pos.ceExitPrice).toFixed(1) : '--'}</span></div>
                                 <div><span className="text-slate-500">PE Exit:</span> <span className="font-bold">{pos.peExitPrice != null ? Number(pos.peExitPrice).toFixed(1) : '--'}</span></div>
                                 <div><span className="text-slate-500">FUT Exit:</span> <span className="font-bold">{pos.futExitPrice != null ? Number(pos.futExitPrice).toFixed(1) : '--'}</span></div>
-                                <div><span className="text-slate-500">Entry Cost:</span> <span className="font-bold">?{pos.entryCost != null ? Math.round(pos.entryCost) : '--'}</span></div>
+                                <div><span className="text-slate-500">Entry Cost:</span> <span className="font-bold">₹{pos.entryCost != null ? Math.round(pos.entryCost) : '--'}</span></div>
                                 <div><span className="text-slate-500">Order IDs:</span> <span className="font-bold text-[9px]">{pos.ceOrderId || '--'}</span></div>
                                 <div><span className="text-slate-500">Mode:</span> <span className="font-bold">{isPaper ? 'PAPER' : 'LIVE'}</span></div>
                               </div>
