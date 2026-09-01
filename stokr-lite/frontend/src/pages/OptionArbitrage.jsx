@@ -7231,7 +7231,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                         onClick={() => setExpandedId(isExp ? null : rowId)}
                         className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}
                       >
-                        <td className="px-1.5 py-1.5 font-mono text-[10px] text-slate-600 truncate">{signalTimeFormatted}</td>
+                        <td className="px-1.5 py-1.5 font-mono text-[10px] text-slate-600 whitespace-nowrap">{signalTimeFormatted}</td>
                         <td className="px-1.5 py-1.5 truncate">
                           <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-indigo-100 text-indigo-800">
                             {item.strategyType || item.type || 'PARITY'}
@@ -7277,7 +7277,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                               </span>
                             : <span className="text-slate-400">--</span>}
                         </td>
-                        <td className="px-1.5 py-1.5 text-center font-mono text-[10px] text-slate-500 truncate">{exitTimeFormatted}</td>
+                        <td className="px-1.5 py-1.5 text-center font-mono text-[10px] text-slate-500 whitespace-nowrap">{exitTimeFormatted}</td>
                         <td className="px-1.5 py-1.5 text-center whitespace-nowrap">
                           <button
                             onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(item); }}
