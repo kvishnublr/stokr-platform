@@ -673,6 +673,7 @@ export default function OptionArbitrage() {
       {/* Live/Broker Positions moved to the dedicated Positions page -- kept here would just
           duplicate it right below the header on every tab of this already-busy page. */}
       <CashPositionsSection />
+        <CashHistorySection />
 
       {/* Active Tab View Rendering */}
       <div className="space-y-5 w-full">
@@ -1663,6 +1664,81 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
                       </tr>
                     )}
                   </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function CashHistorySection() {
+  const [collapsed, setCollapsed] = useState(true);
+  const { data, refetch } = useQuery({
+    queryKey: ['cashHistory'],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/cash-history');
+      return res.data;
+    },
+    refetchInterval: 5000,
+  });
+
+  const positions = data?.positions || [];
+  if (positions.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-4">
+      <div className="px-4 py-3 bg-gradient-to-r from-slate-700 to-slate-900 flex items-center justify-between cursor-pointer" onClick={() => setCollapsed(!collapsed)}>
+        <div className="flex items-center gap-2">
+          <span className="text-lg">📖</span>
+          <h3 className="text-sm font-black text-white">Cash History</h3>
+          <span className="px-2 py-0.5 bg-slate-500/20 text-slate-300 text-[10px] font-bold rounded-full">{positions.length}</span>
+          {data?.totalPnl != null && (
+            <span className={`px-2.5 py-0.5 text-[11px] font-black rounded-full ${data.totalPnl >= 0 ? 'bg-emerald-500/30 text-emerald-300' : 'bg-red-500/30 text-red-300'}`}>
+              Total P&L: ₹{Math.round(data.totalPnl).toLocaleString('en-IN')}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={(e) => { e.stopPropagation(); refetch(); }} className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition">Refresh</button>
+          <span className="text-white/60 text-xs">{collapsed ? '▼' : '▲'}</span>
+        </div>
+      </div>
+
+      {!collapsed && (
+        <div className="overflow-x-auto max-h-96 overflow-y-auto">
+          <table className="w-full text-[11px] text-left">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold sticky top-0">
+              <tr>
+                <th className="px-3 py-2">Exit Time</th>
+                <th className="px-3 py-2">Symbol</th>
+                <th className="px-3 py-2">Strategy</th>
+                <th className="px-3 py-2 text-right">Qty</th>
+                <th className="px-3 py-2 text-right">Entry</th>
+                <th className="px-3 py-2 text-right">Exit</th>
+                <th className="px-3 py-2 text-right">Target</th>
+                <th className="px-3 py-2 text-right">Realized P&amp;L</th>
+                <th className="px-3 py-2 text-center">Broker</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {positions.map(p => {
+                const pnl = p.currentPnl != null ? Number(p.currentPnl) : null;
+                return (
+                  <tr key={p.id} className="hover:bg-slate-50">
+                    <td className="px-3 py-2 font-mono text-[10px] text-slate-600">{fmtTime(p.exitedAt || p.enteredAt)}</td>
+                    <td className="px-3 py-2 font-bold text-slate-800">{p.symbol}</td>
+                    <td className="px-3 py-2 text-slate-500 text-[10px]">{p.strategyType}</td>
+                    <td className="px-3 py-2 text-right font-bold">{p.quantity}</td>
+                    <td className="px-3 py-2 text-right font-mono">₹{Number(p.entryPrice || 0).toFixed(1)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-slate-700">₹{Number(p.exitPrice || 0).toFixed(1)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-slate-500">₹{Number(p.targetPrice || 0).toFixed(1)}</td>
+                    <td className={`px-3 py-2 text-right font-mono font-bold ${pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>₹{Math.round(pnl).toLocaleString('en-IN')}</td>
+                    <td className="px-3 py-2 text-center text-[10px] text-slate-500">{p.broker}</td>
+                  </tr>
                 );
               })}
             </tbody>
