@@ -345,7 +345,7 @@ export default function Positions() {
 
       {viewState === 'HISTORY' && (
         <UnifiedPerformanceAndHistory 
-          fnoHistory={fnoHistoryData} 
+          fnoHistory={fnoHistoryData?.positions} 
           cashHistory={cashHistoryData?.positions}
           assetFilter={assetFilter}
           modeFilter={modeFilter}
