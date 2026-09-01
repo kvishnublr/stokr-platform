@@ -6528,61 +6528,78 @@ function PaperTradesView() {
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No paper trades executed yet. Use the ⚡ Trade button on any signal to execute.</div>
         ) : (
           <div className="overflow-x-auto w-full">
-            <table className="w-full text-[11px] text-left border-collapse">
-              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+            <table className="w-full text-[11px] text-left border-collapse shadow-sm rounded-lg overflow-hidden">
+              <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-200 font-bold text-slate-600 uppercase text-[10px] tracking-wider">
                 <tr>
-                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('enteredAt')}>Entry Time{sortIcon('enteredAt')}</th>
-                  <th className="px-2 py-2">Mode</th>
-                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
-                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
-                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strike')}>Strike{sortIcon('strike')}</th>
-                  <th className="px-2 py-2">Action</th>
-                  <th className="px-2 py-2 text-right">CE Entry</th>
-                  <th className="px-2 py-2 text-right">PE Entry</th>
-                  <th className="px-2 py-2 text-right">FUT Entry</th>
-                  <th className="px-2 py-2 text-center">Lots</th>
-                  <th className="px-2 py-2 text-center cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('status')}>Status{sortIcon('status')}</th>
-                  <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('pnl')}>P&amp;L{sortIcon('pnl')}</th>
-                  <th className="px-2 py-2 text-center">Exit Time</th>
+                  <th className="px-3 py-3 cursor-pointer hover:bg-slate-200 select-none rounded-tl-lg" onClick={() => toggleSort('enteredAt')}>⏱ Entry{sortIcon('enteredAt')}</th>
+                  <th className="px-3 py-3 text-center">Mode</th>
+                  <th className="px-3 py-3 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-3 py-3 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
+                  <th className="px-3 py-3 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strike')}>Strike{sortIcon('strike')}</th>
+                  <th className="px-3 py-3">Strategy</th>
+                  <th className="px-3 py-3 text-right">Prices / Cost</th>
+                  <th className="px-3 py-3 text-center">Lots</th>
+                  <th className="px-3 py-3 text-center cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('status')}>Status{sortIcon('status')}</th>
+                  <th className="px-3 py-3 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('pnl')}>Net P&amp;L{sortIcon('pnl')}</th>
+                  <th className="px-3 py-3 text-center rounded-tr-lg">⏱ Exit Time</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 bg-white">
                 {sorted.map((pos) => {
                   const isExp = expandedId === pos.id;
                   const pnl = pos.pnl || 0;
                   const isPaper = pos.ceOrderId && pos.ceOrderId.startsWith('PAPER');
+                  
+                  let entryDetails = <span className="text-slate-400">--</span>;
+                  if (pos.entryCost != null && pos.entryCost !== 0) {
+                     entryDetails = <span className="font-mono font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shadow-sm">Net: ?{Number(pos.entryCost).toLocaleString()}</span>;
+                  } else if (pos.ceEntryPrice != null || pos.peEntryPrice != null || pos.futEntryPrice != null) {
+                     entryDetails = (
+                       <div className="flex flex-col gap-0.5 text-[9px] font-mono text-slate-600 items-end">
+                         {pos.ceEntryPrice != null && <span>CE: {Number(pos.ceEntryPrice).toFixed(1)}</span>}
+                         {pos.peEntryPrice != null && <span>PE: {Number(pos.peEntryPrice).toFixed(1)}</span>}
+                         {pos.futEntryPrice != null && <span>FUT: {Number(pos.futEntryPrice).toFixed(1)}</span>}
+                       </div>
+                     );
+                  }
+
+                  let actionBadge = <span className="font-bold text-slate-700 truncate">{pos.action}</span>;
+                  if (pos.action.includes('BOX')) actionBadge = <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md font-bold text-[9px] border border-blue-200 shadow-sm">{pos.action}</span>;
+                  else if (pos.action.includes('FLY')) actionBadge = <span className="px-2 py-0.5 bg-fuchsia-100 text-fuchsia-800 rounded-md font-bold text-[9px] border border-fuchsia-200 shadow-sm">{pos.action}</span>;
+                  else if (pos.action.includes('SPREAD')) actionBadge = <span className="px-2 py-0.5 bg-cyan-100 text-cyan-800 rounded-md font-bold text-[9px] border border-cyan-200 shadow-sm">{pos.action}</span>;
+                  else if (pos.action.includes('ARB')) actionBadge = <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-md font-bold text-[9px] border border-orange-200 shadow-sm">{pos.action}</span>;
+
                   return (
                     <React.Fragment key={pos.id}>
                       <tr onClick={() => setExpandedId(isExp ? null : pos.id)}
-                        className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}>
-                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{fmtTime(pos.enteredAt)}</td>
-                        <td className="px-2 py-1.5">
-                          <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${isPaper ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-                            {isPaper ? '📝 PAPER' : '⚡ LIVE'}
+                        className={`transition-all duration-200 cursor-pointer hover:bg-blue-50/50 ${isExp ? 'bg-blue-50/80 border-l-4 border-blue-500 shadow-inner' : ''}`}>
+                        <td className="px-3 py-2.5 font-mono text-[10px] text-slate-500">{fmtTime(pos.enteredAt)}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold shadow-sm border ${isPaper ? 'bg-purple-100 text-purple-700 border-purple-300 shadow-purple-100' : 'bg-amber-100 text-amber-700 border-amber-300 shadow-amber-100'}`}>
+                            {isPaper ? 'PAPER' : 'LIVE'}
                           </span>
                         </td>
-                        <td className="px-2 py-1.5 font-bold text-slate-800">{pos.underlying}</td>
-                        <td className="px-2 py-1.5 font-bold text-slate-700">{pos.strike}</td>
-                        <td className="px-2 py-1.5 font-bold text-purple-700 truncate max-w-[100px]">{pos.action}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">{pos.ceEntryPrice != null ? Number(pos.ceEntryPrice).toFixed(1) : '--'}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">{pos.peEntryPrice != null ? Number(pos.peEntryPrice).toFixed(1) : '--'}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">{pos.futEntryPrice != null ? Number(pos.futEntryPrice).toFixed(1) : '--'}</td>
-                        <td className="px-2 py-1.5 text-center font-bold">{pos.lots}</td>
-                        <td className="px-2 py-1.5 text-center">
-                          <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${statusColor(pos.status)}`}>
-                            {pos.status === 'OPEN' ? '🟢 OPEN' : pos.status === 'CLOSED' || pos.status === 'EXITED' ? '⏹ EXITED' : pos.status === 'FAILED' ? '❌ FAILED' : pos.status === 'REJECTED' ? '🚫 REJECTED' : pos.status}
+                        <td className="px-3 py-2.5 font-black text-slate-800">{pos.underlying}</td>
+                        <td className="px-3 py-2.5 font-bold text-slate-600">{pos.expiryDate || pos.expiry || '--'}</td>
+                        <td className="px-3 py-2.5 font-bold text-slate-700">{pos.strike}</td>
+                        <td className="px-3 py-2.5">{actionBadge}</td>
+                        <td className="px-3 py-2.5 text-right">{entryDetails}</td>
+                        <td className="px-3 py-2.5 text-center font-black text-slate-800 text-xs">{pos.lots}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold shadow-sm border ${pos.status === 'OPEN' ? 'bg-amber-100 text-amber-700 border-amber-300' : pos.status === 'CLOSED' || pos.status === 'EXITED' ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : pos.status === 'FAILED' ? 'bg-red-100 text-red-700 border-red-300' : 'bg-slate-100 text-slate-700 border-slate-300'}`}>
+                            {pos.status}
                           </span>
                         </td>
-                        <td className="px-2 py-1.5 text-right font-mono font-bold">
+                        <td className="px-3 py-2.5 text-right font-mono font-black text-sm">
                           {pnl !== 0
-                            ? <span className={pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}>{pnl >= 0 ? '+' : ''}₹{Math.round(pnl).toLocaleString('en-IN')}</span>
-                            : <span className="text-slate-400">₹0</span>}
+                            ? <span className={pnl >= 0 ? 'text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100' : 'text-red-600 bg-red-50 px-2 py-0.5 rounded-md border border-red-100'}>{pnl >= 0 ? '+' : ''}?{Math.round(pnl).toLocaleString('en-IN')}</span>
+                            : <span className="text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">?0</span>}
                         </td>
-                        <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{pos.exitedAt ? fmtTime(pos.exitedAt) : '--'}</td>
+                        <td className="px-3 py-2.5 text-center font-mono text-[10px] text-slate-400">{pos.exitedAt ? fmtTime(pos.exitedAt) : '--'}</td>
                       </tr>
                       {(isExp || (pos.status === 'FAILED' || pos.status === 'REJECTED') && pos.errorMessage) && (
                         <tr className="bg-indigo-50/40 border-b border-indigo-100">
-                          <td colSpan={12} className="p-3">
+                          <td colSpan={11} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
                               <span className="font-bold text-slate-800 text-xs uppercase block">Position Details:</span>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px] font-mono">
@@ -6590,18 +6607,18 @@ function PaperTradesView() {
                                 <div><span className="text-slate-500">PE Symbol:</span> <span className="font-bold">{pos.peSymbol || '--'}</span></div>
                                 <div><span className="text-slate-500">FUT Symbol:</span> <span className="font-bold">{pos.futSymbol || '--'}</span></div>
                                 <div><span className="text-slate-500">Lot Size:</span> <span className="font-bold">{pos.lotSize}</span></div>
-                                <div><span className="text-slate-500">Target Edge:</span> <span className="font-bold">₹{pos.targetEdge != null ? Math.round(pos.targetEdge) : '--'}</span></div>
+                                <div><span className="text-slate-500">Target Edge:</span> <span className="font-bold">?{pos.targetEdge != null ? Math.round(pos.targetEdge) : '--'}</span></div>
                                 <div><span className="text-slate-500">Strategy:</span> <span className="font-bold">{pos.strategyType || '--'}</span></div>
                                 <div><span className="text-slate-500">CE Exit:</span> <span className="font-bold">{pos.ceExitPrice != null ? Number(pos.ceExitPrice).toFixed(1) : '--'}</span></div>
                                 <div><span className="text-slate-500">PE Exit:</span> <span className="font-bold">{pos.peExitPrice != null ? Number(pos.peExitPrice).toFixed(1) : '--'}</span></div>
                                 <div><span className="text-slate-500">FUT Exit:</span> <span className="font-bold">{pos.futExitPrice != null ? Number(pos.futExitPrice).toFixed(1) : '--'}</span></div>
-                                <div><span className="text-slate-500">Entry Cost:</span> <span className="font-bold">₹{pos.entryCost != null ? Math.round(pos.entryCost) : '--'}</span></div>
+                                <div><span className="text-slate-500">Entry Cost:</span> <span className="font-bold">?{pos.entryCost != null ? Math.round(pos.entryCost) : '--'}</span></div>
                                 <div><span className="text-slate-500">Order IDs:</span> <span className="font-bold text-[9px]">{pos.ceOrderId || '--'}</span></div>
                                 <div><span className="text-slate-500">Mode:</span> <span className="font-bold">{isPaper ? 'PAPER' : 'LIVE'}</span></div>
                               </div>
-                              {pos.errorMessage && (
-                                <div className={`text-[10px] font-mono mt-1 p-2 rounded-lg ${(pos.status === 'FAILED' || pos.status === 'REJECTED') ? 'bg-red-50 text-red-700 border border-red-200' : 'text-amber-600'}`}>
-                                  <span className="font-bold">Error/Log:</span> {pos.errorMessage}
+                              {(pos.status === 'FAILED' || pos.status === 'REJECTED') && pos.errorMessage && (
+                                <div className="mt-2 text-red-600 bg-red-50 p-2 rounded border border-red-200">
+                                  <span className="font-bold uppercase text-[9px]">Error:</span> {pos.errorMessage}
                                 </div>
                               )}
                             </div>
