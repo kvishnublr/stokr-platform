@@ -217,7 +217,7 @@ public class OptionArbitrageController {
         }
         List<Map<String, Object>> opps = bidParityService.scanBidParity(underlying);
         if (opps != null && !opps.isEmpty()) {
-            try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from bid-parity scan failed: {}", e.getMessage()); }
+            try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.error("Auto-exec from bid-parity scan failed: ", e); }
         }
         markExistingPositions(opps);
         Map<String, Object> resp = new LinkedHashMap<>();
