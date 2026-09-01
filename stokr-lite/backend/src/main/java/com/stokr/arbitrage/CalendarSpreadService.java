@@ -110,12 +110,14 @@ public class CalendarSpreadService {
                                        int strike, String optionType, double spot, int lotSize,
                                        long nearDte, long farDte, double nearYears, double farYears) {
         OptionChainService.OptionQuote near = null;
+        String nearKey = "";
         for (String c : optionChainService.buildNfoSymbolCandidates(underlying, nearExpiry, strike, optionType)) {
-            if (quotes.containsKey(c)) { near = quotes.get(c); break; }
+            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) { near = quotes.get(c); nearKey = c; break; }
         }
         OptionChainService.OptionQuote far = null;
+        String farKey = "";
         for (String c : optionChainService.buildNfoSymbolCandidates(underlying, farExpiry, strike, optionType)) {
-            if (quotes.containsKey(c)) { far = quotes.get(c); break; }
+            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) { far = quotes.get(c); farKey = c; break; }
         }
         if (near == null || far == null) return;
         if (near.bid <= 0 || far.ask <= 0) return;
