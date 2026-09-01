@@ -758,9 +758,7 @@ function AutoExecSettingsPanel({ executionBroker }) {
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-            <span className="text-lg">🤖</span> Auto-Execute Engine
-          </h3>
+<h3 className="text-sm font-black text-slate-800 flex items-center gap-2">            <span className="text-lg">⚙️</span> Auto-Execute Engine            <span className={`px-2 py-0.5 ml-2 text-[10px] rounded uppercase ${executionBroker === "PAPER" ? "bg-blue-100 text-blue-700 border border-blue-200" : "bg-red-100 text-red-700 border border-red-200"}`}>              {executionBroker === "PAPER" ? "PAPER TRADING MODE" : `${executionBroker} LIVE EXECUTION`}            </span>          </h3>
           <p className="text-[10px] text-slate-500 mt-0.5">Master switch + shared risk/exit controls. Each strategy's own entry thresholds (min edge, lots, per underlying) now live on that strategy's own "⚡ Auto-Trade" sub-tab.</p>
         </div>
         <div className="flex items-center gap-3">
@@ -791,19 +789,6 @@ function AutoExecSettingsPanel({ executionBroker }) {
             onChange={(e) => setSettings(prev => ({ ...prev, maxDailyLoss: Number(e.target.value) }))}
             onBlur={(e) => updateSetting('maxDailyLoss', e.target.value)}
             className="w-24 px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
-        </div>
-        <div className="space-y-1">
-          <label className="text-[9px] font-bold text-slate-500 uppercase">Broker</label>
-          <select value={settings.broker || 'NAVIA'}
-            onChange={(e) => updateSetting('broker', e.target.value)}
-            className="px-2 py-1 text-xs font-bold border border-slate-300 rounded-lg bg-white outline-none">
-            <option value="NAVIA">Navia Markets</option>
-            <option value="MOTILALOSWAL">Motilal Oswal</option>
-            <option value="ZERODHA">Zerodha Kite</option>
-            <option value="DHAN">DhanHQ</option>
-            <option value="FYERS">Fyers API</option>
-            <option value="PAPER">Paper Trading</option>
-          </select>
         </div>
       </div>
 
