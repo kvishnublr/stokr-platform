@@ -1925,6 +1925,7 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
                 <tr>
                   <th className="px-2 py-2">Type</th>
                   <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Expiry</th>
                   <th className="px-2 py-2">Strike</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right">CE Price</th>
