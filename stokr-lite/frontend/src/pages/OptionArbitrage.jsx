@@ -6618,6 +6618,11 @@ function PaperTradesView() {
                                 <div><span className="text-slate-500">Order IDs:</span> <span className="font-bold text-[9px]">{pos.ceOrderId || '--'}</span></div>
                                 <div><span className="text-slate-500">Mode:</span> <span className="font-bold">{isPaper ? 'PAPER' : 'LIVE'}</span></div>
                               </div>
+                              {Array.isArray(pos.legList) && pos.legList.length >= 2 && (
+                                <div className="mt-4">
+                                  <ArbitrageSignalPayoffChart opp={pos} />
+                                </div>
+                              )}
                               {(pos.status === 'FAILED' || pos.status === 'REJECTED') && pos.errorMessage && (
                                 <div className="mt-2 text-red-600 bg-red-50 p-2 rounded border border-red-200">
                                   <span className="font-bold uppercase text-[9px]">Error:</span> {pos.errorMessage}
