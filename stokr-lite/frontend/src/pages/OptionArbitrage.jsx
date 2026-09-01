@@ -5650,6 +5650,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
                                 <div>Expiry: {opp.expiryDate}</div>
                                 <div>Confidence: {Number(opp.confidence || 0).toFixed(1)}%</div>
                               </div>
+                              <ArbitrageSignalPayoffChart opp={opp} />
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   Submit ({executionBroker})
