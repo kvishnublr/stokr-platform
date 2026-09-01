@@ -412,6 +412,14 @@ public class OptionArbAutoExecService {
                 opp.setStrike(m.get("strike") instanceof Number n ? n.intValue() : null);
                 opp.setAction((String) m.get("action"));
                 opp.setStrategyType((String) m.get("strategyType"));
+                opp.setType((String) m.get("type"));
+                opp.setLegs((String) m.get("legs"));
+                Object spot = m.get("spotPrice");
+                if (spot instanceof Number n) opp.setSpotPrice(BigDecimal.valueOf(n.doubleValue()));
+                Object epts = m.get("edgePoints");
+                if (epts instanceof Number n) opp.setEdgePoints(BigDecimal.valueOf(n.doubleValue()));
+                Object desc = m.get("description");
+                if (desc instanceof String s) opp.setDescription(s);
                 opp.setExpiryDate(m.get("expiryDate") instanceof String s ? LocalDate.parse(s) : null);
                 if (opp.getExpiryDate() == null && opp.getUnderlying() != null) {
                     try {
