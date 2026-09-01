@@ -99,7 +99,7 @@ public class BidParityTickTrigger {
         if (spot <= 0 && fut > 0) spot = fut;
         if (spot <= 0) return;
 
-        LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
+        LocalDate expiry = optionChainService.getMonthlyExpiryDate(underlying);
         if (expiry == null) return;
 
         int atmStrike = optionChainService.getATMStrike(underlying, spot);

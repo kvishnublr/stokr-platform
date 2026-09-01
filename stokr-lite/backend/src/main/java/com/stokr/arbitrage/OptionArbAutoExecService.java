@@ -413,6 +413,11 @@ public class OptionArbAutoExecService {
                 opp.setAction((String) m.get("action"));
                 opp.setStrategyType((String) m.get("strategyType"));
                 opp.setExpiryDate(m.get("expiryDate") instanceof String s ? LocalDate.parse(s) : null);
+                if (opp.getExpiryDate() == null && opp.getUnderlying() != null) {
+                    try {
+                        opp.setExpiryDate(optionChainService.getWeeklyExpiryDate(opp.getUnderlying()));
+                    } catch (Exception ignored) {}
+                }
                 Object eac = m.get("edgeAfterCosts");
                 if (eac instanceof Number n) opp.setEdgeAfterCosts(BigDecimal.valueOf(n.doubleValue()));
                 Object ce = m.get("ceEntryPrice");
@@ -459,6 +464,20 @@ public class OptionArbAutoExecService {
 
             if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
                     .anyMatch(p -> "PAPER".equals(p.getBroker()) && opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
+
+            int strategyMaxLots = ((Number) settings.getOrDefault(prefix + "MaxLots", 9999)).intValue();
+            int globalMaxLots = ((Number) settings.getOrDefault("maxOpenPositions", 9999)).intValue();
+            
+            long openPaperStrategy = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
+                    .filter(p -> "PAPER".equals(p.getBroker()) && opp.getStrategyType().equals(p.getStrategyType()))
+                    .count();
+            if (openPaperStrategy >= strategyMaxLots) continue;
+            
+            long openPaperTotal = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
+                    .filter(p -> "PAPER".equals(p.getBroker()))
+                    .count();
+            if (openPaperTotal >= globalMaxLots) continue;
+
 
             int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
             int lotSize = getLotSize(opp.getUnderlying());
@@ -625,6 +644,13 @@ public class OptionArbAutoExecService {
             if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(userId, "OPEN").stream()
                     .anyMatch(p -> opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
 
+
+
+            int strategyMaxLots = ((Number) settings.getOrDefault(prefix + "MaxLots", 9999)).intValue();
+            long openStrategyPos = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(userId, "OPEN").stream()
+                    .filter(p -> broker.equals(p.getBroker()) && opp.getStrategyType().equals(p.getStrategyType()))
+                    .count();
+            if (openStrategyPos >= strategyMaxLots) continue;
             int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
             List<Map<String, Object>> legs = opp.getLegList();
             boolean isMultiLeg = legs != null && !legs.isEmpty();

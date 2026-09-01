@@ -142,7 +142,7 @@ public class BidParityService {
 
         log.info("Scanning Bid Parity for {}: spot={}, fut={}", underlying, spot, fut);
 
-        LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
+        LocalDate expiry = optionChainService.getMonthlyExpiryDate(underlying);
         double daysToExpiry = Duration.between(LocalDate.now().atStartOfDay(), expiry.atStartOfDay()).toDays();
 
         double[] dteRange = DTE_RANGES.getOrDefault(underlying, new double[]{0.0, 60.0});

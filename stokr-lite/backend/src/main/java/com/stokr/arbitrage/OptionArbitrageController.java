@@ -2498,32 +2498,44 @@ public class OptionArbitrageController {
         List<Map<String, Object>> allOpps = new ArrayList<>();
         
         if (!marketClosed) {
-            try {
-                List<Map<String, Object>> parity = bidParityService.scanBidParity(underlying);
-                if (parity != null) allOpps.addAll(parity);
-            } catch (Exception e) { e.printStackTrace(); }
-            try {
-                List<Map<String, Object>> box = boxSpreadService.scanBoxSpread(underlying);
-                if (box != null) allOpps.addAll(box);
-            } catch (Exception e) { e.printStackTrace(); }
-            try {
-                List<Map<String, Object>> vertical = verticalSpreadService.scanVerticalSpread(underlying);
-                if (vertical != null) allOpps.addAll(vertical);
-            } catch (Exception e) { e.printStackTrace(); }
-            try {
-                List<Map<String, Object>> butterfly = butterflySpreadService.scanButterflySpread(underlying);
-                if (butterfly != null) allOpps.addAll(butterfly);
-            } catch (Exception e) { e.printStackTrace(); }
-            try {
-                List<Map<String, Object>> condor = condorSpreadService.scanCondorSpread(underlying);
-                if (condor != null) allOpps.addAll(condor);
-            } catch (Exception e) { e.printStackTrace(); }
-            try {
+            java.util.concurrent.CompletableFuture<List<Map<String, Object>>> f1 = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                try { return bidParityService.scanBidParity(underlying); } catch (Exception e) { return new ArrayList<>(); }
+            });
+            java.util.concurrent.CompletableFuture<List<Map<String, Object>>> f2 = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                try { return boxSpreadService.scanBoxSpread(underlying); } catch (Exception e) { return new ArrayList<>(); }
+            });
+            java.util.concurrent.CompletableFuture<List<Map<String, Object>>> f3 = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                try { return verticalSpreadService.scanVerticalSpread(underlying); } catch (Exception e) { return new ArrayList<>(); }
+            });
+            java.util.concurrent.CompletableFuture<List<Map<String, Object>>> f4 = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                try { return butterflySpreadService.scanButterflySpread(underlying); } catch (Exception e) { return new ArrayList<>(); }
+            });
+            java.util.concurrent.CompletableFuture<List<Map<String, Object>>> f5 = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                try { return condorSpreadService.scanCondorSpread(underlying); } catch (Exception e) { return new ArrayList<>(); }
+            });
+            java.util.concurrent.CompletableFuture<List<Map<String, Object>>> f6 = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                List<Map<String, Object>> ironCondors = new ArrayList<>();
                 List<String> targets = "ALL".equalsIgnoreCase(underlying) ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY") : List.of(underlying);
                 for (String u : targets) {
-                    try { allOpps.addAll(scanIronCondorForUnderlying(u)); } catch (Exception e) { e.printStackTrace(); }
+                    try {
+                        List<Map<String, Object>> res = scanIronCondorForUnderlying(u);
+                        if (res != null) ironCondors.addAll(res);
+                    } catch (Exception e) { e.printStackTrace(); }
                 }
-            } catch (Exception e) { e.printStackTrace(); }
+                return ironCondors;
+            });
+
+            try {
+                java.util.concurrent.CompletableFuture.allOf(f1, f2, f3, f4, f5, f6).join();
+                if (f1.get() != null) allOpps.addAll(f1.get());
+                if (f2.get() != null) allOpps.addAll(f2.get());
+                if (f3.get() != null) allOpps.addAll(f3.get());
+                if (f4.get() != null) allOpps.addAll(f4.get());
+                if (f5.get() != null) allOpps.addAll(f5.get());
+                if (f6.get() != null) allOpps.addAll(f6.get());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         } else {
             try {
                 var result = historyService.getHistoryByDate(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
@@ -2537,6 +2549,14 @@ public class OptionArbitrageController {
         }
         
         System.out.println("allOpps size: " + allOpps.size());
+        java.time.LocalDateTime nowTime = java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        String scanTimeStr = nowTime.toString();
+        for (Map<String, Object> opp : allOpps) {
+            if (!opp.containsKey("scanTime") && !opp.containsKey("entryTime")) {
+                opp.put("scanTime", scanTimeStr);
+            }
+        }
+
         List<Map<String, Object>> filtered = new ArrayList<>();
         for (Map<String, Object> opp : allOpps) {
             if (opp.get("edgeAfterCosts") instanceof Number) {

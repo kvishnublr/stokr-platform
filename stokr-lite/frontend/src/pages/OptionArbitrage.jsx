@@ -779,7 +779,7 @@ function AutoExecSettingsPanel({ executionBroker }) {
 
       <div className="flex flex-wrap gap-4 items-center pt-1 border-t border-slate-100">
         <div className="space-y-1">
-          <label className="text-[9px] font-bold text-slate-500 uppercase">Max Open Positions</label>
+          <label className="text-[9px] font-bold text-slate-500 uppercase">Max Open Sets</label>
           <input type="number" value={settings.maxOpenPositions || 5} min={1} max={20}
             onChange={(e) => setSettings(prev => ({ ...prev, maxOpenPositions: Number(e.target.value) }))}
             onBlur={(e) => updateSetting('maxOpenPositions', e.target.value)}
@@ -1162,7 +1162,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   const positions = brokerFilter === 'ALL' ? allPositions
     : brokerFilter === 'PAPER' ? allPositions.filter(isPaper)
     : allPositions.filter(p => !isPaper(p));
-  const filteredTotalPnl = positions.reduce((s, p) => s + (p.currentPnl || 0), 0);
+  const filteredTotalPnl = positions.reduce((s, p) => s + (p.currentPnl != null ? Number(p.currentPnl) : 0), 0);
   const openPositions = positions.filter(p => p.status === 'OPEN');
 
   const handleRollover = async (positionId, underlying, strike) => {
@@ -1274,7 +1274,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {positions.map(p => {
-                  const pnl = p.currentPnl || 0;
+                  const pnl = p.currentPnl != null ? Number(p.currentPnl) : null;
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
                   const PAYOFF_CHART_TYPES = ['BUTTERFLY_SPREAD', 'BOX_SPREAD', 'VERTICAL_SPREAD', 'CONDOR_SPREAD', 'IRON_CONDOR', 'CALENDAR_SPREAD'];
@@ -1728,7 +1728,7 @@ function CashPositionsSection() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {positions.map(p => {
-                const pnl = p.currentPnl || 0;
+                const pnl = p.currentPnl != null ? Number(p.currentPnl) : null;
                 return (
                   <tr key={p.id} className="hover:bg-slate-50">
                     <td className="px-3 py-2 font-mono text-[10px] text-slate-600">{fmtTime(p.enteredAt)}</td>
@@ -1955,6 +1955,7 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
                           </span>
                         </td>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{opp.expiryDate || opp.expiry || '--'}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
                         <td className="px-2 py-1.5 font-bold text-purple-700">{opp.action}</td>
                         <td className="px-2 py-1.5 text-right font-mono text-slate-600">{ceVal}</td>
@@ -2099,7 +2100,11 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const liveIds = new Set(liveOpps.map(o => o.id));
   historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
-  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  let maxTime = 0;
+  allOpps.forEach(o => { const t = new Date(o.scanTime || o.entryTime || 0).getTime(); if (t > maxTime) maxTime = t; });
+  const maxDateStr = maxTime > 0 ? new Date(maxTime).toISOString().split('T')[0] : null;
+  const todayOpps = maxDateStr ? allOpps.filter(o => { const t = o.scanTime || o.entryTime; return t ? String(t).startsWith(maxDateStr) : true; }) : allOpps;
+  const filteredByUnderlying = underlying === 'ALL' ? todayOpps : todayOpps.filter(o => o.underlying === underlying);
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
@@ -2278,6 +2283,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                         className={`transition cursor-pointer ${isExp ? 'bg-amber-50/70 border-l-4 border-amber-600' : 'hover:bg-slate-50'}`}>
                         <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{timeStr}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{opp.expiryDate || opp.expiry || '--'}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
                         <td className="px-2 py-1.5 font-bold text-purple-700 truncate max-w-[120px]">{opp.action}</td>
                         <td className="px-2 py-1.5 text-right font-mono">{ceVal}</td>
@@ -2496,7 +2502,11 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const liveIds = new Set(liveOpps.map(o => o.id));
   historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
-  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  let maxTime = 0;
+  allOpps.forEach(o => { const t = new Date(o.scanTime || o.entryTime || 0).getTime(); if (t > maxTime) maxTime = t; });
+  const maxDateStr = maxTime > 0 ? new Date(maxTime).toISOString().split('T')[0] : null;
+  const todayOpps = maxDateStr ? allOpps.filter(o => { const t = o.scanTime || o.entryTime; return t ? String(t).startsWith(maxDateStr) : true; }) : allOpps;
+  const filteredByUnderlying = underlying === 'ALL' ? todayOpps : todayOpps.filter(o => o.underlying === underlying);
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
@@ -2911,7 +2921,11 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
   const liveIds = new Set(liveOpps.map(o => o.id));
   historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
-  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  let maxTime = 0;
+  allOpps.forEach(o => { const t = new Date(o.scanTime || o.entryTime || 0).getTime(); if (t > maxTime) maxTime = t; });
+  const maxDateStr = maxTime > 0 ? new Date(maxTime).toISOString().split('T')[0] : null;
+  const todayOpps = maxDateStr ? allOpps.filter(o => { const t = o.scanTime || o.entryTime; return t ? String(t).startsWith(maxDateStr) : true; }) : allOpps;
+  const filteredByUnderlying = underlying === 'ALL' ? todayOpps : todayOpps.filter(o => o.underlying === underlying);
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
@@ -3897,7 +3911,11 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
   const liveIds = new Set(liveOpps.map(o => o.id));
   historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
-  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  let maxTime = 0;
+  allOpps.forEach(o => { const t = new Date(o.scanTime || o.entryTime || 0).getTime(); if (t > maxTime) maxTime = t; });
+  const maxDateStr = maxTime > 0 ? new Date(maxTime).toISOString().split('T')[0] : null;
+  const todayOpps = maxDateStr ? allOpps.filter(o => { const t = o.scanTime || o.entryTime; return t ? String(t).startsWith(maxDateStr) : true; }) : allOpps;
+  const filteredByUnderlying = underlying === 'ALL' ? todayOpps : todayOpps.filter(o => o.underlying === underlying);
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
@@ -4748,7 +4766,11 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
   const liveIds = new Set(liveOpps.map(o => o.id));
   historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
-  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  let maxTime = 0;
+  allOpps.forEach(o => { const t = new Date(o.scanTime || o.entryTime || 0).getTime(); if (t > maxTime) maxTime = t; });
+  const maxDateStr = maxTime > 0 ? new Date(maxTime).toISOString().split('T')[0] : null;
+  const todayOpps = maxDateStr ? allOpps.filter(o => { const t = o.scanTime || o.entryTime; return t ? String(t).startsWith(maxDateStr) : true; }) : allOpps;
+  const filteredByUnderlying = underlying === 'ALL' ? todayOpps : todayOpps.filter(o => o.underlying === underlying);
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
@@ -5434,7 +5456,11 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
   const liveIds = new Set(liveOpps.map(o => o.id));
   historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
-  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  let maxTime = 0;
+  allOpps.forEach(o => { const t = new Date(o.scanTime || o.entryTime || 0).getTime(); if (t > maxTime) maxTime = t; });
+  const maxDateStr = maxTime > 0 ? new Date(maxTime).toISOString().split('T')[0] : null;
+  const todayOpps = maxDateStr ? allOpps.filter(o => { const t = o.scanTime || o.entryTime; return t ? String(t).startsWith(maxDateStr) : true; }) : allOpps;
+  const filteredByUnderlying = underlying === 'ALL' ? todayOpps : todayOpps.filter(o => o.underlying === underlying);
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
@@ -5599,6 +5625,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
                         className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}>
                         <td className="px-2 py-1.5 text-slate-600 font-mono whitespace-nowrap">{fmtTime(opp.scanTime)}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{opp.expiryDate || opp.expiry || '--'}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
                         <td className="px-2 py-1.5 font-mono text-xs text-slate-600 max-w-[200px] truncate" title={opp.action}>{opp.action}</td>
                         <td className={`px-2 py-1.5 text-right font-mono font-bold ${edge >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{edge >= 0 ? '+' : ''}₹{Math.round(edge)}</td>
@@ -6036,6 +6063,7 @@ function SyntheticArbView({ handleExecuteInline, executionBroker }) {
                         className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}
                       >
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{opp.expiryDate || opp.expiry || '--'}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
                         <td className="px-2 py-1.5">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -6302,7 +6330,8 @@ function VolSurfaceView() {
                   const maxIV = Math.max(...rows.map(r => Math.max(r.ceIv || 0, r.peIv || 0)));
                   const ceH = maxIV > 0 ? ((row.ceIv || 0) / maxIV) * 100 : 0;
                   const peH = maxIV > 0 ? ((row.peIv || 0) / maxIV) * 100 : 0;
-                  const isATM = row.strike === Math.round(spot / OptionChainService_getStep(underlying)) * OptionChainService_getStep(underlying);
+                  const step = underlying === 'BANKNIFTY' ? 100 : underlying === 'MIDCPNIFTY' ? 25 : 50;
+                  const isATM = row.strike === Math.round(spot / step) * step;
                   return (
                     <div key={idx} className="flex-1 flex flex-col items-center gap-0.5" title={`Strike: ${row.strike}
 CE IV: ${row.ceIv}%
@@ -6499,61 +6528,78 @@ function PaperTradesView() {
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No paper trades executed yet. Use the ⚡ Trade button on any signal to execute.</div>
         ) : (
           <div className="overflow-x-auto w-full">
-            <table className="w-full text-[11px] text-left border-collapse">
-              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+            <table className="w-full text-[11px] text-left border-collapse shadow-sm rounded-lg overflow-hidden">
+              <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-200 font-bold text-slate-600 uppercase text-[10px] tracking-wider">
                 <tr>
-                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('enteredAt')}>Entry Time{sortIcon('enteredAt')}</th>
-                  <th className="px-2 py-2">Mode</th>
-                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
-                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
-                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strike')}>Strike{sortIcon('strike')}</th>
-                  <th className="px-2 py-2">Action</th>
-                  <th className="px-2 py-2 text-right">CE Entry</th>
-                  <th className="px-2 py-2 text-right">PE Entry</th>
-                  <th className="px-2 py-2 text-right">FUT Entry</th>
-                  <th className="px-2 py-2 text-center">Lots</th>
-                  <th className="px-2 py-2 text-center cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('status')}>Status{sortIcon('status')}</th>
-                  <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('pnl')}>P&amp;L{sortIcon('pnl')}</th>
-                  <th className="px-2 py-2 text-center">Exit Time</th>
+                  <th className="px-3 py-3 cursor-pointer hover:bg-slate-200 select-none rounded-tl-lg" onClick={() => toggleSort('enteredAt')}>⏱ Entry{sortIcon('enteredAt')}</th>
+                  <th className="px-3 py-3 text-center">Mode</th>
+                  <th className="px-3 py-3 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-3 py-3 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
+                  <th className="px-3 py-3 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strike')}>Strike{sortIcon('strike')}</th>
+                  <th className="px-3 py-3">Strategy</th>
+                  <th className="px-3 py-3 text-right">Prices / Cost</th>
+                  <th className="px-3 py-3 text-center">Lots</th>
+                  <th className="px-3 py-3 text-center cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('status')}>Status{sortIcon('status')}</th>
+                  <th className="px-3 py-3 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('pnl')}>Net P&amp;L{sortIcon('pnl')}</th>
+                  <th className="px-3 py-3 text-center rounded-tr-lg">⏱ Exit Time</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 bg-white">
                 {sorted.map((pos) => {
                   const isExp = expandedId === pos.id;
                   const pnl = pos.pnl || 0;
                   const isPaper = pos.ceOrderId && pos.ceOrderId.startsWith('PAPER');
+                  
+                  let entryDetails = <span className="text-slate-400">--</span>;
+                  if (pos.entryCost != null && pos.entryCost !== 0) {
+                     entryDetails = <span className="font-mono font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shadow-sm">Net: ?{Number(pos.entryCost).toLocaleString()}</span>;
+                  } else if (pos.ceEntryPrice != null || pos.peEntryPrice != null || pos.futEntryPrice != null) {
+                     entryDetails = (
+                       <div className="flex flex-col gap-0.5 text-[9px] font-mono text-slate-600 items-end">
+                         {pos.ceEntryPrice != null && <span>CE: {Number(pos.ceEntryPrice).toFixed(1)}</span>}
+                         {pos.peEntryPrice != null && <span>PE: {Number(pos.peEntryPrice).toFixed(1)}</span>}
+                         {pos.futEntryPrice != null && <span>FUT: {Number(pos.futEntryPrice).toFixed(1)}</span>}
+                       </div>
+                     );
+                  }
+
+                  let actionBadge = <span className="font-bold text-slate-700 truncate">{pos.action}</span>;
+                  if (pos.action.includes('BOX')) actionBadge = <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md font-bold text-[9px] border border-blue-200 shadow-sm">{pos.action}</span>;
+                  else if (pos.action.includes('FLY')) actionBadge = <span className="px-2 py-0.5 bg-fuchsia-100 text-fuchsia-800 rounded-md font-bold text-[9px] border border-fuchsia-200 shadow-sm">{pos.action}</span>;
+                  else if (pos.action.includes('SPREAD')) actionBadge = <span className="px-2 py-0.5 bg-cyan-100 text-cyan-800 rounded-md font-bold text-[9px] border border-cyan-200 shadow-sm">{pos.action}</span>;
+                  else if (pos.action.includes('ARB')) actionBadge = <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-md font-bold text-[9px] border border-orange-200 shadow-sm">{pos.action}</span>;
+
                   return (
                     <React.Fragment key={pos.id}>
                       <tr onClick={() => setExpandedId(isExp ? null : pos.id)}
-                        className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}>
-                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{fmtTime(pos.enteredAt)}</td>
-                        <td className="px-2 py-1.5">
-                          <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${isPaper ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-                            {isPaper ? '📝 PAPER' : '⚡ LIVE'}
+                        className={`transition-all duration-200 cursor-pointer hover:bg-blue-50/50 ${isExp ? 'bg-blue-50/80 border-l-4 border-blue-500 shadow-inner' : ''}`}>
+                        <td className="px-3 py-2.5 font-mono text-[10px] text-slate-500">{fmtTime(pos.enteredAt)}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold shadow-sm border ${isPaper ? 'bg-purple-100 text-purple-700 border-purple-300 shadow-purple-100' : 'bg-amber-100 text-amber-700 border-amber-300 shadow-amber-100'}`}>
+                            {isPaper ? 'PAPER' : 'LIVE'}
                           </span>
                         </td>
-                        <td className="px-2 py-1.5 font-bold text-slate-800">{pos.underlying}</td>
-                        <td className="px-2 py-1.5 font-bold text-slate-700">{pos.strike}</td>
-                        <td className="px-2 py-1.5 font-bold text-purple-700 truncate max-w-[100px]">{pos.action}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">{pos.ceEntryPrice != null ? Number(pos.ceEntryPrice).toFixed(1) : '--'}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">{pos.peEntryPrice != null ? Number(pos.peEntryPrice).toFixed(1) : '--'}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">{pos.futEntryPrice != null ? Number(pos.futEntryPrice).toFixed(1) : '--'}</td>
-                        <td className="px-2 py-1.5 text-center font-bold">{pos.lots}</td>
-                        <td className="px-2 py-1.5 text-center">
-                          <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${statusColor(pos.status)}`}>
-                            {pos.status === 'OPEN' ? '🟢 OPEN' : pos.status === 'CLOSED' || pos.status === 'EXITED' ? '⏹ EXITED' : pos.status === 'FAILED' ? '❌ FAILED' : pos.status === 'REJECTED' ? '🚫 REJECTED' : pos.status}
+                        <td className="px-3 py-2.5 font-black text-slate-800">{pos.underlying}</td>
+                        <td className="px-3 py-2.5 font-bold text-slate-600">{pos.expiryDate || pos.expiry || '--'}</td>
+                        <td className="px-3 py-2.5 font-bold text-slate-700">{pos.strike}</td>
+                        <td className="px-3 py-2.5">{actionBadge}</td>
+                        <td className="px-3 py-2.5 text-right">{entryDetails}</td>
+                        <td className="px-3 py-2.5 text-center font-black text-slate-800 text-xs">{pos.lots}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold shadow-sm border ${pos.status === 'OPEN' ? 'bg-amber-100 text-amber-700 border-amber-300' : pos.status === 'CLOSED' || pos.status === 'EXITED' ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : pos.status === 'FAILED' ? 'bg-red-100 text-red-700 border-red-300' : 'bg-slate-100 text-slate-700 border-slate-300'}`}>
+                            {pos.status}
                           </span>
                         </td>
-                        <td className="px-2 py-1.5 text-right font-mono font-bold">
+                        <td className="px-3 py-2.5 text-right font-mono font-black text-sm">
                           {pnl !== 0
-                            ? <span className={pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}>{pnl >= 0 ? '+' : ''}₹{Math.round(pnl).toLocaleString('en-IN')}</span>
-                            : <span className="text-slate-400">₹0</span>}
+                            ? <span className={pnl >= 0 ? 'text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100' : 'text-red-600 bg-red-50 px-2 py-0.5 rounded-md border border-red-100'}>{pnl >= 0 ? '+' : ''}?{Math.round(pnl).toLocaleString('en-IN')}</span>
+                            : <span className="text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">?0</span>}
                         </td>
-                        <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{pos.exitedAt ? fmtTime(pos.exitedAt) : '--'}</td>
+                        <td className="px-3 py-2.5 text-center font-mono text-[10px] text-slate-400">{pos.exitedAt ? fmtTime(pos.exitedAt) : '--'}</td>
                       </tr>
                       {(isExp || (pos.status === 'FAILED' || pos.status === 'REJECTED') && pos.errorMessage) && (
                         <tr className="bg-indigo-50/40 border-b border-indigo-100">
-                          <td colSpan={12} className="p-3">
+                          <td colSpan={11} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
                               <span className="font-bold text-slate-800 text-xs uppercase block">Position Details:</span>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px] font-mono">
@@ -6561,18 +6607,18 @@ function PaperTradesView() {
                                 <div><span className="text-slate-500">PE Symbol:</span> <span className="font-bold">{pos.peSymbol || '--'}</span></div>
                                 <div><span className="text-slate-500">FUT Symbol:</span> <span className="font-bold">{pos.futSymbol || '--'}</span></div>
                                 <div><span className="text-slate-500">Lot Size:</span> <span className="font-bold">{pos.lotSize}</span></div>
-                                <div><span className="text-slate-500">Target Edge:</span> <span className="font-bold">₹{pos.targetEdge != null ? Math.round(pos.targetEdge) : '--'}</span></div>
+                                <div><span className="text-slate-500">Target Edge:</span> <span className="font-bold">?{pos.targetEdge != null ? Math.round(pos.targetEdge) : '--'}</span></div>
                                 <div><span className="text-slate-500">Strategy:</span> <span className="font-bold">{pos.strategyType || '--'}</span></div>
                                 <div><span className="text-slate-500">CE Exit:</span> <span className="font-bold">{pos.ceExitPrice != null ? Number(pos.ceExitPrice).toFixed(1) : '--'}</span></div>
                                 <div><span className="text-slate-500">PE Exit:</span> <span className="font-bold">{pos.peExitPrice != null ? Number(pos.peExitPrice).toFixed(1) : '--'}</span></div>
                                 <div><span className="text-slate-500">FUT Exit:</span> <span className="font-bold">{pos.futExitPrice != null ? Number(pos.futExitPrice).toFixed(1) : '--'}</span></div>
-                                <div><span className="text-slate-500">Entry Cost:</span> <span className="font-bold">₹{pos.entryCost != null ? Math.round(pos.entryCost) : '--'}</span></div>
+                                <div><span className="text-slate-500">Entry Cost:</span> <span className="font-bold">?{pos.entryCost != null ? Math.round(pos.entryCost) : '--'}</span></div>
                                 <div><span className="text-slate-500">Order IDs:</span> <span className="font-bold text-[9px]">{pos.ceOrderId || '--'}</span></div>
                                 <div><span className="text-slate-500">Mode:</span> <span className="font-bold">{isPaper ? 'PAPER' : 'LIVE'}</span></div>
                               </div>
-                              {pos.errorMessage && (
-                                <div className={`text-[10px] font-mono mt-1 p-2 rounded-lg ${(pos.status === 'FAILED' || pos.status === 'REJECTED') ? 'bg-red-50 text-red-700 border border-red-200' : 'text-amber-600'}`}>
-                                  <span className="font-bold">Error/Log:</span> {pos.errorMessage}
+                              {(pos.status === 'FAILED' || pos.status === 'REJECTED') && pos.errorMessage && (
+                                <div className="mt-2 text-red-600 bg-red-50 p-2 rounded border border-red-200">
+                                  <span className="font-bold uppercase text-[9px]">Error:</span> {pos.errorMessage}
                                 </div>
                               )}
                             </div>
@@ -7330,6 +7376,7 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
   const [underlying, setUnderlying] = React.useState('ALL');
   const [minEdge, setMinEdge] = React.useState(500);
   const [expandedId, setExpandedId] = React.useState(null);
+  const [subTab, setSubTab] = React.useState('signals');
 
   const { data, isLoading } = useQuery({
     queryKey: ['top-picks', underlying, minEdge],
@@ -7341,9 +7388,34 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
   });
 
   const opps = data?.opportunities || [];
+  
+  const allIds = opps.filter(o => o.id).map(o => o.id);
+  const { data: livePnlRes } = useQuery({
+    queryKey: ['top-picks-live-pnl', allIds.join(',')],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: allIds.join(',') } });
+      return { pnlMap: res.data?.pnlMap || {}, statusMap: res.data?.statusMap || {}, exitTimeMap: res.data?.exitTimeMap || {} };
+    },
+    refetchInterval: 10000,
+    enabled: allIds.length > 0
+  });
+  const pnlMap = livePnlRes?.pnlMap || {};
 
   return (
     <div className="space-y-4 w-full">
+      <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl w-fit">
+        <button onClick={() => setSubTab('signals')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'signals' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          Live Alpha Signals
+        </button>
+        <button onClick={() => setSubTab('history')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'history' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          ⏱ Alpha History
+        </button>
+      </div>
+
+      {subTab === 'history' ? (
+        <ErrorBoundary><HistoryView lockedStrategy={null} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} underlyings={['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY']} /></ErrorBoundary>
+      ) : (
+      <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-bold text-slate-800">🔥 Top Alpha Signals</h2>
@@ -7377,15 +7449,19 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
           <div className="p-8 text-center text-slate-400 font-mono text-sm">No Alpha signals for {underlying} (Edge ≥ ₹{minEdge})</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[800px]">
+            <table className="w-full text-left border-collapse min-w-[800px] text-[11px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-black text-slate-400 tracking-wider">
+                  <th className="px-2 py-2">Time</th>
                   <th className="px-3 py-2">Strategy</th>
                   <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Expiry</th>
+                  <th className="px-2 py-2">Strike</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right">Net Edge</th>
                   <th className="px-2 py-2 text-center">Status</th>
-                  <th className="px-2 py-2 text-center"></th>
+                  <th className="px-2 py-2 text-right">P&L</th>
+                  <th className="px-2 py-2 text-center">Trade</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
@@ -7393,35 +7469,77 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
                   const isExp = expandedId === (opp.id || idx);
                   const edgeVal = opp.edgeAfterCosts || 0;
                   const isLive = opp.status === 'RUNNING';
+                  const livePnl = opp.id && pnlMap[String(opp.id)] != null ? Number(pnlMap[String(opp.id)]) : null;
+                  const pnlDisplay = livePnl != null ? livePnl : (opp.currentPnl != null ? opp.currentPnl : (opp.pnlAfterCosts != null ? Number(opp.pnlAfterCosts) : null));
+                  
+                  const fmtTime = (d) => {
+                    if (!d) return '--';
+                    const dt = new Date(d);
+                    return isNaN(dt) ? d : dt.toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' }).toLowerCase();
+                  };
+                  const timeStr = fmtTime(opp.scanTime || opp.entryTime);
+                  
                   return (
                     <React.Fragment key={opp.id || idx}>
                       <tr onClick={() => setExpandedId(isExp ? null : (opp.id || idx))} className={`transition cursor-pointer ${isExp ? 'bg-orange-50/70 border-l-4 border-orange-600' : 'hover:bg-slate-50'}`}>
-                        <td className="px-3 py-2 font-bold text-orange-700 text-xs">{opp.type || 'SIGNAL'}</td>
-                        <td className="px-2 py-2 font-bold text-slate-800">{opp.underlying}</td>
-                        <td className="px-2 py-2 font-bold text-slate-600 truncate max-w-[200px] text-xs">{opp.action}</td>
-                        <td className="px-2 py-2 text-right font-mono font-bold text-emerald-600">+₹{Math.round(edgeVal).toLocaleString('en-IN')}</td>
-                        <td className="px-2 py-2 text-center">
+                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{timeStr}</td>
+                        <td className="px-3 py-1.5 font-bold text-orange-700 text-[11px]">{opp.type || 'SIGNAL'}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-800 text-[11px]">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{opp.expiryDate || opp.expiry || '--'}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-700 text-[11px]">{opp.strike || '--'}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-600 truncate max-w-[200px] text-[10px]">{opp.action}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600 text-[11px]">+₹{Math.round(edgeVal).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5 text-center">
                           <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${isLive ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                             {isLive ? '🟢 RUNNING' : 'NEW'}
                           </span>
                         </td>
-                        <td className="px-2 py-2 text-center">
+                        <td className="px-2 py-1.5 text-right font-mono text-[11px]">
+                          {pnlDisplay != null ? (
+                            <span className={pnlDisplay >= 0 ? 'text-emerald-600 font-bold' : 'text-red-500 font-bold'}>
+                              ₹{pnlDisplay > 0 ? '+' : ''}{Math.round(pnlDisplay).toLocaleString('en-IN')}
+                            </span>
+                          ) : <span className="text-slate-400">--</span>}
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
                           <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-2 py-0.5 bg-orange-600 hover:bg-orange-700 text-white text-[10px] font-bold rounded shadow-sm transition">⚡ Deploy</button>
                         </td>
                       </tr>
                       {isExp && (
                         <tr className="bg-orange-50/40 border-b border-orange-100">
-                          <td colSpan={6} className="p-3">
+                          <td colSpan={10} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-orange-200 shadow-md space-y-2">
                               <span className="font-bold text-slate-800 text-xs uppercase block">Signal Breakdown:</span>
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
+                              <p className="text-[11px] font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '?'}</p>
                               {opp.description && <p className="text-[10px] text-slate-500">{opp.description}</p>}
-                              <ArbitrageSignalPayoffChart opp={opp} />
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-md transition">
-                                  ⚡ Submit ({executionBroker})
-                                </button>
-                              </div>
+                              
+                              {opp.costBreakdown && (
+                                <div className="text-[10px] font-mono text-slate-600 flex flex-wrap gap-3 my-2 bg-slate-100 p-2 rounded-lg border border-slate-200">
+                                  <span className="font-bold uppercase text-slate-500 w-full mb-1">Costs & Net Edge Breakdown</span>
+                                  {Object.entries(opp.costBreakdown).map(([k,v]) => <span key={k} className="bg-white px-2 py-0.5 rounded border border-slate-200">{k}: ₹{v}</span>)}
+                                </div>
+                              )}
+                              
+                              {(() => {
+                                let oppToPass = opp;
+                                if ((!Array.isArray(opp.legList) || opp.legList.length < 2) && typeof opp.legs === 'string') {
+                                  const legStrs = opp.legs.split('|').map(s => s.trim()).filter(Boolean);
+                                  const legList = legStrs.map(ls => {
+                                    let side = ls.includes('BUY') ? 'BUY' : 'SELL';
+                                    let type = ls.includes('CE') ? 'CE' : ls.includes('PE') ? 'PE' : 'FUT';
+                                    let priceMatch = ls.match(/@\s+([\d.]+)/);
+                                    let price = priceMatch ? Number(priceMatch[1]) : 0;
+                                    let strikeMatch = type !== 'FUT' ? ls.match(/(\d+(?:\.\d+)?)\s+(?:CE|PE)/) : null;
+                                    let strike = strikeMatch ? Number(strikeMatch[1]) : (type === 'FUT' ? 0 : opp.strike);
+                                    if (price > 0) return { side, optionType: type, strike, price, qty: 1 };
+                                    return null;
+                                  }).filter(Boolean);
+                                  if (legList.length >= 2) {
+                                    oppToPass = { ...opp, legList };
+                                  }
+                                }
+                                return <ArbitrageSignalPayoffChart opp={oppToPass} />;
+                              })()}
                             </div>
                           </td>
                         </tr>
@@ -7434,6 +7552,8 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
