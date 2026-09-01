@@ -88,10 +88,10 @@ public class CalendarSpreadService {
 
         List<String> instruments = new ArrayList<>();
         for (int strike : strikes) {
-            instruments.add(optionChainService.buildNfoSymbol(underlying, nearExpiry, strike, "CE"));
-            instruments.add(optionChainService.buildNfoSymbol(underlying, nearExpiry, strike, "PE"));
-            instruments.add(optionChainService.buildNfoSymbol(underlying, farExpiry, strike, "CE"));
-            instruments.add(optionChainService.buildNfoSymbol(underlying, farExpiry, strike, "PE"));
+            instruments.addAll(optionChainService.buildNfoSymbolCandidates(underlying, nearExpiry, strike, "CE"));
+            instruments.addAll(optionChainService.buildNfoSymbolCandidates(underlying, nearExpiry, strike, "PE"));
+            instruments.addAll(optionChainService.buildNfoSymbolCandidates(underlying, farExpiry, strike, "CE"));
+            instruments.addAll(optionChainService.buildNfoSymbolCandidates(underlying, farExpiry, strike, "PE"));
         }
         Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
@@ -109,10 +109,14 @@ public class CalendarSpreadService {
                                        String underlying, LocalDate nearExpiry, LocalDate farExpiry,
                                        int strike, String optionType, double spot, int lotSize,
                                        long nearDte, long farDte, double nearYears, double farYears) {
-        String nearKey = optionChainService.buildNfoSymbol(underlying, nearExpiry, strike, optionType);
-        String farKey = optionChainService.buildNfoSymbol(underlying, farExpiry, strike, optionType);
-        OptionChainService.OptionQuote near = quotes.get(nearKey);
-        OptionChainService.OptionQuote far = quotes.get(farKey);
+        OptionChainService.OptionQuote near = null;
+        for (String c : optionChainService.buildNfoSymbolCandidates(underlying, nearExpiry, strike, optionType)) {
+            if (quotes.containsKey(c)) { near = quotes.get(c); break; }
+        }
+        OptionChainService.OptionQuote far = null;
+        for (String c : optionChainService.buildNfoSymbolCandidates(underlying, farExpiry, strike, optionType)) {
+            if (quotes.containsKey(c)) { far = quotes.get(c); break; }
+        }
         if (near == null || far == null) return;
         if (near.bid <= 0 || far.ask <= 0) return;
 
