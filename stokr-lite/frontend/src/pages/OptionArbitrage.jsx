@@ -1162,7 +1162,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   const positions = brokerFilter === 'ALL' ? allPositions
     : brokerFilter === 'PAPER' ? allPositions.filter(isPaper)
     : allPositions.filter(p => !isPaper(p));
-  const filteredTotalPnl = positions.reduce((s, p) => s + (p.currentPnl || 0), 0);
+  const filteredTotalPnl = positions.reduce((s, p) => s + (p.currentPnl != null ? Number(p.currentPnl) : 0), 0);
   const openPositions = positions.filter(p => p.status === 'OPEN');
 
   const handleRollover = async (positionId, underlying, strike) => {
@@ -1274,7 +1274,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {positions.map(p => {
-                  const pnl = p.currentPnl || 0;
+                  const pnl = p.currentPnl != null ? Number(p.currentPnl) : null;
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
                   const PAYOFF_CHART_TYPES = ['BUTTERFLY_SPREAD', 'BOX_SPREAD', 'VERTICAL_SPREAD', 'CONDOR_SPREAD', 'IRON_CONDOR', 'CALENDAR_SPREAD'];
@@ -1728,7 +1728,7 @@ function CashPositionsSection() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {positions.map(p => {
-                const pnl = p.currentPnl || 0;
+                const pnl = p.currentPnl != null ? Number(p.currentPnl) : null;
                 return (
                   <tr key={p.id} className="hover:bg-slate-50">
                     <td className="px-3 py-2 font-mono text-[10px] text-slate-600">{fmtTime(p.enteredAt)}</td>
