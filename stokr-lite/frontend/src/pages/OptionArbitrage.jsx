@@ -7359,6 +7359,7 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
   const [underlying, setUnderlying] = React.useState('ALL');
   const [minEdge, setMinEdge] = React.useState(500);
   const [expandedId, setExpandedId] = React.useState(null);
+  const [subTab, setSubTab] = React.useState('signals');
 
   const { data, isLoading } = useQuery({
     queryKey: ['top-picks', underlying, minEdge],
@@ -7385,6 +7386,19 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
 
   return (
     <div className="space-y-4 w-full">
+      <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl w-fit">
+        <button onClick={() => setSubTab('signals')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'signals' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          Live Alpha Signals
+        </button>
+        <button onClick={() => setSubTab('history')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'history' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          ⏱ Alpha History
+        </button>
+      </div>
+
+      {subTab === 'history' ? (
+        <ErrorBoundary><HistoryView lockedStrategy={null} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} underlyings={['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY']} /></ErrorBoundary>
+      ) : (
+      <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-bold text-slate-800">🔥 Top Alpha Signals</h2>
@@ -7521,6 +7535,8 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
