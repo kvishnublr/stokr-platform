@@ -413,6 +413,11 @@ public class OptionArbAutoExecService {
                 opp.setAction((String) m.get("action"));
                 opp.setStrategyType((String) m.get("strategyType"));
                 opp.setExpiryDate(m.get("expiryDate") instanceof String s ? LocalDate.parse(s) : null);
+                if (opp.getExpiryDate() == null && opp.getUnderlying() != null) {
+                    try {
+                        opp.setExpiryDate(optionChainService.getWeeklyExpiryDate(opp.getUnderlying()));
+                    } catch (Exception ignored) {}
+                }
                 Object eac = m.get("edgeAfterCosts");
                 if (eac instanceof Number n) opp.setEdgeAfterCosts(BigDecimal.valueOf(n.doubleValue()));
                 Object ce = m.get("ceEntryPrice");
