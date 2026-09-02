@@ -464,7 +464,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             if (!enabled) continue;
 
             double minEdge = ((Number) settings.getOrDefault(key + "MinEdge", 800.0)).doubleValue();
-            if (opp.getEdgeAfterCosts().doubleValue() < minEdge) continue;
+            if (opp.getEdgePoints().doubleValue() * getLotSize(opp.getUnderlying()) < minEdge) continue;
             if (opp.getExpiryDate() == null || opp.getStrike() == null) continue;
 
             if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
@@ -475,12 +475,12 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             
             long openPaperStrategy = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
                     .filter(p -> "PAPER".equals(p.getBroker()) && opp.getStrategyType().equals(p.getStrategyType()))
-                    .count();
+                    .mapToInt(p -> p.getLots() != null ? p.getLots() : 1).sum();
             if (openPaperStrategy >= strategyMaxLots) continue;
             
             long openPaperTotal = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
                     .filter(p -> "PAPER".equals(p.getBroker()))
-                    .count();
+                    .mapToInt(p -> p.getLots() != null ? p.getLots() : 1).sum();
             if (openPaperTotal >= globalMaxLots) continue;
 
 
@@ -576,7 +576,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             return;
         }
         int maxPositions = (int) settings.getOrDefault("maxOpenPositions", 1);
-        long currentOpen = positionRepo.countOpenLive();
+        long currentOpen = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream().filter(p -> !"PAPER".equals(p.getBroker())).mapToInt(p -> p.getLots() != null ? p.getLots() : 1).sum();
         if (currentOpen >= maxPositions) return;
 
         Long userId;
@@ -643,7 +643,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             if (!enabled) continue;
 
             double minEdge = ((Number) settings.getOrDefault(key + "MinEdge", 800.0)).doubleValue();
-            if (opp.getEdgeAfterCosts().doubleValue() < minEdge) continue;
+            if (opp.getEdgePoints().doubleValue() * getLotSize(opp.getUnderlying()) < minEdge) continue;
             if (opp.getExpiryDate() == null || opp.getStrike() == null) continue;
 
             if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(userId, "OPEN").stream()

@@ -560,7 +560,7 @@ export default function OptionArbitrage() {
 <div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs">
   <span className="text-slate-300 font-medium">Trade Mode:</span>
   <select
-    value={executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'}
+    value={executionBroker}
     onChange={(e) => handleTradeModeChange(e.target.value)}
     className="bg-slate-900 text-amber-300 font-bold border border-slate-700 rounded-lg px-2 py-1 outline-none text-xs"
   >
@@ -726,9 +726,9 @@ function AutoExecSettingsPanel({ executionBroker }) {
   
   const { data, isLoading, isError } = useQuery({
 
-    queryKey: ['autoExecSettings', executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'],
+    queryKey: ['autoExecSettings', executionBroker],
     queryFn: async () => {
-      const res = await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } });
+      const res = await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker } });
       return res.data;
     },
     refetchInterval: 30000,
@@ -739,7 +739,7 @@ function AutoExecSettingsPanel({ executionBroker }) {
   const updateSetting = async (key, value) => {
     setSaving(true);
     try {
-      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}&mode=${executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'}`);
+      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}&mode=${executionBroker}`);
       setSettings(prev => ({ ...prev, [key]: value }));
       showToast(`Setting updated: ${key} = ${value}`, 'success');
     } catch (e) {
@@ -871,8 +871,8 @@ function AutoRollSettingsPanel({ executionBroker }) {
   
   const { data, isLoading, isError } = useQuery({
 
-    queryKey: ['autoExecSettings', executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
+    queryKey: ['autoExecSettings', executionBroker],
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker } })).data,
     refetchInterval: 30000,
   });
 
@@ -880,7 +880,7 @@ function AutoRollSettingsPanel({ executionBroker }) {
 
   const updateSetting = async (key, value) => {
     try {
-      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}&mode=${executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'}`);
+      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}&mode=${executionBroker}`);
       setSettings(prev => ({ ...prev, [key]: value }));
       showToast(`Setting updated: ${key} = ${value}`, 'success');
     } catch (e) {
@@ -982,8 +982,8 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo', executionBro
   
   const { data, isLoading, isError } = useQuery({
 
-    queryKey: ['autoExecSettings', executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
+    queryKey: ['autoExecSettings', executionBroker],
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker } })).data,
     refetchInterval: 30000,
   });
 
@@ -991,7 +991,7 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo', executionBro
 
   const updateSetting = async (key, value) => {
     try {
-      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}&mode=${executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'}`);
+      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}&mode=${executionBroker}`);
       setSettings(prev => ({ ...prev, [key]: value }));
       showToast(`Setting updated: ${key} = ${value}`, 'success');
     } catch (e) {
@@ -1113,11 +1113,11 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   // to a live broker doesn't leave old paper positions looking like they might be real --
   // "Live Positions" was showing paper trades with no way to tell them apart or filter
   // them out. Still overridable via the pills below.
-  const [brokerFilter, setBrokerFilter] = useState(executionBroker === 'PAPER' ? 'PAPER' : 'LIVE');
+  const [brokerFilter, setBrokerFilter] = useState(executionBroker);
   const prevExecBroker = useRef(executionBroker);
   useEffect(() => {
     if (executionBroker !== prevExecBroker.current) {
-      setBrokerFilter(executionBroker === 'PAPER' ? 'PAPER' : 'LIVE');
+      setBrokerFilter(executionBroker);
       prevExecBroker.current = executionBroker;
     }
   }, [executionBroker]);
@@ -3166,7 +3166,7 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
 
   const { data: execSettings } = useQuery({
     queryKey: ['autoExecSettingsForVerticalCandidates'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker } })).data,
     refetchInterval: 60000
   });
 
@@ -4306,7 +4306,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
   // if it moves against me" has an honest answer instead of a guess.
   const { data: execSettings } = useQuery({
     queryKey: ['autoExecSettingsForCandidates'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker } })).data,
     refetchInterval: 60000
   });
 
@@ -5016,7 +5016,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
 
   const { data: execSettings } = useQuery({
     queryKey: ['autoExecSettingsForCondorCandidates'],
-    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker === 'PAPER' ? 'PAPER' : 'LIVE' } })).data,
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker } })).data,
     refetchInterval: 60000
   });
 
