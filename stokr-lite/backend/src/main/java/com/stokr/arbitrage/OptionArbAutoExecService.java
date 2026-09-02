@@ -1051,7 +1051,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         .side(leg.side()).quantity(leg.quantity())
                         .price(leg.price())
                         .orderType(BrokerOrderRequest.OrderType.MARKET)
-                        .productType("NRML").build();
+                        .productType("MIS").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
                 if (!resp.isSuccess()) {
                     addLog("ROLLOVER", "LEG_FAIL", leg.legKey() + " " + leg.symbol() + ": " + resp.message());
@@ -1083,7 +1083,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         .side(leg.side()).quantity(leg.quantity())
                         .price(leg.price())
                         .orderType(BrokerOrderRequest.OrderType.MARKET)
-                        .productType("NRML").build();
+                        .productType("MIS").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
                 if (!resp.isSuccess()) {
                     addLog("ROLLOVER", "LEG_FAIL", leg.legKey() + " " + leg.symbol() + ": " + resp.message());
@@ -1199,7 +1199,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         .side(side)
                         .quantity(qty).price(price)
                         .orderType(price > 0 ? BrokerOrderRequest.OrderType.LIMIT : BrokerOrderRequest.OrderType.MARKET)
-                        .productType("NRML").build();
+                        .productType("MIS").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
 
                 if (!resp.isSuccess() || resp.orderId() == null || resp.orderId().isBlank()) {
@@ -1330,7 +1330,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         .side(leg.side())
                         .quantity(leg.quantity()).price(leg.price())
                         .orderType(orderType)
-                        .productType("NRML").build();
+                        .productType("MIS").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
 
                 if (!resp.isSuccess() || resp.orderId() == null || resp.orderId().isBlank()) {
@@ -1573,7 +1573,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                     .symbol(symbol).exchange("NFO")
                     .side(closeSide).quantity(qty)
                     .price(0.0).orderType(BrokerOrderRequest.OrderType.MARKET)
-                    .productType("NRML").build();
+                    .productType("MIS").build();
             BrokerOrderResponse closeResp;
             try {
                 closeResp = adapter.placeOrder(account.getAccessToken(), closeReq);
