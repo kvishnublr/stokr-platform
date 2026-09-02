@@ -5134,6 +5134,17 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
 
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
+          <div className="flex gap-3 mb-4 mt-2">
+            <button className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg shadow transition-colors flex items-center gap-2" onClick={() => updateSetting('condorMaxLots', 10)}>
+                🛡️ Deploy Conservative
+            </button>
+            <button className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-medium rounded-lg shadow transition-colors flex items-center gap-2" onClick={() => updateSetting('condorMaxLots', 5)}>
+                ⚡ Deploy Aggressive
+            </button>
+            <button className="px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg shadow transition-colors flex items-center gap-2" onClick={() => updateSetting('condorMaxLots', 8)}>
+                💎 Deploy Max ROI
+            </button>
+          </div>
           <h2 className="text-base font-bold text-slate-800">Cheap Condor Candidates</h2>
           <p className="text-xs text-slate-500">{candidates.length} candidates — cost ≤ {Math.round(maxCostRatio * 100)}% of width, sorted by model POP (highest first)</p>
         </div>
