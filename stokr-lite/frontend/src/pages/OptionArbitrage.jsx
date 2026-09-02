@@ -2676,6 +2676,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                         className={`transition cursor-pointer ${isExp ? 'bg-purple-50/70 border-l-4 border-purple-600' : 'hover:bg-slate-50'}`}>
                         <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{timeStr}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 font-mono text-slate-600">{opp.expiryDate ? opp.expiryDate.split("-").reverse().slice(0, 2).join("-") : "--"}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{strike1}/{strike2}</td>
                         <td className="px-2 py-1.5 font-bold text-purple-700 truncate max-w-[120px]">{opp.action}</td>
                         <td className="px-2 py-1.5 text-right font-mono">{ceVal}</td>
@@ -2847,6 +2848,7 @@ function BoxNearMissPanel() {
                 {sorted.map((m, idx) => (
                   <tr key={`${m.underlying}-${m.k1}-${m.k2}-${idx}`} className="hover:bg-slate-50">
                     <td className="px-2 py-1.5 font-bold text-slate-800">{m.underlying}</td>
+                    <td className="px-2 py-1.5 font-mono text-slate-600">{m.expiryDate ? m.expiryDate.split("-").reverse().slice(0, 2).join("-") : "--"}</td>
                     <td className="px-2 py-1.5 font-bold text-slate-700">{m.strikes}</td>
                     <td className="px-2 py-1.5 text-slate-600">{m.direction}</td>
                     <td className="px-2 py-1.5 text-right font-mono">{m.width}</td>
@@ -3059,6 +3061,7 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
                         className={`transition cursor-pointer ${isExp ? 'bg-teal-50/70 border-l-4 border-teal-600' : 'hover:bg-slate-50'}`}>
                         <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{timeStr}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 font-mono text-slate-600">{opp.expiryDate ? opp.expiryDate.split("-").reverse().slice(0, 2).join("-") : "--"}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{strike1}/{strike2}</td>
                         <td className="px-2 py-1.5 font-bold text-teal-700 truncate max-w-[160px]">{opp.action}</td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
@@ -4055,6 +4058,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
                         className={`transition cursor-pointer ${isExp ? 'bg-fuchsia-50/70 border-l-4 border-fuchsia-600' : 'hover:bg-slate-50'}`}>
                         <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{timeStr}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 font-mono text-slate-600">{opp.expiryDate ? opp.expiryDate.split("-").reverse().slice(0, 2).join("-") : "--"}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{strike1}/{strike2}/{strike3}</td>
                         <td className="px-2 py-1.5 font-bold text-fuchsia-700 truncate max-w-[160px]">{opp.action}</td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
@@ -4907,6 +4911,7 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
                         className={`transition cursor-pointer ${isExp ? 'bg-cyan-50/70 border-l-4 border-cyan-600' : 'hover:bg-slate-50'}`}>
                         <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{timeStr}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 font-mono text-slate-600">{opp.expiryDate ? opp.expiryDate.split("-").reverse().slice(0, 2).join("-") : "--"}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{strike1}/{strike2}/{strike3}/{strike4}</td>
                         <td className="px-2 py-1.5 font-bold text-cyan-700 truncate max-w-[160px]">{opp.action}</td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">

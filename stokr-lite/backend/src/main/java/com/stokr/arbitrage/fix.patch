@@ -1,0 +1,50 @@
+--- OptionChainService.java
++++ OptionChainService.java
+@@ -15,6 +15,7 @@
+ 
+ @Service
+ public class OptionChainService {
++    private final java.util.Map<String, String> resolvedSymbolCache = new java.util.concurrent.ConcurrentHashMap<>();
+ 
+     private static final Logger log = LoggerFactory.getLogger(OptionChainService.class);
+ 
+@@ -303,16 +304,36 @@
+         int month = expiryDate.getMonthValue();
+         int day = expiryDate.getDayOfMonth();
+ 
++        String mCode = (month == 10) ? "O" : (month == 11) ? "N" : (month == 12) ? "D" : String.valueOf(month);
++
+         List<String> list = new ArrayList<>();
+         // 1. Monthly format: NIFTY26JUL23950CE
+         list.add(String.format("%s%02d%s%d%s", cleanUnderlying, yy, mon, strike, type));
+-        // 2. Weekly format: NIFTY2672323950CE
+-        list.add(String.format("%s%02d%d%02d%d%s", cleanUnderlying, yy, month, day, strike, type));
++        // 2. Weekly format: NSE standard (1-9, O, N, D)
++        list.add(String.format("%s%02d%s%02d%d%s", cleanUnderlying, yy, mCode, day, strike, type));
++        // 3. Fallback math format
++        list.add(String.format("%s%02d%d%02d%d%s", cleanUnderlying, yy, month, day, strike, type));
+         return list;
+     }
+ 
+     public String buildNfoSymbol(String underlying, LocalDate expiryDate, int strike, String type) {
++        String cacheKey = underlying + "|" + expiryDate + "|" + strike + "|" + type;
++        if (resolvedSymbolCache.containsKey(cacheKey)) return resolvedSymbolCache.get(cacheKey);
++
+         List<String> candidates = buildNfoSymbolCandidates(underlying, expiryDate, strike, type);
+-        return candidates.isEmpty() ? null : candidates.get(0);
++        if (candidates.isEmpty()) return null;
++        if (candidates.size() == 1) return candidates.get(0);
++
++        boolean isMonthly = (expiryDate.plusDays(7).getMonthValue() != expiryDate.getMonthValue());
++        String mathGuess = isMonthly ? candidates.get(0) : candidates.get(1);
++
++        try {
++            java.util.Map<String, OptionQuote> quotes = fetchQuotes(candidates);
++            for (String sym : candidates) {
++                OptionQuote q = quotes.get(sym);
++                if (q != null && q.lastPrice > 0) { resolvedSymbolCache.put(cacheKey, q.symbol); return q.symbol; }
++            }
++        } catch (Exception ignored) {}
++        return mathGuess;
+     }
+ 
