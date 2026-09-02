@@ -151,6 +151,10 @@ public class CashExecutionService {
         }
     }
 
+    public List<Map<String, Object>> getClosedPositions() {
+        return positionRepo.findAllClosed().stream().map(CashPosition::toMap).toList();
+    }
+
     public List<Map<String, Object>> getOpenPositionsWithLivePnl() {
         List<CashPosition> open = positionRepo.findAllOpen();
         return open.stream().map(p -> {

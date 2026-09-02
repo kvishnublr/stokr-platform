@@ -178,7 +178,7 @@ public class OptionArbAutoExecService {
         // LIVE positions only -- paper trades sitting open (from earlier testing, a different
         // mode, whatever) must never block a real order from being attempted.
         long openCount = positionRepo.countOpenLive();
-        int maxOpen = ((Number) getSettings().getOrDefault("maxOpenPositions", 1)).intValue();
+        int maxOpen = ((Number) getSettings(broker).getOrDefault("maxOpenPositions", 1)).intValue();
         if (openCount >= maxOpen) {
             result.put("status", "ERROR");
             result.put("message", "Already have " + openCount + "/" + maxOpen + " open positions. Close one first or raise Max Open Positions in Auto-Trade settings.");
@@ -412,6 +412,14 @@ public class OptionArbAutoExecService {
                 opp.setStrike(m.get("strike") instanceof Number n ? n.intValue() : null);
                 opp.setAction((String) m.get("action"));
                 opp.setStrategyType((String) m.get("strategyType"));
+                opp.setType((String) m.get("type"));
+                opp.setLegs((String) m.get("legs"));
+                Object spot = m.get("spotPrice");
+                if (spot instanceof Number n) opp.setSpotPrice(BigDecimal.valueOf(n.doubleValue()));
+                Object epts = m.get("edgePoints");
+                if (epts instanceof Number n) opp.setEdgePoints(BigDecimal.valueOf(n.doubleValue()));
+                Object desc = m.get("description");
+                if (desc instanceof String s) opp.setDescription(s);
                 opp.setExpiryDate(m.get("expiryDate") instanceof String s ? LocalDate.parse(s) : null);
                 if (opp.getExpiryDate() == null && opp.getUnderlying() != null) {
                     try {
@@ -1801,7 +1809,7 @@ public class OptionArbAutoExecService {
         }
         
         long openCount = positionRepo.countOpenLive();
-        int maxOpen = ((Number) getSettings().getOrDefault("maxOpenPositions", 1)).intValue();
+        int maxOpen = ((Number) getSettings(broker).getOrDefault("maxOpenPositions", 1)).intValue();
         if (openCount >= maxOpen) {
             result.put("status", "ERROR");
             result.put("message", "Already have " + openCount + "/" + maxOpen + " open positions.");

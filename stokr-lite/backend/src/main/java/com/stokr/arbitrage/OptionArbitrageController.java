@@ -217,7 +217,7 @@ public class OptionArbitrageController {
         }
         List<Map<String, Object>> opps = bidParityService.scanBidParity(underlying);
         if (opps != null && !opps.isEmpty()) {
-            try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from bid-parity scan failed: {}", e.getMessage()); }
+            try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.error("Auto-exec from bid-parity scan failed: ", e); }
         }
         markExistingPositions(opps);
         Map<String, Object> resp = new LinkedHashMap<>();
@@ -776,6 +776,20 @@ public class OptionArbitrageController {
         addAuditLog("CASH_TRADE", result.get("status") != null ? result.get("status").toString() : "ERROR",
             "Cash trade " + symbol + " via " + broker + ": " + result.get("message"));
         return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/cash-history")
+    public ResponseEntity<Map<String, Object>> getCashHistory() {
+        Map<String, Object> resp = new java.util.LinkedHashMap<>();
+        List<Map<String, Object>> positions = cashExecutionService.getClosedPositions();
+        resp.put("positions", positions);
+        resp.put("count", positions.size());
+        double totalPnl = positions.stream().mapToDouble(p -> {
+            Object pnl = p.get("currentPnl");
+            return pnl != null ? ((Number) pnl).doubleValue() : 0;
+        }).sum();
+        resp.put("totalPnl", Math.round(totalPnl));
+        return ResponseEntity.ok(resp);
     }
 
     @GetMapping("/cash-positions")

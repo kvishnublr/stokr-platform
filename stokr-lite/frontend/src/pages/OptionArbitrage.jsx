@@ -758,9 +758,7 @@ function AutoExecSettingsPanel({ executionBroker }) {
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-            <span className="text-lg">🤖</span> Auto-Execute Engine
-          </h3>
+<h3 className="text-sm font-black text-slate-800 flex items-center gap-2">            <span className="text-lg">⚙️</span> Auto-Execute Engine            <span className={`px-2 py-0.5 ml-2 text-[10px] rounded uppercase ${executionBroker === "PAPER" ? "bg-blue-100 text-blue-700 border border-blue-200" : "bg-red-100 text-red-700 border border-red-200"}`}>              {executionBroker === "PAPER" ? "PAPER TRADING MODE" : `${executionBroker} LIVE EXECUTION`}            </span>          </h3>
           <p className="text-[10px] text-slate-500 mt-0.5">Master switch + shared risk/exit controls. Each strategy's own entry thresholds (min edge, lots, per underlying) now live on that strategy's own "⚡ Auto-Trade" sub-tab.</p>
         </div>
         <div className="flex items-center gap-3">
@@ -791,19 +789,6 @@ function AutoExecSettingsPanel({ executionBroker }) {
             onChange={(e) => setSettings(prev => ({ ...prev, maxDailyLoss: Number(e.target.value) }))}
             onBlur={(e) => updateSetting('maxDailyLoss', e.target.value)}
             className="w-24 px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
-        </div>
-        <div className="space-y-1">
-          <label className="text-[9px] font-bold text-slate-500 uppercase">Broker</label>
-          <select value={settings.broker || 'NAVIA'}
-            onChange={(e) => updateSetting('broker', e.target.value)}
-            className="px-2 py-1 text-xs font-bold border border-slate-300 rounded-lg bg-white outline-none">
-            <option value="NAVIA">Navia Markets</option>
-            <option value="MOTILALOSWAL">Motilal Oswal</option>
-            <option value="ZERODHA">Zerodha Kite</option>
-            <option value="DHAN">DhanHQ</option>
-            <option value="FYERS">Fyers API</option>
-            <option value="PAPER">Paper Trading</option>
-          </select>
         </div>
       </div>
 
@@ -1673,6 +1658,7 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
   );
 }
 
+
 function CashPositionsSection() {
   const [collapsed, setCollapsed] = useState(true);
   const { data, refetch } = useQuery({
@@ -1925,6 +1911,7 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
                 <tr>
                   <th className="px-2 py-2">Type</th>
                   <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Expiry</th>
                   <th className="px-2 py-2">Strike</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right">CE Price</th>
@@ -5648,6 +5635,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
                                 <div>Expiry: {opp.expiryDate}</div>
                                 <div>Confidence: {Number(opp.confidence || 0).toFixed(1)}%</div>
                               </div>
+                              <ArbitrageSignalPayoffChart opp={opp} />
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   Submit ({executionBroker})
@@ -6552,7 +6540,7 @@ function PaperTradesView() {
                   
                   let entryDetails = <span className="text-slate-400">--</span>;
                   if (pos.entryCost != null && pos.entryCost !== 0) {
-                     entryDetails = <span className="font-mono font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shadow-sm">Net: ?{Number(pos.entryCost).toLocaleString()}</span>;
+                     entryDetails = <span className="font-mono font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shadow-sm">Net: ₹{Number(pos.entryCost).toLocaleString()}</span>;
                   } else if (pos.ceEntryPrice != null || pos.peEntryPrice != null || pos.futEntryPrice != null) {
                      entryDetails = (
                        <div className="flex flex-col gap-0.5 text-[9px] font-mono text-slate-600 items-end">
@@ -6592,8 +6580,8 @@ function PaperTradesView() {
                         </td>
                         <td className="px-3 py-2.5 text-right font-mono font-black text-sm">
                           {pnl !== 0
-                            ? <span className={pnl >= 0 ? 'text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100' : 'text-red-600 bg-red-50 px-2 py-0.5 rounded-md border border-red-100'}>{pnl >= 0 ? '+' : ''}?{Math.round(pnl).toLocaleString('en-IN')}</span>
-                            : <span className="text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">?0</span>}
+                            ? <span className={pnl >= 0 ? 'text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100' : 'text-red-600 bg-red-50 px-2 py-0.5 rounded-md border border-red-100'}>{pnl >= 0 ? '+' : ''}₹{Math.round(pnl).toLocaleString('en-IN')}</span>
+                            : <span className="text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">₹0</span>}
                         </td>
                         <td className="px-3 py-2.5 text-center font-mono text-[10px] text-slate-400">{pos.exitedAt ? fmtTime(pos.exitedAt) : '--'}</td>
                       </tr>
@@ -6607,15 +6595,20 @@ function PaperTradesView() {
                                 <div><span className="text-slate-500">PE Symbol:</span> <span className="font-bold">{pos.peSymbol || '--'}</span></div>
                                 <div><span className="text-slate-500">FUT Symbol:</span> <span className="font-bold">{pos.futSymbol || '--'}</span></div>
                                 <div><span className="text-slate-500">Lot Size:</span> <span className="font-bold">{pos.lotSize}</span></div>
-                                <div><span className="text-slate-500">Target Edge:</span> <span className="font-bold">?{pos.targetEdge != null ? Math.round(pos.targetEdge) : '--'}</span></div>
+                                <div><span className="text-slate-500">Target Edge:</span> <span className="font-bold">₹{pos.targetEdge != null ? Math.round(pos.targetEdge) : '--'}</span></div>
                                 <div><span className="text-slate-500">Strategy:</span> <span className="font-bold">{pos.strategyType || '--'}</span></div>
                                 <div><span className="text-slate-500">CE Exit:</span> <span className="font-bold">{pos.ceExitPrice != null ? Number(pos.ceExitPrice).toFixed(1) : '--'}</span></div>
                                 <div><span className="text-slate-500">PE Exit:</span> <span className="font-bold">{pos.peExitPrice != null ? Number(pos.peExitPrice).toFixed(1) : '--'}</span></div>
                                 <div><span className="text-slate-500">FUT Exit:</span> <span className="font-bold">{pos.futExitPrice != null ? Number(pos.futExitPrice).toFixed(1) : '--'}</span></div>
-                                <div><span className="text-slate-500">Entry Cost:</span> <span className="font-bold">?{pos.entryCost != null ? Math.round(pos.entryCost) : '--'}</span></div>
+                                <div><span className="text-slate-500">Entry Cost:</span> <span className="font-bold">₹{pos.entryCost != null ? Math.round(pos.entryCost) : '--'}</span></div>
                                 <div><span className="text-slate-500">Order IDs:</span> <span className="font-bold text-[9px]">{pos.ceOrderId || '--'}</span></div>
                                 <div><span className="text-slate-500">Mode:</span> <span className="font-bold">{isPaper ? 'PAPER' : 'LIVE'}</span></div>
                               </div>
+                              {Array.isArray(pos.legList) && pos.legList.length >= 2 && (
+                                <div className="mt-4">
+                                  <ArbitrageSignalPayoffChart opp={pos} />
+                                </div>
+                              )}
                               {(pos.status === 'FAILED' || pos.status === 'REJECTED') && pos.errorMessage && (
                                 <div className="mt-2 text-red-600 bg-red-50 p-2 rounded border border-red-200">
                                   <span className="font-bold uppercase text-[9px]">Error:</span> {pos.errorMessage}
@@ -7231,7 +7224,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                         onClick={() => setExpandedId(isExp ? null : rowId)}
                         className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}
                       >
-                        <td className="px-1.5 py-1.5 font-mono text-[10px] text-slate-600 truncate">{signalTimeFormatted}</td>
+                        <td className="px-1.5 py-1.5 font-mono text-[10px] text-slate-600 whitespace-nowrap">{signalTimeFormatted}</td>
                         <td className="px-1.5 py-1.5 truncate">
                           <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-indigo-100 text-indigo-800">
                             {item.strategyType || item.type || 'PARITY'}
@@ -7277,7 +7270,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                               </span>
                             : <span className="text-slate-400">--</span>}
                         </td>
-                        <td className="px-1.5 py-1.5 text-center font-mono text-[10px] text-slate-500 truncate">{exitTimeFormatted}</td>
+                        <td className="px-1.5 py-1.5 text-center font-mono text-[10px] text-slate-500 whitespace-nowrap">{exitTimeFormatted}</td>
                         <td className="px-1.5 py-1.5 text-center whitespace-nowrap">
                           <button
                             onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(item); }}
