@@ -778,6 +778,20 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(result);
     }
 
+    @GetMapping("/cash-history")
+    public ResponseEntity<Map<String, Object>> getCashHistory() {
+        Map<String, Object> resp = new java.util.LinkedHashMap<>();
+        List<Map<String, Object>> positions = cashExecutionService.getClosedPositions();
+        resp.put("positions", positions);
+        resp.put("count", positions.size());
+        double totalPnl = positions.stream().mapToDouble(p -> {
+            Object pnl = p.get("currentPnl");
+            return pnl != null ? ((Number) pnl).doubleValue() : 0;
+        }).sum();
+        resp.put("totalPnl", Math.round(totalPnl));
+        return ResponseEntity.ok(resp);
+    }
+
     @GetMapping("/cash-positions")
     public ResponseEntity<Map<String, Object>> getCashPositions() {
         Map<String, Object> resp = new LinkedHashMap<>();
