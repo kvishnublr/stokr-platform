@@ -1143,7 +1143,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   const isPaper = (p) => !p.broker || p.broker === 'PAPER';
   // LIVE positions are actual money and must ALWAYS be shown in My Positions as long as they are OPEN.
   // Only PAPER positions should be filtered by today to avoid cluttering with stale simulated trades.
-  const allPositions = (data?.positions || []).filter(p => !isPaper(p) || isToday(p));
+  const allPositions = (data?.positions || []).filter(p => !isPaper(p) || p.status === 'OPEN' || isToday(p));
   const positions = brokerFilter === 'ALL' ? allPositions
     : brokerFilter === 'PAPER' ? allPositions.filter(isPaper)
     : allPositions.filter(p => !isPaper(p));
