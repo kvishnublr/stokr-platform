@@ -273,7 +273,6 @@ public class CondorSpreadService {
                     OptionChainService.OptionQuote pe3 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k3, "PE"));
                     OptionChainService.OptionQuote pe4 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k4, "PE"));
 
-                    int step = OptionChainService.getStrikeStep(underlying);
                     checkCondor(opps, underlying, weeklyExpiry, k1, k2, k3, k4, w, "CE", ce1, ce2, ce3, ce4, lotSize, spotPrice, futuresPrice, step);
                     checkCondor(opps, underlying, weeklyExpiry, k1, k2, k3, k4, w, "PE", pe1, pe2, pe3, pe4, lotSize, spotPrice, futuresPrice, step);
                 }
