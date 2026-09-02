@@ -1349,7 +1349,24 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 }
 
                 placedLegs.add(new PlacedLeg(leg, resp.orderId(), resp.status()));
-                try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+                
+                if (leg.side() == BrokerOrderRequest.Side.BUY) {
+                    addLog("EXEC", "WAITING", "Waiting for BUY leg " + leg.symbol() + " to fill for margin benefit...");
+                    boolean filled = awaitSingleLegFill(account, adapter, resp.orderId());
+                    if (!filled) {
+                        addLog("EXEC", "LEG_TIMEOUT", "BUY leg " + leg.symbol() + " did not fill in time. Cancelling & aborting.");
+                        cancelPendingLegs(account, adapter, placedLegs);
+                        boolean squaredOffOk = squareOffFilledLegs(account, adapter, placedLegs);
+                        position.setStatus("FAILED");
+                        position.setErrorMessage(leg.legKey() + " BUY leg timeout. " + (squaredOffOk ? "Confirmed flat." : "WARNING: unconfirmed flat."));
+                        position.setLegs(buildLegsJson(pairs, placedLegs));
+                        positionRepo.save(position);
+                        return false;
+                    }
+                    placedLegs.get(placedLegs.size() - 1).status = "COMPLETE";
+                } else {
+                    try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+                }
             }
 
             awaitFinalStatuses(account, adapter, placedLegs);
@@ -1516,6 +1533,20 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
 
     private record LegPair(Map<String, Object> spec, PlannedLeg planned) {}
 
+
+    private boolean awaitSingleLegFill(BrokerAccount account, BrokerAdapter adapter, String orderId) {
+        for (int poll = 0; poll < 10; poll++) {
+            try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+            try {
+                String status = adapter.getOrderStatus(account.getAccessToken(), orderId);
+                if (isCompleteStatus(status)) return true;
+                if ("REJECTED".equalsIgnoreCase(status) || "CANCELLED".equalsIgnoreCase(status)) return false;
+            } catch (Exception e) {
+                log.warn("Auto-exec: Failed to poll order status for {}", orderId);
+            }
+        }
+        return false;
+    }
     private void awaitFinalStatuses(BrokerAccount account, BrokerAdapter adapter, List<PlacedLeg> placedLegs) {
         for (int attempt = 0; attempt < 10; attempt++) {
             boolean allComplete = true;
