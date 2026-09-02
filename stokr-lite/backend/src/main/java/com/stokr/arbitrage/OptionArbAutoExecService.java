@@ -128,12 +128,12 @@ public class OptionArbAutoExecService {
         return getSettings("PAPER");
     }
     public Map<String, Object> getSettings(String mode) {
-        String key = "LIVE".equalsIgnoreCase(mode) ? "LIVE" : "PAPER";
+        String key = mode != null ? mode.toUpperCase() : "PAPER";
         return new LinkedHashMap<>(autoExecSettings.getOrDefault(key, Map.of()));
     }
 
     public void updateSetting(String mode, String key, String value) {
-        String profileKey = "LIVE".equalsIgnoreCase(mode) ? "LIVE" : "PAPER";
+        String profileKey = mode != null ? mode.toUpperCase() : "PAPER";
         Map<String, Object> settings = autoExecSettings.computeIfAbsent(profileKey, k -> new ConcurrentHashMap<>());
         
         if ("enabled".equals(key)) settings.put("enabled", Boolean.parseBoolean(value));
@@ -451,7 +451,7 @@ public class OptionArbAutoExecService {
     }
 
     public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) {
-        evaluateAndExecuteForMode(newOpps, "PAPER", autoExecSettings.getOrDefault("PAPER", Map.of()));
+        evaluateAndExecuteForMode(newOpps, profileKey, autoExecSettings.getOrDefault("PAPER", Map.of()));
         evaluateAndExecuteForMode(newOpps, "LIVE", autoExecSettings.getOrDefault("LIVE", Map.of()));
     }
     
