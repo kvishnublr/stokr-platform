@@ -178,7 +178,7 @@ public class OptionArbAutoExecService {
         // LIVE positions only -- paper trades sitting open (from earlier testing, a different
         // mode, whatever) must never block a real order from being attempted.
         long openCount = positionRepo.countOpenLive();
-        int maxOpen = ((Number) getSettings().getOrDefault("maxOpenPositions", 1)).intValue();
+        int maxOpen = ((Number) getSettings(broker).getOrDefault("maxOpenPositions", 1)).intValue();
         if (openCount >= maxOpen) {
             result.put("status", "ERROR");
             result.put("message", "Already have " + openCount + "/" + maxOpen + " open positions. Close one first or raise Max Open Positions in Auto-Trade settings.");
@@ -1809,7 +1809,7 @@ public class OptionArbAutoExecService {
         }
         
         long openCount = positionRepo.countOpenLive();
-        int maxOpen = ((Number) getSettings().getOrDefault("maxOpenPositions", 1)).intValue();
+        int maxOpen = ((Number) getSettings(broker).getOrDefault("maxOpenPositions", 1)).intValue();
         if (openCount >= maxOpen) {
             result.put("status", "ERROR");
             result.put("message", "Already have " + openCount + "/" + maxOpen + " open positions.");
