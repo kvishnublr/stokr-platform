@@ -902,19 +902,19 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             if (action.contains("BUY CE +")) {
                 closePlan = List.of(
                     new PlannedLeg(pos.getCeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "ce"),
-                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "pe"),
+                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "pe"),
                     new PlannedLeg(pos.getFutSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "fut")
                 );
             } else if (action.contains("SELL CE +")) {
                 closePlan = List.of(
                     new PlannedLeg(pos.getCeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "ce"),
-                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "pe"),
+                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "pe"),
                     new PlannedLeg(pos.getFutSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "fut")
                 );
             } else {
                 closePlan = List.of(
                     new PlannedLeg(pos.getCeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "ce"),
-                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "pe"),
+                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "pe"),
                     new PlannedLeg(pos.getFutSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "fut")
                 );
             }
@@ -1159,18 +1159,29 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             // BUY-first: place BUY legs first, then hedge with sell legs.
             // CONVERSION: BUY CE, SELL FUT, SELL PE
             // REVERSAL: BUY PE, BUY FUT, SELL CE
+            double cePrice = opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() : 0.0;
+            double futPrice = opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() : 0.0;
+            double pePrice = opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() : 0.0;
+            
+            double ceBuyLimit = cePrice > 0 ? Math.ceil(cePrice * 1.05 * 20) / 20.0 : 0.0;
+            double ceSellLimit = cePrice > 0 ? Math.floor(cePrice * 0.95 * 20) / 20.0 : 0.0;
+            double futBuyLimit = futPrice > 0 ? Math.ceil(futPrice * 1.05 * 20) / 20.0 : 0.0;
+            double futSellLimit = futPrice > 0 ? Math.floor(futPrice * 0.95 * 20) / 20.0 : 0.0;
+            double peBuyLimit = pePrice > 0 ? Math.ceil(pePrice * 1.05 * 20) / 20.0 : 0.0;
+            double peSellLimit = pePrice > 0 ? Math.floor(pePrice * 0.95 * 20) / 20.0 : 0.0;
+
             List<PlannedLeg> orderPlan;
             if (isConversion) {
                 orderPlan = List.of(
-                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.BUY, ceQty, opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() * 1.05 : 0.0, "ce"),
-                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.SELL, futQty, opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() * 0.95 : 0.0, "fut"),
-                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.SELL, peQty, opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() * 0.95 : 0.0, "pe")
+                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.BUY, ceQty, ceBuyLimit, "ce"),
+                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.SELL, futQty, futSellLimit, "fut"),
+                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.SELL, peQty, peSellLimit, "pe")
                 );
             } else {
                 orderPlan = List.of(
-                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.BUY, peQty, opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() * 1.05 : 0.0, "pe"),
-                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.BUY, futQty, opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() * 1.05 : 0.0, "fut"),
-                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.SELL, ceQty, opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() * 0.95 : 0.0, "ce")
+                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.BUY, peQty, peBuyLimit, "pe"),
+                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.BUY, futQty, futBuyLimit, "fut"),
+                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.SELL, ceQty, ceSellLimit, "ce")
                 );
             }
 
