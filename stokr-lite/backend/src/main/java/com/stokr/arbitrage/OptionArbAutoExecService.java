@@ -450,10 +450,7 @@ public class OptionArbAutoExecService {
         if (!opps.isEmpty()) evaluateAndExecute(opps);
     }
 
-    public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) {
-        evaluateAndExecuteForMode(newOpps, profileKey, autoExecSettings.getOrDefault("PAPER", Map.of()));
-        evaluateAndExecuteForMode(newOpps, "LIVE", autoExecSettings.getOrDefault("LIVE", Map.of()));
-    }
+public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) {        for (String key : autoExecSettings.keySet()) {            if ("global".equalsIgnoreCase(key)) continue;            evaluateAndExecuteForMode(newOpps, key, autoExecSettings.getOrDefault(key, java.util.Map.of()));        }    }
     
 
     private void executePaperTrades(List<OptionArbOpportunity> newOpps, Map<String, Object> settings) {
