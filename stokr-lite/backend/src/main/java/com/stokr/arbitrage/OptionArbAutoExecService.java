@@ -206,7 +206,7 @@ public class OptionArbAutoExecService {
         }
 
         List<Map<String, Object>> legs = opp.getLegList();
-        boolean isMultiLeg = legs != null && !legs.isEmpty();
+        boolean isMultiLeg = legs != null && !legs.isEmpty() && !"BID_PARITY".equals(opp.getStrategyType());
 
         // Informational only -- logged so it's visible in Auto-Exec logs, but the manual
         // "Trade" button is user-initiated and should always actually reach the broker and
@@ -491,7 +491,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             oppRepo.save(opp);
 
             List<Map<String, Object>> legs = opp.getLegList();
-            boolean isMultiLeg = legs != null && !legs.isEmpty();
+            boolean isMultiLeg = legs != null && !legs.isEmpty() && !"BID_PARITY".equals(opp.getStrategyType());
 
             if (isMultiLeg) {
                 List<String> symbols = new ArrayList<>();
@@ -658,7 +658,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             if (openStrategyPos >= strategyMaxLots) continue;
             int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
             List<Map<String, Object>> legs = opp.getLegList();
-            boolean isMultiLeg = legs != null && !legs.isEmpty();
+            boolean isMultiLeg = legs != null && !legs.isEmpty() && !"BID_PARITY".equals(opp.getStrategyType());
 
             // CRITICAL: Check margin BEFORE every single trade
             double availableMargin = 0;
@@ -729,15 +729,6 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
      */
     @Scheduled(fixedDelayString = "30000", initialDelay = 30000)
     public synchronized void checkRollover() {
-        Map<String, Object> settings = getSettings();
-        boolean autoExitEnabled = Boolean.TRUE.equals(settings.get("autoExitEnabled"));
-        boolean stopLossEnabled = Boolean.TRUE.equals(settings.get("stopLossEnabled"));
-        if (!autoExitEnabled && !stopLossEnabled) return;
-
-        LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
-
-        double autoExitThresholdPct = ((Number) settings.getOrDefault("autoExitThresholdPct", 90.0)).doubleValue();
 
         List<LivePosition> openPositions = positionRepo.findAllOpen().stream()
                 .filter(p -> "OPEN".equals(p.getStatus()))
@@ -766,26 +757,8 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             return;
         }
 
-        String broker = (String) settings.getOrDefault("broker", "NAVIA");
-        boolean isPaper = "PAPER".equalsIgnoreCase(broker);
-        Long userId = null;
-        BrokerAccount account = null;
-        BrokerAdapter adapter = null;
-        if (!isPaper) {
-            try {
-                List<BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");
-                if (accounts.isEmpty()) return;
-                account = accounts.get(0);
-                userId = account.getUserId();
-                adapter = brokerService.getAdapter(broker);
-            } catch (Exception e) {
-                log.error("Rollover: broker setup failed: {}", e.getMessage());
-                return;
-            }
-        }
-
-        for (LivePosition pos : openPositions) {
-            boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
+for (LivePosition pos : openPositions) {            String broker = pos.getBroker() != null ? pos.getBroker() : "PAPER";            Map<String, Object> settings = getSettings(broker);            boolean autoExitEnabled = Boolean.TRUE.equals(settings.get("autoExitEnabled"));            boolean stopLossEnabled = Boolean.TRUE.equals(settings.get("stopLossEnabled"));            if (!autoExitEnabled && !stopLossEnabled) continue;            double autoExitThresholdPct = ((Number) settings.getOrDefault("autoExitThresholdPct", 90.0)).doubleValue();            boolean isPaper = "PAPER".equalsIgnoreCase(broker);            Long userId = null;            BrokerAccount account = null;            BrokerAdapter adapter = null;            if (!isPaper) {                try {                    List<BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");                    if (accounts.isEmpty()) continue;                    account = accounts.get(0);                    userId = account.getUserId();                    adapter = brokerService.getAdapter(broker);                } catch (Exception e) {                    log.error("Rollover: broker setup failed for {}: {}", broker, e.getMessage());                    continue;                }            }
+boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
 
             double pnl;
@@ -1827,7 +1800,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
         }
 
         java.util.List<Map<String, Object>> legs = opp.getLegList();
-        boolean isMultiLeg = legs != null && !legs.isEmpty();
+        boolean isMultiLeg = legs != null && !legs.isEmpty() && !"BID_PARITY".equals(opp.getStrategyType());
 
         boolean opened = isMultiLeg
                 ? executeMultiLegTrade(account, adapter, opp, lots, paramUserId, legs)

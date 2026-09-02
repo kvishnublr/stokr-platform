@@ -2201,7 +2201,7 @@ if (!"ALL".equalsIgnoreCase(mode)) {            positions = positions.stream().f
             int lots = body.get("lots") instanceof Number n ? Math.max(1, n.intValue()) : 1;
             String broker = (String) body.getOrDefault("broker", "PAPER");
             List<Map<String, Object>> legs = opp.getLegList();
-            boolean isMultiLeg = legs != null && !legs.isEmpty();
+            boolean isMultiLeg = legs != null && !legs.isEmpty() && !"BID_PARITY".equals(opp.getStrategyType());
 
             if (broker != null && !broker.isBlank() && !"PAPER".equalsIgnoreCase(broker)) {
                 // Real broker selected -- place an actual order via the same engine auto-exec
