@@ -4248,16 +4248,22 @@ function MarketClosedCandidates({ strategyType, reason }) {
                   <Th columnKey="topCostPerLot" className="text-right">Cost/Lot</Th>
                   <Th columnKey="topMaxProfit" className="text-right">Max Profit</Th>
                   <Th columnKey="topMaxLoss" className="text-right">Max Loss</Th>
-                  <Th columnKey="payoff" className="text-right">Payoff</Th>
+                  <Th columnKey="payoff" className="text-right">ROI %</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {sortedRows.map((r) => {
                   const payoff = r.topMaxLoss ? (r.topMaxProfit || 0) / Math.abs(r.topMaxLoss) : null;
+                  const costRatio = r.topMaxLoss && r.topMaxProfit ? Math.abs(r.topMaxLoss) / (Math.abs(r.topMaxLoss) + r.topMaxProfit) : 1;
                   return (
                     <tr key={r.id} className="hover:bg-slate-50">
                       <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{fmtTime(r.snapshotTime)}</td>
-                      <td className="px-2 py-1.5 font-bold text-slate-800">{r.underlying}</td>
+                      <td className="px-2 py-1.5 font-bold text-slate-800">
+                      {costRatio <= 0.2 ? <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-800 mr-1">🟢 Low</span> :
+                       costRatio <= 0.3 ? <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-100 text-yellow-800 mr-1">🟡 Med</span> :
+                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 text-rose-800 mr-1">🔴 High</span>}
+                      {r.underlying}
+                    </td>
                       <td className="px-2 py-1.5 text-right font-mono font-bold text-indigo-600">{r.candidateCount}</td>
                       <td className="px-2 py-1.5 font-mono text-slate-700">{r.topStrikes || '--'}</td>
                       <td className="px-2 py-1.5 text-slate-600">{r.topOptionType || '--'}</td>
@@ -4267,7 +4273,7 @@ function MarketClosedCandidates({ strategyType, reason }) {
                       <td className="px-2 py-1.5 text-right font-mono">{r.topCostPerLot != null ? `₹${Math.round(r.topCostPerLot).toLocaleString('en-IN')}` : '--'}</td>
                       <td className="px-2 py-1.5 text-right font-mono text-emerald-700">{r.topMaxProfit != null ? `₹${Math.round(r.topMaxProfit).toLocaleString('en-IN')}` : '--'}</td>
                       <td className="px-2 py-1.5 text-right font-mono text-red-600">{r.topMaxLoss != null ? `₹${Math.round(r.topMaxLoss).toLocaleString('en-IN')}` : '--'}</td>
-                      <td className="px-2 py-1.5 text-right font-mono font-bold text-sky-600">{payoff != null ? `${payoff.toFixed(2)}x` : '--'}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold text-sky-600">{payoff != null ? `${(payoff * 100).toFixed(1)}%` : '--'}</td>
                     </tr>
                   );
                 })}
@@ -5135,15 +5141,9 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex gap-3 mb-4 mt-2">
-            <button className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg shadow transition-colors flex items-center gap-2" onClick={() => updateSetting('condorMaxLots', 10)}>
-                🛡️ Deploy Conservative
-            </button>
-            <button className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-medium rounded-lg shadow transition-colors flex items-center gap-2" onClick={() => updateSetting('condorMaxLots', 5)}>
-                ⚡ Deploy Aggressive
-            </button>
-            <button className="px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg shadow transition-colors flex items-center gap-2" onClick={() => updateSetting('condorMaxLots', 8)}>
-                💎 Deploy Max ROI
-            </button>
+            <div className="px-3 py-1.5 bg-slate-100 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg shadow-sm flex items-center gap-2 cursor-help" title="Debit candidates cannot be auto-rolled. Please use the Iron Condor tab for full Auto-Roll & Risk Profiling.">
+                ⚠️ Note: To use Auto-Deploy & Risk Profiling presets, switch to the <b>Iron Condor</b> tab.
+            </div>
           </div>
           <h2 className="text-base font-bold text-slate-800">Cheap Condor Candidates</h2>
           <p className="text-xs text-slate-500">{candidates.length} candidates — cost ≤ {Math.round(maxCostRatio * 100)}% of width, sorted by model POP (highest first)</p>
