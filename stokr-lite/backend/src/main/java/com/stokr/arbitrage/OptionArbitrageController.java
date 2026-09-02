@@ -1393,7 +1393,7 @@ public class OptionArbitrageController {
         List<LivePosition> closed = livePositionRepo.findAllClosed().stream()
                 .filter(p -> p.getCurrentPnl() != null)
                 .filter(p -> {
-                    if ("ALL".equalsIgnoreCase(mode)) return true;
+                    if (mode == null || "ALL".equalsIgnoreCase(mode)) return true;
                     String posBroker = p.getBroker() != null ? p.getBroker() : "PAPER";
                     if ("LIVE".equalsIgnoreCase(mode)) return !"PAPER".equalsIgnoreCase(posBroker); return mode.equalsIgnoreCase(posBroker);
                 })
@@ -1975,7 +1975,7 @@ public class OptionArbitrageController {
         if (underlying != null && !underlying.isEmpty() && !"ALL".equalsIgnoreCase(underlying)) {
             positions = positions.stream().filter(p -> underlying.equalsIgnoreCase(p.getUnderlying())).toList();
         }
-if (!"ALL".equalsIgnoreCase(mode)) {            positions = positions.stream().filter(p -> {                String pb = p.getBroker() != null ? p.getBroker() : (p.getCeOrderId() != null && p.getCeOrderId().startsWith("PAPER") ? "PAPER" : "LIVE");                if ("LIVE".equalsIgnoreCase(mode)) return !"PAPER".equalsIgnoreCase(pb);                return mode.equalsIgnoreCase(pb);            }).toList();        }
+if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = positions.stream().filter(p -> {                String pb = p.getBroker() != null ? p.getBroker() : (p.getCeOrderId() != null && p.getCeOrderId().startsWith("PAPER") ? "PAPER" : "LIVE");                if ("LIVE".equalsIgnoreCase(mode)) return !"PAPER".equalsIgnoreCase(pb);                return mode.equalsIgnoreCase(pb);            }).toList();        }
 
         // Compute P&L for all positions
         List<String> symbols = new ArrayList<>();
