@@ -9,6 +9,13 @@ import java.util.*;
 
 @Service
 public class BoxSpreadService {
+    private boolean isLiquid(OptionChainService.OptionQuote q, int lotSize) {
+        if (q == null) return false;
+        if (q.volume <= 0) return false;
+        if (q.bidQty < lotSize || q.askQty < lotSize) return false;
+        return true;
+    }
+
 
     private static final Logger log = LoggerFactory.getLogger(BoxSpreadService.class);
 
@@ -121,7 +128,7 @@ public class BoxSpreadService {
                     OptionChainService.OptionQuote ce2 = quotes.get(ce2Key);
                     OptionChainService.OptionQuote pe2 = quotes.get(pe2Key);
 
-                    if (ce1 == null || pe1 == null || ce2 == null || pe2 == null) continue;
+                    if (!isLiquid(ce1, lotSize) || !isLiquid(pe1, lotSize) || !isLiquid(ce2, lotSize) || !isLiquid(pe2, lotSize)) continue;
 
                     // Require real live bid/ask -- no fallback to lastPrice. A missing quote
                     // (empty order book, illiquid strike, or market closed) must be skipped,
@@ -337,7 +344,7 @@ public class BoxSpreadService {
                         OptionChainService.OptionQuote pe1 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k1, "PE"));
                         OptionChainService.OptionQuote ce2 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k2, "CE"));
                         OptionChainService.OptionQuote pe2 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k2, "PE"));
-                        if (ce1 == null || pe1 == null || ce2 == null || pe2 == null) continue;
+                        if (!isLiquid(ce1, lotSize) || !isLiquid(pe1, lotSize) || !isLiquid(ce2, lotSize) || !isLiquid(pe2, lotSize)) continue;
                         if (ce1.ask <= 0 || pe1.bid <= 0 || ce2.bid <= 0 || pe2.ask <= 0) continue;
                         if (ce1.bid <= 0 || pe1.ask <= 0 || ce2.ask <= 0 || pe2.bid <= 0) continue;
 

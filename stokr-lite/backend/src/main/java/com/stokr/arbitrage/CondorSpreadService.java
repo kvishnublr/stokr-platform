@@ -20,6 +20,13 @@ import java.util.*;
  */
 @Service
 public class CondorSpreadService {
+    private boolean isLiquid(OptionChainService.OptionQuote q, int lotSize) {
+        if (q == null) return false;
+        if (q.volume <= 0) return false;
+        if (q.bidQty < lotSize || q.askQty < lotSize) return false;
+        return true;
+    }
+
 
     private static final Logger log = LoggerFactory.getLogger(CondorSpreadService.class);
     private static final double MIN_EDGE_AFTER_COSTS = 0.0;
@@ -147,7 +154,7 @@ public class CondorSpreadService {
                             OptionChainService.OptionQuote q2 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k2, optionType));
                             OptionChainService.OptionQuote q3 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k3, optionType));
                             OptionChainService.OptionQuote q4 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k4, optionType));
-                            if (q1 == null || q2 == null || q3 == null || q4 == null) continue;
+                            if (!isLiquid(q1, lotSize) || !isLiquid(q2, lotSize) || !isLiquid(q3, lotSize) || !isLiquid(q4, lotSize)) continue;
                             if (q1.ask <= 0 || q2.bid <= 0 || q3.bid <= 0 || q4.ask <= 0) continue;
 
                             double cost = q1.ask - q2.bid - q3.bid + q4.ask;

@@ -129,7 +129,7 @@ public class OptionChainService {
                 StringBuilder sb = new StringBuilder();
                 for (int j = 0; j < batch.size(); j++) {
                     if (j > 0) sb.append("&i=");
-                    sb.append("NFO:").append(batch.get(j));
+                    String item = batch.get(j); sb.append(item.startsWith("NFO:") ? item : "NFO:" + item);
                 }
 
                 String url = "https://api.kite.trade/quote?i=" + sb.toString();

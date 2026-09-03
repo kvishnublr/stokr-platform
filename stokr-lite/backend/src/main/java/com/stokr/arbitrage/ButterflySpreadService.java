@@ -19,6 +19,13 @@ import java.util.*;
  */
 @Service
 public class ButterflySpreadService {
+    private boolean isLiquid(OptionChainService.OptionQuote q, int lotSize) {
+        if (q == null) return false;
+        if (q.volume <= 0) return false;
+        if (q.bidQty < lotSize || q.askQty < lotSize) return false;
+        return true;
+    }
+
 
     private static final Logger log = LoggerFactory.getLogger(ButterflySpreadService.class);
     private static final double MIN_EDGE_AFTER_COSTS = 0.0;
@@ -142,7 +149,7 @@ public class ButterflySpreadService {
                             OptionChainService.OptionQuote q1 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k1, optionType));
                             OptionChainService.OptionQuote q2 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k2, optionType));
                             OptionChainService.OptionQuote q3 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k3, optionType));
-                            if (q1 == null || q2 == null || q3 == null) continue;
+                            if (!isLiquid(q1, lotSize) || !isLiquid(q2, lotSize) || !isLiquid(q3, lotSize)) continue;
                             if (q1.ask <= 0 || q2.bid <= 0 || q3.ask <= 0) continue;
 
                             double cost = q1.ask - 2 * q2.bid + q3.ask;
