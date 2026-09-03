@@ -3681,6 +3681,7 @@ function blackScholesPrice(S, K, t, r, v, type) {
 }
 
 
+
 function DetailedOpportunityExpandedRow({ item, executionBroker, setPendingLiveDeploy, title = "Signal Breakdown" }) {
   let oppToPass = item;
   if ((!Array.isArray(item.legList) || item.legList.length < 2) && typeof item.legs === 'string') {
@@ -3699,6 +3700,81 @@ function DetailedOpportunityExpandedRow({ item, executionBroker, setPendingLiveD
   }
   
   const hasLegs = Array.isArray(oppToPass.legList) && oppToPass.legList.length > 0;
+  const lotSize = Number(oppToPass.lotSize) > 0 ? Number(oppToPass.lotSize) : 1;
+  
+  const chart = useMemo(() => {
+    if (!hasLegs) return null;
+    const optionStrikes = [...new Set(oppToPass.legList.filter(l => String(l.optionType).toUpperCase() !== 'FUT')
+      .map(l => Number(l.strike)).filter(n => !isNaN(n)))].sort((a, b) => a - b);
+    if (optionStrikes.length === 0) return null;
+    const k1 = optionStrikes[0], k2 = optionStrikes[optionStrikes.length - 1];
+    const refPrice = oppToPass.spotPrice || oppToPass.futuresPrice || k1;
+    const cost = oppToPass.legList.reduce((s, leg) => {
+      const sign = leg.side === 'BUY' ? 1 : -1;
+      return s + sign * (Number(leg.price) || 0) * (Number(leg.qty) || 1);
+    }, 0);
+    const width = k2 > k1 ? k2 - k1 : Math.max(refPrice * 0.03, 1);
+    const lo = k1 - Math.max(width, 1) * 0.4, hi = k2 + Math.max(width, 1) * 0.4;
+    const steps = 150;
+    const points = [];
+    let minY = 0, maxY = 0;
+    for (let i = 0; i <= steps; i++) {
+      const x = lo + (hi - lo) * i / steps;
+      const payoff = oppToPass.legList.reduce((sum, leg) => {
+        const optType = String(leg.optionType).toUpperCase();
+        const sign = leg.side === 'BUY' ? 1 : -1;
+        if (optType === 'FUT') return sum + sign * x * (Number(leg.qty) || 1);
+        const strike = Number(leg.strike);
+        const isPe = optType === 'PE';
+        let val = 0;
+        if (oppToPass.strategyType === 'CALENDAR_SPREAD' && leg.symbol === oppToPass.farSymbol) {
+            const farT = Math.max(((oppToPass.farDte || 7) - (oppToPass.nearDte || 0)) / 365.0, 0.0027);
+            const farVol = (oppToPass.farIV || 20) / 100.0;
+            if (typeof blackScholesPrice !== 'undefined') val = blackScholesPrice(x, strike, farT, 0.07, farVol, isPe ? 'PE' : 'CE');
+        } else {
+            val = isPe ? Math.max(strike - x, 0) : Math.max(x - strike, 0);
+        }
+        return sum + sign * val * (Number(leg.qty) || 1);
+      }, 0);
+      const pnl = payoff - cost;
+      points.push({ x, y: pnl });
+      minY = Math.min(minY, pnl); maxY = Math.max(maxY, pnl);
+    }
+    const breakevens = [];
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1], b = points[i];
+      if ((a.y < 0 && b.y >= 0) || (a.y >= 0 && b.y < 0)) {
+        const t = a.y === b.y ? 0 : (0 - a.y) / (b.y - a.y);
+        breakevens.push(a.x + t * (b.x - a.x));
+      }
+    }
+    return { points, lo, hi, minY: Math.min(minY, 0), maxY: Math.max(maxY, 0), k1, k2, cost, breakevens };
+  }, [hasLegs, oppToPass.legList]);
+
+  let displayMaxProfit = oppToPass.maxProfit || oppToPass.edgeAfterCosts || (oppToPass.edgePoints * lotSize) || 0;
+  let displayMaxLoss = oppToPass.maxLoss || 0;
+  
+  if (chart) {
+      displayMaxProfit = chart.maxY * lotSize;
+      displayMaxLoss = chart.minY * lotSize;
+  }
+  
+  let riskReward = '--';
+  if (displayMaxProfit > 0 && displayMaxLoss < 0) {
+      riskReward = Math.abs(displayMaxProfit / displayMaxLoss).toFixed(2) + 'x';
+  } else if (displayMaxLoss >= 0) {
+      riskReward = 'Risk-Free';
+  }
+  
+  let computedPop = '> 90%';
+  if (oppToPass.confidence) {
+      computedPop = oppToPass.confidence.toFixed(1) + '%';
+  } else if (displayMaxLoss < -10) {
+      // Estimate POP if not risk free. 
+      // If we have no volatility, we can't do BS perfectly, so just show -- 
+      // unless it's a known strategy.
+      computedPop = '--';
+  }
   
   return (
     <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-4">
@@ -3742,19 +3818,19 @@ function DetailedOpportunityExpandedRow({ item, executionBroker, setPendingLiveD
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex flex-col justify-center">
             <span className="text-[10px] font-black text-emerald-600 uppercase mb-1">Max Profit</span>
-            <span className="text-lg font-black text-emerald-700">+{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(oppToPass.maxProfit || oppToPass.edgeAfterCosts || (oppToPass.edgePoints * oppToPass.lotSize) || 0)}</span>
+            <span className="text-lg font-black text-emerald-700">+{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(displayMaxProfit)}</span>
           </div>
           <div className="bg-red-50 border border-red-100 p-3 rounded-xl flex flex-col justify-center">
             <span className="text-[10px] font-black text-red-600 uppercase mb-1">Max Loss</span>
-            <span className="text-lg font-black text-red-700">{oppToPass.maxLoss ? '-' + new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(oppToPass.maxLoss) : (oppToPass.maxProfit ? 'Defined' : '--')}</span>
+            <span className="text-lg font-black text-red-700">{displayMaxLoss < 0 ? '-' + new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Math.abs(displayMaxLoss)) : (displayMaxProfit > 0 ? 'Risk-Free' : '--')}</span>
           </div>
           <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-col justify-center">
             <span className="text-[10px] font-black text-slate-500 uppercase mb-1">Risk:Reward</span>
-            <span className="text-sm font-black text-slate-800">{oppToPass.riskReward ? oppToPass.riskReward + 'x' : '--'}</span>
+            <span className="text-sm font-black text-slate-800">{riskReward}</span>
           </div>
           <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-col justify-center">
             <span className="text-[10px] font-black text-slate-500 uppercase mb-1">POP (Win Rate)</span>
-            <span className="text-sm font-black text-slate-800">{oppToPass.confidence ? oppToPass.confidence.toFixed(1) + '%' : '> 90%'}</span>
+            <span className="text-sm font-black text-slate-800">{computedPop}</span>
           </div>
         </div>
       </div>
@@ -3774,7 +3850,6 @@ function DetailedOpportunityExpandedRow({ item, executionBroker, setPendingLiveD
     </div>
   );
 }
-
 function ArbitrageSignalPayoffChart({ opp }) {
   const chartRef = useRef(null);
   const [hover, setHover] = useState(null);
