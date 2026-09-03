@@ -125,8 +125,10 @@ public class ButterflySpreadService {
                 int atmStrike = (int) (Math.round(spot / step) * step);
                 int lotSize = OptionChainService.getLotSize(u);
 
-                LocalDate monthlyExpiry = optionChainService.getMonthlyExpiryDate(u);
-                if (monthlyExpiry == null) continue;
+                for (java.time.LocalDate monthlyExpiry : java.util.stream.Stream.of(
+                optionChainService.getWeeklyExpiryDate(u),
+                optionChainService.getMonthlyExpiryDate(u)
+            ).filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.toList())) {
 
                 List<Integer> strikes = new ArrayList<>();
                 for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
@@ -237,7 +239,7 @@ public class ButterflySpreadService {
                         }
                     }
                 }
-            } catch (Exception e) {
+            } } catch (Exception e) {
                 log.error("Error scanning Butterfly candidates for {}: {}", u, e.getMessage(), e);
             }
         }
@@ -255,8 +257,10 @@ public class ButterflySpreadService {
             int atmStrike = (int) (Math.round(spotPrice / step) * step);
             int lotSize = OptionChainService.getLotSize(underlying);
 
-            LocalDate monthlyExpiry = optionChainService.getMonthlyExpiryDate(underlying);
-            if (monthlyExpiry == null) return opps;
+            for (java.time.LocalDate monthlyExpiry : java.util.stream.Stream.of(
+                optionChainService.getWeeklyExpiryDate(underlying),
+                optionChainService.getMonthlyExpiryDate(underlying)
+            ).filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.toList())) {
 
             List<Integer> strikes = new ArrayList<>();
             for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
@@ -292,7 +296,7 @@ public class ButterflySpreadService {
 
             log.info("Butterfly spread scan for {}: {} strikes, {} combos, {} opportunities (expiry={}, ATM={})",
                 underlying, strikes.size(), combos, opps.size(), monthlyExpiry, atmStrike);
-        } catch (Exception e) {
+        } } catch (Exception e) {
             log.error("Error calculating Butterfly Spread for {}: {}", underlying, e.getMessage(), e);
         }
         return opps;
