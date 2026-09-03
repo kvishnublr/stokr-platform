@@ -3680,6 +3680,101 @@ function blackScholesPrice(S, K, t, r, v, type) {
   }
 }
 
+
+function DetailedOpportunityExpandedRow({ item, executionBroker, setPendingLiveDeploy, title = "Signal Breakdown" }) {
+  let oppToPass = item;
+  if ((!Array.isArray(item.legList) || item.legList.length < 2) && typeof item.legs === 'string') {
+    const legStrs = item.legs.split('|').map(s => s.trim()).filter(Boolean);
+    const legList = legStrs.map(ls => {
+      let side = ls.includes('BUY') ? 'BUY' : 'SELL';
+      let type = ls.includes('CE') ? 'CE' : ls.includes('PE') ? 'PE' : 'FUT';
+      let priceMatch = ls.match(/@\s+([\d.]+)/);
+      let price = priceMatch ? Number(priceMatch[1]) : 0;
+      let strikeMatch = type !== 'FUT' ? ls.match(/(\d+(?:\.\d+)?)\s+(?:CE|PE)/) : null;
+      let strike = strikeMatch ? Number(strikeMatch[1]) : (type === 'FUT' ? 0 : item.strike);
+      if (price > 0) return { side, optionType: type, strike, price, qty: 1 };
+      return null;
+    }).filter(Boolean);
+    if (legList.length >= 2) oppToPass = { ...item, legList };
+  }
+  
+  const hasLegs = Array.isArray(oppToPass.legList) && oppToPass.legList.length > 0;
+  
+  return (
+    <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-4">
+      <span className="font-bold text-slate-800 text-xs uppercase block mb-1">{title}</span>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {/* Left Column: Execution Legs Table */}
+        <div className="bg-white border border-indigo-100 rounded-xl overflow-hidden shadow-sm">
+          <div className="bg-slate-50 border-b border-indigo-100 px-3 py-2 flex justify-between items-center">
+            <span className="text-xs font-black text-slate-600 uppercase">Execution Legs</span>
+            <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">{oppToPass.expiryDate || oppToPass.expiry || '--'}</span>
+          </div>
+          {hasLegs ? (
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50/50 text-slate-500 font-bold border-b border-slate-100">
+                <tr>
+                  <th className="py-2 px-3">Action</th>
+                  <th className="py-2 px-3">Strike</th>
+                  <th className="py-2 px-3">Type</th>
+                  <th className="py-2 px-3 text-right">Price</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-mono">
+                {oppToPass.legList.map((leg, i) => (
+                  <tr key={i} className={leg.side === 'BUY' ? 'bg-blue-50/30' : 'bg-red-50/30'}>
+                    <td className="py-2 px-3 font-bold text-slate-700">
+                      <span className={leg.side === 'BUY' ? 'text-blue-600' : 'text-red-600'}>{leg.side}</span>
+                    </td>
+                    <td className="py-2 px-3 font-bold text-slate-700">{leg.strike || 'FUT'}</td>
+                    <td className="py-2 px-3 font-bold text-slate-500">{leg.optionType}</td>
+                    <td className="py-2 px-3 font-bold text-slate-800 text-right">₹{leg.price.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="p-4 text-center text-xs text-slate-500 font-mono">{item.legs || `${item.action} on ${item.underlying} ${item.strike}`}</div>
+          )}
+        </div>
+
+        {/* Right Column: Risk/Reward Profile */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex flex-col justify-center">
+            <span className="text-[10px] font-black text-emerald-600 uppercase mb-1">Max Profit</span>
+            <span className="text-lg font-black text-emerald-700">+{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(oppToPass.maxProfit || oppToPass.edgeAfterCosts || (oppToPass.edgePoints * oppToPass.lotSize) || 0)}</span>
+          </div>
+          <div className="bg-red-50 border border-red-100 p-3 rounded-xl flex flex-col justify-center">
+            <span className="text-[10px] font-black text-red-600 uppercase mb-1">Max Loss</span>
+            <span className="text-lg font-black text-red-700">{oppToPass.maxLoss ? '-' + new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(oppToPass.maxLoss) : (oppToPass.maxProfit ? 'Defined' : '--')}</span>
+          </div>
+          <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-col justify-center">
+            <span className="text-[10px] font-black text-slate-500 uppercase mb-1">Risk:Reward</span>
+            <span className="text-sm font-black text-slate-800">{oppToPass.riskReward ? oppToPass.riskReward + 'x' : '--'}</span>
+          </div>
+          <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-col justify-center">
+            <span className="text-[10px] font-black text-slate-500 uppercase mb-1">POP (Win Rate)</span>
+            <span className="text-sm font-black text-slate-800">{oppToPass.confidence ? oppToPass.confidence.toFixed(1) + '%' : '> 90%'}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Payoff Chart */}
+      {hasLegs && (
+        <div className="mt-4">
+          <ArbitrageSignalPayoffChart opp={oppToPass} />
+        </div>
+      )}
+      
+      {setPendingLiveDeploy && (
+        <div className="flex justify-end pt-1">
+          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(item); }} className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold shadow-md">⚡ Deploy ({executionBroker})</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ArbitrageSignalPayoffChart({ opp }) {
   const chartRef = useRef(null);
   const [hover, setHover] = useState(null);
