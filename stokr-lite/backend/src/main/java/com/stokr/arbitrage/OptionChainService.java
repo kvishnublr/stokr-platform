@@ -45,7 +45,7 @@ public class OptionChainService {
         try {
             int atmStrike = getATMStrike(underlying, spotPrice);
             List<Integer> strikes = generateStrikes(atmStrike, underlying);
-            LocalDate expiryDate = getWeeklyExpiryDate(underlying);
+            LocalDate expiryDate = getMonthlyExpiryDate(underlying);
 
             double daysToExpiry = Duration.between(LocalDate.now().atStartOfDay(), expiryDate.atStartOfDay()).toDays();
             double yearsToExpiry = Math.max(daysToExpiry, 0.5) / 365.0;

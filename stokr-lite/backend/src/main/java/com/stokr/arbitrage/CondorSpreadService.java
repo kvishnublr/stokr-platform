@@ -124,21 +124,21 @@ public class CondorSpreadService {
                 int atmStrike = (int) (Math.round(spot / step) * step);
                 int lotSize = OptionChainService.getLotSize(u);
 
-                LocalDate weeklyExpiry = optionChainService.getWeeklyExpiryDate(u);
-                if (weeklyExpiry == null) continue;
+                LocalDate monthlyExpiry = optionChainService.getMonthlyExpiryDate(u);
+                if (monthlyExpiry == null) continue;
 
                 List<Integer> strikes = new ArrayList<>();
                 for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
 
                 List<String> instruments = new ArrayList<>();
                 for (int strike : strikes) {
-                    instruments.add(optionChainService.buildNfoSymbol(u, weeklyExpiry, strike, "CE"));
-                    instruments.add(optionChainService.buildNfoSymbol(u, weeklyExpiry, strike, "PE"));
+                    instruments.add(optionChainService.buildNfoSymbol(u, monthlyExpiry, strike, "CE"));
+                    instruments.add(optionChainService.buildNfoSymbol(u, monthlyExpiry, strike, "PE"));
                 }
                 Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
                 double yearsToExpiry = Math.max(
-                    java.time.Duration.between(LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays(), 0.5) / 365.0;
+                    java.time.Duration.between(LocalDate.now().atStartOfDay(), monthlyExpiry.atStartOfDay()).toDays(), 0.5) / 365.0;
 
                 int n = strikes.size();
                 for (int width = 1; width * 3 < n; width++) {
@@ -150,10 +150,10 @@ public class CondorSpreadService {
                         double w = k2 - k1;
 
                         for (String optionType : List.of("CE", "PE")) {
-                            OptionChainService.OptionQuote q1 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k1, optionType));
-                            OptionChainService.OptionQuote q2 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k2, optionType));
-                            OptionChainService.OptionQuote q3 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k3, optionType));
-                            OptionChainService.OptionQuote q4 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k4, optionType));
+                            OptionChainService.OptionQuote q1 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k1, optionType));
+                            OptionChainService.OptionQuote q2 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k2, optionType));
+                            OptionChainService.OptionQuote q3 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k3, optionType));
+                            OptionChainService.OptionQuote q4 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k4, optionType));
                             if (!isLiquid(q1, lotSize) || !isLiquid(q2, lotSize) || !isLiquid(q3, lotSize) || !isLiquid(q4, lotSize)) continue;
                             if (q1.ask <= 0 || q2.bid <= 0 || q3.bid <= 0 || q4.ask <= 0) continue;
 
@@ -220,8 +220,8 @@ public class CondorSpreadService {
                             m.put("pop", Math.round(pop * 1000.0) / 10.0);
                             m.put("impliedVol", Math.round(iv * 1000.0) / 10.0);
                             m.put("spotPrice", spot);
-                            m.put("daysToExpiry", java.time.Duration.between(LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays());
-                            m.put("expiryDate", weeklyExpiry.toString());
+                            m.put("daysToExpiry", java.time.Duration.between(LocalDate.now().atStartOfDay(), monthlyExpiry.atStartOfDay()).toDays());
+                            m.put("expiryDate", monthlyExpiry.toString());
                             m.put("legs", String.format("BUY %d %s @ %.1f | SELL %d %s @ %.1f | SELL %d %s @ %.1f | BUY %d %s @ %.1f",
                                 k1, optionType, q1.ask, k2, optionType, q2.bid, k3, optionType, q3.bid, k4, optionType, q4.ask));
                             m.put("legList", List.of(leg(k1, optionType, "BUY", 1, q1.ask), leg(k2, optionType, "SELL", 1, q2.bid),
@@ -247,16 +247,16 @@ public class CondorSpreadService {
             int atmStrike = (int) (Math.round(spotPrice / step) * step);
             int lotSize = OptionChainService.getLotSize(underlying);
 
-            LocalDate weeklyExpiry = optionChainService.getWeeklyExpiryDate(underlying);
-            if (weeklyExpiry == null) return opps;
+            LocalDate monthlyExpiry = optionChainService.getMonthlyExpiryDate(underlying);
+            if (monthlyExpiry == null) return opps;
 
             List<Integer> strikes = new ArrayList<>();
             for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
 
             List<String> instruments = new ArrayList<>();
             for (int strike : strikes) {
-                instruments.add(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, strike, "CE"));
-                instruments.add(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, strike, "PE"));
+                instruments.add(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, strike, "CE"));
+                instruments.add(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, strike, "PE"));
             }
             Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
@@ -271,22 +271,22 @@ public class CondorSpreadService {
                     int k4 = strikes.get(i + 3 * width);
                     double w = k2 - k1;
 
-                    OptionChainService.OptionQuote ce1 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k1, "CE"));
-                    OptionChainService.OptionQuote ce2 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k2, "CE"));
-                    OptionChainService.OptionQuote ce3 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k3, "CE"));
-                    OptionChainService.OptionQuote ce4 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k4, "CE"));
-                    OptionChainService.OptionQuote pe1 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k1, "PE"));
-                    OptionChainService.OptionQuote pe2 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k2, "PE"));
-                    OptionChainService.OptionQuote pe3 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k3, "PE"));
-                    OptionChainService.OptionQuote pe4 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k4, "PE"));
+                    OptionChainService.OptionQuote ce1 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k1, "CE"));
+                    OptionChainService.OptionQuote ce2 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k2, "CE"));
+                    OptionChainService.OptionQuote ce3 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k3, "CE"));
+                    OptionChainService.OptionQuote ce4 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k4, "CE"));
+                    OptionChainService.OptionQuote pe1 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k1, "PE"));
+                    OptionChainService.OptionQuote pe2 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k2, "PE"));
+                    OptionChainService.OptionQuote pe3 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k3, "PE"));
+                    OptionChainService.OptionQuote pe4 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k4, "PE"));
 
-                    checkCondor(opps, underlying, weeklyExpiry, k1, k2, k3, k4, w, "CE", ce1, ce2, ce3, ce4, lotSize, spotPrice, futuresPrice, step);
-                    checkCondor(opps, underlying, weeklyExpiry, k1, k2, k3, k4, w, "PE", pe1, pe2, pe3, pe4, lotSize, spotPrice, futuresPrice, step);
+                    checkCondor(opps, underlying, monthlyExpiry, k1, k2, k3, k4, w, "CE", ce1, ce2, ce3, ce4, lotSize, spotPrice, futuresPrice, step);
+                    checkCondor(opps, underlying, monthlyExpiry, k1, k2, k3, k4, w, "PE", pe1, pe2, pe3, pe4, lotSize, spotPrice, futuresPrice, step);
                 }
             }
 
             log.info("Condor spread scan for {}: {} strikes, {} combos, {} opportunities (expiry={}, ATM={})",
-                underlying, strikes.size(), combos, opps.size(), weeklyExpiry, atmStrike);
+                underlying, strikes.size(), combos, opps.size(), monthlyExpiry, atmStrike);
         } catch (Exception e) {
             log.error("Error calculating Condor Spread for {}: {}", underlying, e.getMessage(), e);
         }
