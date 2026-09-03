@@ -119,7 +119,20 @@ public class BidParityService {
 
         double[] spotFut = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
         double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
-        double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : 0; // DO NOT fall back to spot!
+        
+        // Fetch future quote to validate volume
+        double fut = 0;
+        long futVolume = 0;
+        OptionChainService.OptionQuote futQuote = optionChainService.fetchQuotes(List.of(futKey)).get(futKey.replace("NFO:", ""));
+        if (futQuote != null && futQuote.lastPrice > 0) {
+            fut = futQuote.lastPrice;
+            futVolume = futQuote.volume;
+        }
+
+        if (futVolume < MIN_VOLUME) {
+            log.info("Skipping {}: Future {} has insufficient volume {} (min {})", underlying, futKey, futVolume, MIN_VOLUME);
+            return results;
+        }
 
         Double lastFut = lastValidFut.get(underlying);
         if (lastFut != null && lastFut > 0 && fut > 0) {
@@ -133,7 +146,6 @@ public class BidParityService {
         if (fut > 0) lastValidFut.put(underlying, fut);
 
         if (spot <= 0 && fut > 0) spot = fut;
-        // if (fut <= 0 && spot > 0) fut = spot; // NEVER fall back FUT to SPOT for arbitrage!
 
         if (spot <= 0 || fut <= 0) {
             log.info("Skipping {}: spot={} or fut={} invalid", underlying, spot, fut);
@@ -219,13 +231,13 @@ public class BidParityService {
             if (isConvergent) {
                 edgePoints = parityDev1;
                 action = "BUY FUT + SELL CE + BUY PE";
-                legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s FUT @ %.1f",
-                    strike, ceQuote.bid, strike, peQuote.ask, underlying, fut);
+                legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s @ %.1f",
+                    strike, ceQuote.bid, strike, peQuote.ask, futKey, fut);
             } else {
                 edgePoints = parityDev2;
                 action = "BUY CE + SELL PE + SELL FUT";
-                legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %s FUT @ %.1f",
-                    strike, ceQuote.ask, strike, peQuote.bid, underlying, fut);
+                legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %s @ %.1f",
+                    strike, ceQuote.ask, strike, peQuote.bid, futKey, fut);
             }
 
             double grossEdge = edgePoints * lotSize;

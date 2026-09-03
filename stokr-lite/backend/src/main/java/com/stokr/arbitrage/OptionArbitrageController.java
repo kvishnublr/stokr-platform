@@ -686,6 +686,23 @@ public class OptionArbitrageController {
 
             if (riskReward >= 0.2 && netEdge > 0) {
                 Map<String, Object> opp = new LinkedHashMap<>();
+                
+                double width = putSell - putBuy; // Wing width
+                double widthMultiplier = width / step;
+                String riskProfile = "HIGH";
+                if (widthMultiplier >= 4) {
+                    riskProfile = "LOW";
+                } else if (widthMultiplier >= 2) {
+                    riskProfile = "MEDIUM";
+                }
+                
+                double estimatedMargin = 40000.0 * lotSize;
+                double roiPct = (netEdge / estimatedMargin) * 100.0;
+                
+                opp.put("riskProfile", riskProfile);
+                opp.put("roiPct", Math.round(roiPct * 100.0) / 100.0);
+                opp.put("estimatedMargin", estimatedMargin);
+                
                 opp.put("type", "IRON_CONDOR");
                 opp.put("underlying", underlying);
                 opp.put("strike", putSell);
@@ -1394,8 +1411,8 @@ public class OptionArbitrageController {
                 .filter(p -> p.getCurrentPnl() != null)
                 .filter(p -> {
                     if ("ALL".equalsIgnoreCase(mode)) return true;
-                    boolean isPaper = p.getBroker() == null || "PAPER".equalsIgnoreCase(p.getBroker());
-                    return "PAPER".equalsIgnoreCase(mode) == isPaper;
+                    String posBroker = p.getBroker() != null ? p.getBroker() : "PAPER";
+                    if ("LIVE".equalsIgnoreCase(mode)) return !"PAPER".equalsIgnoreCase(posBroker); return mode.equalsIgnoreCase(posBroker);
                 })
                 .filter(p -> {
                     if (startDate == null || endDate == null || p.getEnteredAt() == null) return true;
@@ -1975,13 +1992,7 @@ public class OptionArbitrageController {
         if (underlying != null && !underlying.isEmpty() && !"ALL".equalsIgnoreCase(underlying)) {
             positions = positions.stream().filter(p -> underlying.equalsIgnoreCase(p.getUnderlying())).toList();
         }
-        if ("PAPER".equalsIgnoreCase(mode) || "LIVE".equalsIgnoreCase(mode)) {
-            boolean wantPaper = "PAPER".equalsIgnoreCase(mode);
-            positions = positions.stream().filter(p -> {
-                boolean isPaper = p.getCeOrderId() != null && p.getCeOrderId().startsWith("PAPER");
-                return wantPaper == isPaper;
-            }).toList();
-        }
+if (!"ALL".equalsIgnoreCase(mode)) {            positions = positions.stream().filter(p -> {                String pb = p.getBroker() != null ? p.getBroker() : (p.getCeOrderId() != null && p.getCeOrderId().startsWith("PAPER") ? "PAPER" : "LIVE");                if ("LIVE".equalsIgnoreCase(mode)) return !"PAPER".equalsIgnoreCase(pb);                return mode.equalsIgnoreCase(pb);            }).toList();        }
 
         // Compute P&L for all positions
         List<String> symbols = new ArrayList<>();
@@ -2207,7 +2218,7 @@ public class OptionArbitrageController {
             int lots = body.get("lots") instanceof Number n ? Math.max(1, n.intValue()) : 1;
             String broker = (String) body.getOrDefault("broker", "PAPER");
             List<Map<String, Object>> legs = opp.getLegList();
-            boolean isMultiLeg = legs != null && !legs.isEmpty();
+            boolean isMultiLeg = legs != null && !legs.isEmpty() && !"BID_PARITY".equals(opp.getStrategyType());
 
             if (broker != null && !broker.isBlank() && !"PAPER".equalsIgnoreCase(broker)) {
                 // Real broker selected -- place an actual order via the same engine auto-exec

@@ -164,7 +164,13 @@ public class NaviaAdapter implements BrokerAdapter {
             String status = root.path("Status").asText("");
             String message = root.path("Message").asText("");
             if ("OK".equalsIgnoreCase(status)) {
-                String orderId = root.path("ResponceDataObject").path("cl_ord_id").asText(null);
+                JsonNode rdo = root.path("ResponceDataObject");
+                if (rdo != null && "Not_Ok".equalsIgnoreCase(rdo.path("status").asText(""))) {
+                    String rdoMsg = rdo.path("Message").asText(message);
+                    log.warn("Navia order REJECTED by backend: symbol={} message={}", request.symbol(), rdoMsg);
+                    return new BrokerOrderResponse(null, "REJECTED", rdoMsg);
+                }
+                String orderId = rdo.path("cl_ord_id").asText(null);
                 log.info("Navia order placed: {} -> {} (message={})", request.symbol(), orderId, message);
                 return new BrokerOrderResponse(orderId, "OPEN", message);
             }

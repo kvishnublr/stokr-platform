@@ -273,8 +273,8 @@ public class CondorSpreadService {
                     OptionChainService.OptionQuote pe3 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k3, "PE"));
                     OptionChainService.OptionQuote pe4 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k4, "PE"));
 
-                    checkCondor(opps, underlying, weeklyExpiry, k1, k2, k3, k4, w, "CE", ce1, ce2, ce3, ce4, lotSize, spotPrice, futuresPrice);
-                    checkCondor(opps, underlying, weeklyExpiry, k1, k2, k3, k4, w, "PE", pe1, pe2, pe3, pe4, lotSize, spotPrice, futuresPrice);
+                    checkCondor(opps, underlying, weeklyExpiry, k1, k2, k3, k4, w, "CE", ce1, ce2, ce3, ce4, lotSize, spotPrice, futuresPrice, step);
+                    checkCondor(opps, underlying, weeklyExpiry, k1, k2, k3, k4, w, "PE", pe1, pe2, pe3, pe4, lotSize, spotPrice, futuresPrice, step);
                 }
             }
 
@@ -291,7 +291,7 @@ public class CondorSpreadService {
                               int k1, int k2, int k3, int k4, double width, String optionType,
                               OptionChainService.OptionQuote q1, OptionChainService.OptionQuote q2,
                               OptionChainService.OptionQuote q3, OptionChainService.OptionQuote q4,
-                              int lotSize, double spot, double fut) {
+                              int lotSize, double spot, double fut, int step) {
         if (q1 == null || q2 == null || q3 == null || q4 == null) return;
         if (q1.bid <= 0 || q1.ask <= 0 || q2.bid <= 0 || q2.ask <= 0
             || q3.bid <= 0 || q3.ask <= 0 || q4.bid <= 0 || q4.ask <= 0) return;
@@ -308,7 +308,7 @@ public class CondorSpreadService {
                 String.format("BUY %d %s @ %.1f | SELL %d %s @ %.1f | SELL %d %s @ %.1f | BUY %d %s @ %.1f",
                     k1, optionType, q1.ask, k2, optionType, q2.bid, k3, optionType, q3.bid, k4, optionType, q4.ask),
                 List.of(leg(k1, optionType, "BUY", 1, q1.ask), leg(k2, optionType, "SELL", 1, q2.bid),
-                        leg(k3, optionType, "SELL", 1, q3.bid), leg(k4, optionType, "BUY", 1, q4.ask)));
+                        leg(k3, optionType, "SELL", 1, q3.bid), leg(k4, optionType, "BUY", 1, q4.ask)), step);
             return;
         }
 
@@ -323,7 +323,7 @@ public class CondorSpreadService {
                 String.format("SELL %d %s @ %.1f | BUY %d %s @ %.1f | BUY %d %s @ %.1f | SELL %d %s @ %.1f",
                     k1, optionType, q1.bid, k2, optionType, q2.ask, k3, optionType, q3.ask, k4, optionType, q4.bid),
                 List.of(leg(k1, optionType, "SELL", 1, q1.bid), leg(k2, optionType, "BUY", 1, q2.ask),
-                        leg(k3, optionType, "BUY", 1, q3.ask), leg(k4, optionType, "SELL", 1, q4.bid)));
+                        leg(k3, optionType, "BUY", 1, q3.ask), leg(k4, optionType, "SELL", 1, q4.bid)), step);
         }
     }
 
@@ -331,7 +331,7 @@ public class CondorSpreadService {
                                  int k1, int k2, int k3, int k4, double width, String optionType, String direction,
                                  double edgePoints, double stt, double turnover,
                                  int lotSize, double spot, double fut, String legs,
-                                 List<Map<String, Object>> legList) {
+                                 List<Map<String, Object>> legList, int step) {
         double grossEdge = edgePoints * lotSize;
 
         double brokerage = ArbitrageCosts.PER_LEG_BROKERAGE * 4;
@@ -357,6 +357,21 @@ public class CondorSpreadService {
         opp.edgeAfterCosts = Math.round(netEdge * 100.0) / 100.0;
         opp.daysToExpiry = java.time.Duration.between(LocalDate.now().atStartOfDay(), expiry.atStartOfDay()).toDays();
         opp.confidence = 95.0;
+        
+        double widthMultiplier = width / step;
+        String riskProfile = "HIGH";
+        if (widthMultiplier >= 4) {
+            riskProfile = "LOW";
+        } else if (widthMultiplier >= 2) {
+            riskProfile = "MEDIUM";
+        }
+        
+        java.math.BigDecimal estimatedMargin = new java.math.BigDecimal(40000.0 * lotSize);
+        java.math.BigDecimal roiPct = new java.math.BigDecimal((netEdge / estimatedMargin.doubleValue()) * 100.0);
+        
+        opp.riskProfile = riskProfile;
+        opp.roiPct = roiPct;
+        opp.estimatedMargin = estimatedMargin;
 
         Map<String, Double> costs = new LinkedHashMap<>();
         costs.put("stt", Math.round(stt * 100.0) / 100.0);

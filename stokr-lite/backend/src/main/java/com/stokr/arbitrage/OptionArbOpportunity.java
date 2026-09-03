@@ -100,6 +100,19 @@ public class OptionArbOpportunity {
 
     private String notes;
 
+
+    @Column(name = "risk_profile")
+    public String riskProfile;
+
+    @Column(name = "roi_pct")
+    public BigDecimal roiPct;
+
+    @Column(name = "estimated_margin")
+    public BigDecimal estimatedMargin;
+
+    @Column(name = "auto_roll_enabled")
+    private Boolean autoRollEnabled;
+
     private LocalDateTime createdAt;
 
     @Transient
@@ -186,6 +199,12 @@ public class OptionArbOpportunity {
         map.put("lotSize", lotSize);
         map.put("notes", notes);
         map.put("createdAt", createdAt != null ? createdAt.toString() : null);
+
+        if (riskProfile != null) map.put("riskProfile", riskProfile);
+        if (roiPct != null) map.put("roiPct", Math.round(roiPct.doubleValue() * 100.0) / 100.0);
+        if (estimatedMargin != null) map.put("estimatedMargin", estimatedMargin.doubleValue());
+        map.put("autoRollEnabled", autoRollEnabled != null ? autoRollEnabled : false);
+        
         var costs = getCostBreakdown();
         if (costs != null) map.put("costBreakdown", costs);
         var legs2 = getLegList();

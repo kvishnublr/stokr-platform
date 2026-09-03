@@ -128,12 +128,12 @@ public class OptionArbAutoExecService {
         return getSettings("PAPER");
     }
     public Map<String, Object> getSettings(String mode) {
-        String key = "LIVE".equalsIgnoreCase(mode) ? "LIVE" : "PAPER";
+        String key = mode != null ? mode.toUpperCase() : "PAPER";
         return new LinkedHashMap<>(autoExecSettings.getOrDefault(key, Map.of()));
     }
 
     public void updateSetting(String mode, String key, String value) {
-        String profileKey = "LIVE".equalsIgnoreCase(mode) ? "LIVE" : "PAPER";
+        String profileKey = mode != null ? mode.toUpperCase() : "PAPER";
         Map<String, Object> settings = autoExecSettings.computeIfAbsent(profileKey, k -> new ConcurrentHashMap<>());
         
         if ("enabled".equals(key)) settings.put("enabled", Boolean.parseBoolean(value));
@@ -206,7 +206,7 @@ public class OptionArbAutoExecService {
         }
 
         List<Map<String, Object>> legs = opp.getLegList();
-        boolean isMultiLeg = legs != null && !legs.isEmpty();
+        boolean isMultiLeg = legs != null && !legs.isEmpty() && !"BID_PARITY".equals(opp.getStrategyType());
 
         // Informational only -- logged so it's visible in Auto-Exec logs, but the manual
         // "Trade" button is user-initiated and should always actually reach the broker and
@@ -434,6 +434,12 @@ public class OptionArbAutoExecService {
                 if (pe instanceof Number n) opp.setPeEntryPrice(BigDecimal.valueOf(n.doubleValue()));
                 Object fut = m.get("futuresPrice");
                 if (fut instanceof Number n) opp.setFuturesPrice(BigDecimal.valueOf(n.doubleValue()));
+                Object est = m.get("estimatedMargin");
+                if (est instanceof Number n) opp.setEstimatedMargin(BigDecimal.valueOf(n.doubleValue()));
+                Object roi = m.get("roiPct");
+                if (roi instanceof Number n) opp.setRoiPct(BigDecimal.valueOf(n.doubleValue()));
+                Object risk = m.get("riskProfile");
+                if (risk instanceof String s) opp.setRiskProfile(s);
                 Object id = m.get("id");
                 if (id instanceof Number n) opp.setId(n.longValue());
                 Object legListObj = m.get("legList");
@@ -450,10 +456,7 @@ public class OptionArbAutoExecService {
         if (!opps.isEmpty()) evaluateAndExecute(opps);
     }
 
-    public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) {
-        evaluateAndExecuteForMode(newOpps, "PAPER", autoExecSettings.getOrDefault("PAPER", Map.of()));
-        evaluateAndExecuteForMode(newOpps, "LIVE", autoExecSettings.getOrDefault("LIVE", Map.of()));
-    }
+public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) {        for (String key : autoExecSettings.keySet()) {            if ("global".equalsIgnoreCase(key)) continue;            evaluateAndExecuteForMode(newOpps, key, autoExecSettings.getOrDefault(key, java.util.Map.of()));        }    }
     
 
     private void executePaperTrades(List<OptionArbOpportunity> newOpps, Map<String, Object> settings) {
@@ -467,7 +470,7 @@ public class OptionArbAutoExecService {
             if (!enabled) continue;
 
             double minEdge = ((Number) settings.getOrDefault(key + "MinEdge", 800.0)).doubleValue();
-            if (opp.getEdgeAfterCosts().doubleValue() < minEdge) continue;
+            if (opp.getEdgePoints().doubleValue() * getLotSize(opp.getUnderlying()) < minEdge) continue;
             if (opp.getExpiryDate() == null || opp.getStrike() == null) continue;
 
             if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
@@ -478,12 +481,12 @@ public class OptionArbAutoExecService {
             
             long openPaperStrategy = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
                     .filter(p -> "PAPER".equals(p.getBroker()) && opp.getStrategyType().equals(p.getStrategyType()))
-                    .count();
+                    .mapToInt(p -> p.getLots() != null ? p.getLots() : 1).sum();
             if (openPaperStrategy >= strategyMaxLots) continue;
             
             long openPaperTotal = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
                     .filter(p -> "PAPER".equals(p.getBroker()))
-                    .count();
+                    .mapToInt(p -> p.getLots() != null ? p.getLots() : 1).sum();
             if (openPaperTotal >= globalMaxLots) continue;
 
 
@@ -494,7 +497,7 @@ public class OptionArbAutoExecService {
             oppRepo.save(opp);
 
             List<Map<String, Object>> legs = opp.getLegList();
-            boolean isMultiLeg = legs != null && !legs.isEmpty();
+            boolean isMultiLeg = legs != null && !legs.isEmpty() && !"BID_PARITY".equals(opp.getStrategyType());
 
             if (isMultiLeg) {
                 List<String> symbols = new ArrayList<>();
@@ -579,7 +582,7 @@ public class OptionArbAutoExecService {
             return;
         }
         int maxPositions = (int) settings.getOrDefault("maxOpenPositions", 1);
-        long currentOpen = positionRepo.countOpenLive();
+        long currentOpen = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream().filter(p -> !"PAPER".equals(p.getBroker())).mapToInt(p -> p.getLots() != null ? p.getLots() : 1).sum();
         if (currentOpen >= maxPositions) return;
 
         Long userId;
@@ -646,7 +649,7 @@ public class OptionArbAutoExecService {
             if (!enabled) continue;
 
             double minEdge = ((Number) settings.getOrDefault(key + "MinEdge", 800.0)).doubleValue();
-            if (opp.getEdgeAfterCosts().doubleValue() < minEdge) continue;
+            if (opp.getEdgePoints().doubleValue() * getLotSize(opp.getUnderlying()) < minEdge) continue;
             if (opp.getExpiryDate() == null || opp.getStrike() == null) continue;
 
             if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(userId, "OPEN").stream()
@@ -661,7 +664,7 @@ public class OptionArbAutoExecService {
             if (openStrategyPos >= strategyMaxLots) continue;
             int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
             List<Map<String, Object>> legs = opp.getLegList();
-            boolean isMultiLeg = legs != null && !legs.isEmpty();
+            boolean isMultiLeg = legs != null && !legs.isEmpty() && !"BID_PARITY".equals(opp.getStrategyType());
 
             // CRITICAL: Check margin BEFORE every single trade
             double availableMargin = 0;
@@ -732,15 +735,6 @@ public class OptionArbAutoExecService {
      */
     @Scheduled(fixedDelayString = "30000", initialDelay = 30000)
     public synchronized void checkRollover() {
-        Map<String, Object> settings = getSettings();
-        boolean autoExitEnabled = Boolean.TRUE.equals(settings.get("autoExitEnabled"));
-        boolean stopLossEnabled = Boolean.TRUE.equals(settings.get("stopLossEnabled"));
-        if (!autoExitEnabled && !stopLossEnabled) return;
-
-        LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
-
-        double autoExitThresholdPct = ((Number) settings.getOrDefault("autoExitThresholdPct", 90.0)).doubleValue();
 
         List<LivePosition> openPositions = positionRepo.findAllOpen().stream()
                 .filter(p -> "OPEN".equals(p.getStatus()))
@@ -769,26 +763,8 @@ public class OptionArbAutoExecService {
             return;
         }
 
-        String broker = (String) settings.getOrDefault("broker", "NAVIA");
-        boolean isPaper = "PAPER".equalsIgnoreCase(broker);
-        Long userId = null;
-        BrokerAccount account = null;
-        BrokerAdapter adapter = null;
-        if (!isPaper) {
-            try {
-                List<BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");
-                if (accounts.isEmpty()) return;
-                account = accounts.get(0);
-                userId = account.getUserId();
-                adapter = brokerService.getAdapter(broker);
-            } catch (Exception e) {
-                log.error("Rollover: broker setup failed: {}", e.getMessage());
-                return;
-            }
-        }
-
-        for (LivePosition pos : openPositions) {
-            boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
+for (LivePosition pos : openPositions) {            String broker = pos.getBroker() != null ? pos.getBroker() : "PAPER";            Map<String, Object> settings = getSettings(broker);            boolean autoExitEnabled = Boolean.TRUE.equals(settings.get("autoExitEnabled"));            boolean stopLossEnabled = Boolean.TRUE.equals(settings.get("stopLossEnabled"));            if (!autoExitEnabled && !stopLossEnabled) continue;            double autoExitThresholdPct = ((Number) settings.getOrDefault("autoExitThresholdPct", 90.0)).doubleValue();            boolean isPaper = "PAPER".equalsIgnoreCase(broker);            Long userId = null;            BrokerAccount account = null;            BrokerAdapter adapter = null;            if (!isPaper) {                try {                    List<BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");                    if (accounts.isEmpty()) continue;                    account = accounts.get(0);                    userId = account.getUserId();                    adapter = brokerService.getAdapter(broker);                } catch (Exception e) {                    log.error("Rollover: broker setup failed for {}: {}", broker, e.getMessage());                    continue;                }            }
+boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
 
             double pnl;
@@ -932,19 +908,19 @@ public class OptionArbAutoExecService {
             if (action.contains("BUY CE +")) {
                 closePlan = List.of(
                     new PlannedLeg(pos.getCeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "ce"),
-                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "pe"),
+                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "pe"),
                     new PlannedLeg(pos.getFutSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "fut")
                 );
             } else if (action.contains("SELL CE +")) {
                 closePlan = List.of(
                     new PlannedLeg(pos.getCeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "ce"),
-                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "pe"),
+                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "pe"),
                     new PlannedLeg(pos.getFutSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "fut")
                 );
             } else {
                 closePlan = List.of(
                     new PlannedLeg(pos.getCeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "ce"),
-                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "pe"),
+                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "pe"),
                     new PlannedLeg(pos.getFutSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "fut")
                 );
             }
@@ -1081,7 +1057,7 @@ public class OptionArbAutoExecService {
                         .side(leg.side()).quantity(leg.quantity())
                         .price(leg.price())
                         .orderType(BrokerOrderRequest.OrderType.MARKET)
-                        .productType("NRML").build();
+                        .productType("MIS").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
                 if (!resp.isSuccess()) {
                     addLog("ROLLOVER", "LEG_FAIL", leg.legKey() + " " + leg.symbol() + ": " + resp.message());
@@ -1113,7 +1089,7 @@ public class OptionArbAutoExecService {
                         .side(leg.side()).quantity(leg.quantity())
                         .price(leg.price())
                         .orderType(BrokerOrderRequest.OrderType.MARKET)
-                        .productType("NRML").build();
+                        .productType("MIS").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
                 if (!resp.isSuccess()) {
                     addLog("ROLLOVER", "LEG_FAIL", leg.legKey() + " " + leg.symbol() + ": " + resp.message());
@@ -1189,18 +1165,29 @@ public class OptionArbAutoExecService {
             // BUY-first: place BUY legs first, then hedge with sell legs.
             // CONVERSION: BUY CE, SELL FUT, SELL PE
             // REVERSAL: BUY PE, BUY FUT, SELL CE
+            double cePrice = opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() : 0.0;
+            double futPrice = opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() : 0.0;
+            double pePrice = opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() : 0.0;
+            
+            double ceBuyLimit = cePrice > 0 ? Math.ceil(cePrice * 1.05 * 20) / 20.0 : 0.0;
+            double ceSellLimit = cePrice > 0 ? Math.floor(cePrice * 0.95 * 20) / 20.0 : 0.0;
+            double futBuyLimit = futPrice > 0 ? Math.ceil(futPrice * 1.05 * 20) / 20.0 : 0.0;
+            double futSellLimit = futPrice > 0 ? Math.floor(futPrice * 0.95 * 20) / 20.0 : 0.0;
+            double peBuyLimit = pePrice > 0 ? Math.ceil(pePrice * 1.05 * 20) / 20.0 : 0.0;
+            double peSellLimit = pePrice > 0 ? Math.floor(pePrice * 0.95 * 20) / 20.0 : 0.0;
+
             List<PlannedLeg> orderPlan;
             if (isConversion) {
                 orderPlan = List.of(
-                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.BUY, ceQty, opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() * 1.05 : 0.0, "ce"),
-                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.SELL, futQty, opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() * 0.95 : 0.0, "fut"),
-                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.SELL, peQty, opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() * 0.95 : 0.0, "pe")
+                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.BUY, ceQty, ceBuyLimit, "ce"),
+                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.SELL, futQty, futSellLimit, "fut"),
+                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.SELL, peQty, peSellLimit, "pe")
                 );
             } else {
                 orderPlan = List.of(
-                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.BUY, peQty, opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() * 1.05 : 0.0, "pe"),
-                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.BUY, futQty, opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() * 1.05 : 0.0, "fut"),
-                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.SELL, ceQty, opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() * 0.95 : 0.0, "ce")
+                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.BUY, peQty, peBuyLimit, "pe"),
+                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.BUY, futQty, futBuyLimit, "fut"),
+                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.SELL, ceQty, ceSellLimit, "ce")
                 );
             }
 
@@ -1218,7 +1205,7 @@ public class OptionArbAutoExecService {
                         .side(side)
                         .quantity(qty).price(price)
                         .orderType(price > 0 ? BrokerOrderRequest.OrderType.LIMIT : BrokerOrderRequest.OrderType.MARKET)
-                        .productType("NRML").build();
+                        .productType("MIS").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
 
                 if (!resp.isSuccess() || resp.orderId() == null || resp.orderId().isBlank()) {
@@ -1349,7 +1336,7 @@ public class OptionArbAutoExecService {
                         .side(leg.side())
                         .quantity(leg.quantity()).price(leg.price())
                         .orderType(orderType)
-                        .productType("NRML").build();
+                        .productType("MIS").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
 
                 if (!resp.isSuccess() || resp.orderId() == null || resp.orderId().isBlank()) {
@@ -1368,7 +1355,24 @@ public class OptionArbAutoExecService {
                 }
 
                 placedLegs.add(new PlacedLeg(leg, resp.orderId(), resp.status()));
-                try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+                
+                if (leg.side() == BrokerOrderRequest.Side.BUY) {
+                    addLog("EXEC", "WAITING", "Waiting for BUY leg " + leg.symbol() + " to fill for margin benefit...");
+                    boolean filled = awaitSingleLegFill(account, adapter, resp.orderId());
+                    if (!filled) {
+                        addLog("EXEC", "LEG_TIMEOUT", "BUY leg " + leg.symbol() + " did not fill in time. Cancelling & aborting.");
+                        cancelPendingLegs(account, adapter, placedLegs);
+                        boolean squaredOffOk = squareOffFilledLegs(account, adapter, placedLegs);
+                        position.setStatus("FAILED");
+                        position.setErrorMessage(leg.legKey() + " BUY leg timeout. " + (squaredOffOk ? "Confirmed flat." : "WARNING: unconfirmed flat."));
+                        position.setLegs(buildLegsJson(pairs, placedLegs));
+                        positionRepo.save(position);
+                        return false;
+                    }
+                    placedLegs.get(placedLegs.size() - 1).status = "COMPLETE";
+                } else {
+                    try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+                }
             }
 
             awaitFinalStatuses(account, adapter, placedLegs);
@@ -1535,6 +1539,20 @@ public class OptionArbAutoExecService {
 
     private record LegPair(Map<String, Object> spec, PlannedLeg planned) {}
 
+
+    private boolean awaitSingleLegFill(BrokerAccount account, BrokerAdapter adapter, String orderId) {
+        for (int poll = 0; poll < 10; poll++) {
+            try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+            try {
+                String status = adapter.getOrderStatus(account.getAccessToken(), orderId);
+                if (isCompleteStatus(status)) return true;
+                if ("REJECTED".equalsIgnoreCase(status) || "CANCELLED".equalsIgnoreCase(status)) return false;
+            } catch (Exception e) {
+                log.warn("Auto-exec: Failed to poll order status for {}", orderId);
+            }
+        }
+        return false;
+    }
     private void awaitFinalStatuses(BrokerAccount account, BrokerAdapter adapter, List<PlacedLeg> placedLegs) {
         for (int attempt = 0; attempt < 10; attempt++) {
             boolean allComplete = true;
@@ -1592,7 +1610,7 @@ public class OptionArbAutoExecService {
                     .symbol(symbol).exchange("NFO")
                     .side(closeSide).quantity(qty)
                     .price(0.0).orderType(BrokerOrderRequest.OrderType.MARKET)
-                    .productType("NRML").build();
+                    .productType("MIS").build();
             BrokerOrderResponse closeResp;
             try {
                 closeResp = adapter.placeOrder(account.getAccessToken(), closeReq);
@@ -1830,7 +1848,7 @@ public class OptionArbAutoExecService {
         }
 
         java.util.List<Map<String, Object>> legs = opp.getLegList();
-        boolean isMultiLeg = legs != null && !legs.isEmpty();
+        boolean isMultiLeg = legs != null && !legs.isEmpty() && !"BID_PARITY".equals(opp.getStrategyType());
 
         boolean opened = isMultiLeg
                 ? executeMultiLegTrade(account, adapter, opp, lots, paramUserId, legs)

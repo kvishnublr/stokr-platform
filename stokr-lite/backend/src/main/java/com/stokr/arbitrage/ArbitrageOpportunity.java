@@ -45,6 +45,10 @@ public class ArbitrageOpportunity {
      *  per-share number which reads as a mismatch even when the underlying math is identical. */
     public int lotSize;
 
+    public String riskProfile;
+    public java.math.BigDecimal roiPct;
+    public java.math.BigDecimal estimatedMargin;
+    
     public LocalDateTime detectedAt;
 
     public ArbitrageOpportunity() {
@@ -84,6 +88,9 @@ public class ArbitrageOpportunity {
             map.put("legList", legList);
         }
         map.put("lotSize", lotSize);
+        if (riskProfile != null) map.put("riskProfile", riskProfile);
+        if (roiPct != null) map.put("roiPct", Math.round(roiPct.doubleValue() * 100.0) / 100.0);
+        if (estimatedMargin != null) map.put("estimatedMargin", estimatedMargin.doubleValue());
         return map;
     }
 }

@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.*;
+import java.time.LocalDate;
 
 @Slf4j
 @Service
@@ -26,6 +27,9 @@ public class CondorAutoRollService {
         "MIDCPNIFTY", "NSE:NIFTY MID SELECT",
         "FINNIFTY", "NSE:NIFTY FIN SERVICE"
     );
+
+
+    private final Map<Long, LocalDateTime> breachTracker = new HashMap<>();
 
     @Scheduled(fixedDelayString = "60000", initialDelay = 50000)
     public synchronized void monitorAndRollCondors() {
@@ -70,10 +74,28 @@ public class CondorAutoRollService {
                 boolean putTested = spot <= k2;
                 boolean callTested = spot >= k3;
                 
-                if (putTested || callTested) {
-                    log.info("Condor Auto-Adjuster Triggered: {} spot at {}. K2={}, K3={}", pos.getUnderlying(), spot, k2, k3);
-                    autoExecService.addLog("CONDOR_ADJUST", "TRIGGERED", pos.getUnderlying() + " Iron Condor tested at " + spot + ". Rolling untested side.");
+                // Expiry Rollover Trigger: DTE < 1
+                long dte = pos.getExpiryDate() != null ? java.time.Duration.between(LocalDate.now().atStartOfDay(), pos.getExpiryDate().atStartOfDay()).toDays() : 999;
+                if (dte < 1) {
+                    log.info("Condor Auto-Rollover Triggered: {} expiring today. Rolling forward.", pos.getUnderlying());
+                    autoExecService.addLog("CONDOR_ADJUST", "EXPIRY_ROLL", pos.getUnderlying() + " DTE < 1. Auto-rolling forward.");
                     autoExecService.rollPosition(pos.getId());
+                    continue;
+                }
+
+                if (putTested || callTested) {
+                    breachTracker.putIfAbsent(pos.getId(), LocalDateTime.now());
+                    long minutesBreached = java.time.Duration.between(breachTracker.get(pos.getId()), LocalDateTime.now()).toMinutes();
+                    
+                    int requiredMinutes = ((Number) settings.getOrDefault(uKey + "AutoRollBreachMinutes", 5)).intValue();
+                    if (minutesBreached >= requiredMinutes) {
+                        log.info("Condor Auto-Adjuster Triggered: {} spot at {} breached for {} min. K2={}, K3={}", pos.getUnderlying(), spot, minutesBreached, k2, k3);
+                        autoExecService.addLog("CONDOR_ADJUST", "TRIGGERED", pos.getUnderlying() + " Condor tested at " + spot + " for " + minutesBreached + "m. Squaring off and shifting to ATM.");
+                        autoExecService.rollPosition(pos.getId()); // In autoExecService, this squares off and opens new ATM
+                        breachTracker.remove(pos.getId());
+                    }
+                } else {
+                    breachTracker.remove(pos.getId());
                 }
             } catch (Exception e) {
                 log.error("Condor Auto-Adjust monitor failed: {}", e.getMessage());
