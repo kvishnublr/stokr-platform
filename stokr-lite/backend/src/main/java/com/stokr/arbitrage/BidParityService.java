@@ -123,7 +123,7 @@ public class BidParityService {
         // Fetch future quote to validate volume
         double fut = 0;
         long futVolume = 0;
-        OptionChainService.OptionQuote futQuote = optionChainService.fetchQuotes(List.of(futKey)).get(futKey);
+        OptionChainService.OptionQuote futQuote = optionChainService.fetchQuotes(List.of(futKey)).get(futKey.replace("NFO:", ""));
         if (futQuote != null && futQuote.lastPrice > 0) {
             fut = futQuote.lastPrice;
             futVolume = futQuote.volume;

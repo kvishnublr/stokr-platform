@@ -156,6 +156,7 @@ function ToastCard({ t, dismiss }) {
 function LiveExecutionModal({ opp, executionBroker, onClose, onConfirm }) {
   const [loading, setLoading] = useState(true);
   const [funds, setFunds] = useState(null);
+  const [autoRoll, setAutoRoll] = useState(false);
   
   useEffect(() => {
     let active = true;
@@ -187,7 +188,7 @@ function LiveExecutionModal({ opp, executionBroker, onClose, onConfirm }) {
           <h3 className="text-white font-black text-lg flex items-center gap-2">
             {executionBroker === "PAPER" ? <span>📝 Deploy Paper Trade</span> : <span>⚡ Deploy Live Arbitrage</span>}
           </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition">✖</button>
+          <button onClick={onClose} className="text-slate-400 hover:text-white transition">✕</button>
         </div>
         
         <div className="p-5 space-y-5">
@@ -234,6 +235,20 @@ function LiveExecutionModal({ opp, executionBroker, onClose, onConfirm }) {
               </div>
             )}
           </div>
+          
+          <div className="pt-2 border-t border-slate-100">
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <div className="relative flex items-center justify-center mt-0.5">
+                <input type="checkbox" className="sr-only" checked={autoRoll} onChange={(e) => setAutoRoll(e.target.checked)} />
+                <div className={`w-10 h-5 rounded-full transition-colors ${autoRoll ? 'bg-indigo-600' : 'bg-slate-300'}`}></div>
+                <div className={`absolute left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${autoRoll ? 'translate-x-4' : 'translate-x-0'}`}></div>
+              </div>
+              <div>
+                <div className="text-sm font-bold text-slate-800">🔄 Enable Auto Roll</div>
+                <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">Automatically roll the position to the next expiry if the short strikes are tested.</div>
+              </div>
+            </label>
+          </div>
         </div>
 
         <div className="px-5 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
@@ -244,7 +259,7 @@ function LiveExecutionModal({ opp, executionBroker, onClose, onConfirm }) {
             Cancel
           </button>
           <button 
-            onClick={() => { onConfirm(); onClose(); }}
+            onClick={() => { onConfirm(autoRoll); onClose(); }}
             disabled={loading || isShortfall}
             className="px-5 py-2 font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
           >
@@ -5422,6 +5437,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
 /* 4. 0DTE IRON CONDOR VIEW */
 function IronCondorView({ handleExecuteInline, executionBroker }) {
   const [subTab, setSubTab] = useState('signals');
+  const [riskFilter, setRiskFilter] = useState('ALL');
   const [underlying, setUnderlying] = useState('ALL');
   const [minEdge, setMinEdge] = useState(300);
   const [customEdge, setCustomEdge] = useState('');
@@ -5518,6 +5534,14 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
     return sortAsc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
   });
 
+  const displayedOpps = useMemo(() => {
+    if (riskFilter === 'ALL') return sortedOpps;
+    if (riskFilter === 'LOW') return sortedOpps.filter(o => (o.wingWidth || 0) >= 150);
+    if (riskFilter === 'MEDIUM') return sortedOpps.filter(o => (o.wingWidth || 0) > 50 && (o.wingWidth || 0) < 150);
+    if (riskFilter === 'HIGH') return sortedOpps.filter(o => (o.wingWidth || 0) <= 50);
+    return sortedOpps;
+  }, [sortedOpps, riskFilter]);
+
   const ColHead = ({ col, children, right }) => (
     <th className={`px-2 py-2 cursor-pointer hover:text-indigo-600 select-none ${right ? 'text-right' : ''}`}
       onClick={() => { if (sortCol === col) setSortAsc(!sortAsc); else { setSortCol(col); setSortAsc(false); } }}>
@@ -5550,17 +5574,39 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="flex gap-3 mb-4 mt-2">
-                                <button className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg shadow transition-colors flex items-center gap-2" onClick={() => updateSetting('ironCondorMaxLots', 10)}>
-                                    🛡️ Deploy Conservative
-                                </button>
-                                <button className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-medium rounded-lg shadow transition-colors flex items-center gap-2" onClick={() => updateSetting('ironCondorMaxLots', 5)}>
-                                    ⚡ Deploy Aggressive
-                                </button>
-                                <button className="px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg shadow transition-colors flex items-center gap-2" onClick={() => updateSetting('ironCondorMaxLots', 8)}>
-                                    💎 Deploy Max ROI
-                                </button>
-                            </div><h2 className="text-base font-bold text-slate-800">0DTE Delta-Neutral Iron Condor Scanner</h2>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4 mt-4 w-full">
+            <div 
+              onClick={() => setRiskFilter('ALL')} 
+              className={`cursor-pointer p-3 border rounded-xl transition-all ${riskFilter === 'ALL' ? 'border-slate-800 bg-slate-900 shadow-md' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300'}`}
+            >
+              <div className={`font-black text-sm ${riskFilter === 'ALL' ? 'text-white' : 'text-slate-800'}`}>All Ranges</div>
+              <div className={`text-[10px] mt-0.5 leading-tight ${riskFilter === 'ALL' ? 'text-slate-400' : 'text-slate-500'}`}>Show all Iron Condors</div>
+            </div>
+            
+            <div 
+              onClick={() => setRiskFilter('LOW')} 
+              className={`cursor-pointer p-3 border rounded-xl transition-all ${riskFilter === 'LOW' ? 'border-emerald-500 bg-emerald-50 shadow-md' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-emerald-300'}`}
+            >
+              <div className={`font-black text-sm ${riskFilter === 'LOW' ? 'text-emerald-700' : 'text-slate-800'}`}>Wider Range</div>
+              <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">Width ≥ 150pt. Higher probability, lower max loss but lower credit.</div>
+            </div>
+
+            <div 
+              onClick={() => setRiskFilter('MEDIUM')} 
+              className={`cursor-pointer p-3 border rounded-xl transition-all ${riskFilter === 'MEDIUM' ? 'border-amber-500 bg-amber-50 shadow-md' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-amber-300'}`}
+            >
+              <div className={`font-black text-sm ${riskFilter === 'MEDIUM' ? 'text-amber-700' : 'text-slate-800'}`}>Medium Range</div>
+              <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">Width 50-150pt. Balanced risk and reward ratio.</div>
+            </div>
+
+            <div 
+              onClick={() => setRiskFilter('HIGH')} 
+              className={`cursor-pointer p-3 border rounded-xl transition-all ${riskFilter === 'HIGH' ? 'border-indigo-500 bg-indigo-50 shadow-md' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-indigo-300'}`}
+            >
+              <div className={`font-black text-sm ${riskFilter === 'HIGH' ? 'text-indigo-700' : 'text-slate-800'}`}>Narrow Range</div>
+              <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">Width ≤ 50pt. Highest ROI credit but easier to breach breakevens.</div>
+            </div>
+          </div><h2 className="text-base font-bold text-slate-800">0DTE Delta-Neutral Iron Condor Scanner</h2>
           <p className="text-xs text-slate-500">High-probability non-directional credit wing spreads with dynamic trailing stop loss</p>
         </div>
 
@@ -5604,49 +5650,72 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
         <div className="px-4 py-2 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-600">{sortedOpps.length} signals shown of {totalHistory.toLocaleString('en-IN')} total today</span>
+          <span className="text-xs font-bold text-slate-600">{displayedOpps.length} signals shown of {totalHistory.toLocaleString('en-IN')} total today</span>
         </div>
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning 0DTE Iron Condor spreads...</div>
-        ) : sortedOpps.length === 0 ? (
+        ) : displayedOpps.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No 0DTE Iron Condor setups meeting risk criteria for {underlying}</div>
         ) : (
           <div className="overflow-x-auto w-full">
             <table className="w-full text-xs text-left border-collapse">
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                 <tr>
-                  <ColHead col="scanTime">Time</ColHead>
-                  <ColHead col="underlying">Underlying</ColHead>
-                  <ColHead col="strike">Strike</ColHead>
-                  <ColHead col="action">Action / Legs</ColHead>
-                  <ColHead col="edgeAfterCosts" right>Edge ₹</ColHead>
-                  <th className="px-2 py-2 text-center">Status</th>
-                  <th className="px-2 py-2 text-center">Action</th>
+                  <ColHead col="scanTime">Asset & Time</ColHead>
+                  <ColHead col="strike">Strategy Type</ColHead>
+                  <ColHead col="confidence">Risk / Range</ColHead>
+                  <ColHead col="edgeAfterCosts" right>Edge / Premium</ColHead>
+                  <th className="px-3 py-3 text-center">Status</th>
+                  <th className="px-3 py-3 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {sortedOpps.map((opp, idx) => {
+                {displayedOpps.map((opp, idx) => {
                   const isExp = expandedId === opp.id;
                   const posStatus = opp.id && icStatusMap[String(opp.id)] ? String(icStatusMap[String(opp.id)]).toUpperCase() : null;
                   const st = posStatus || String(opp.status || 'RUNNING').toUpperCase();
                   const stColor = st === 'RUNNING' || st === 'OPEN' || st === 'DETECTED' || st === 'EXECUTING' ? 'bg-blue-100 text-blue-700' : st === 'EXITED' || st === 'CLOSED' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500';
-                  const pnlVal = icPnlMap[String(opp.id)] != null ? Number(icPnlMap[String(opp.id)]) : null;
                   const edge = Number(opp.edgeAfterCosts) || 0;
+                  
+                  let beRange = "N/A";
+                  if (opp.legList && opp.legList.length === 4) {
+                      const strikes = opp.legList.map(l => Number(l.strike)).sort((a,b)=>a-b);
+                      if (strikes.length === 4) {
+                          const credit = Number(opp.credit) || 0;
+                          const beLower = strikes[1] - credit;
+                          const beUpper = strikes[2] + credit;
+                          beRange = `${beLower.toFixed(0)} — ${beUpper.toFixed(0)}`;
+                      }
+                  }
+                  
                   return (
                     <React.Fragment key={opp.id || idx}>
                       <tr onClick={() => setExpandedId(isExp ? null : opp.id)}
                         className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}>
-                        <td className="px-2 py-1.5 text-slate-600 font-mono whitespace-nowrap">{fmtTime(opp.scanTime)}</td>
-                        <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
-                        <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{opp.expiryDate || opp.expiry || '--'}</td>
-                        <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
-                        <td className="px-2 py-1.5 font-mono text-xs text-slate-600 max-w-[200px] truncate" title={opp.action}>{opp.action}</td>
-                        <td className={`px-2 py-1.5 text-right font-mono font-bold ${edge >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{edge >= 0 ? '+' : ''}₹{Math.round(edge)}</td>
-                        <td className="px-2 py-1.5 text-center"><span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${stColor}`}>{st}</span></td>
-                        <td className="px-2 py-1.5 text-center">
+                        <td className="px-3 py-3">
+                          <div className="font-bold text-slate-800 text-sm">{opp.underlying}</div>
+                          <div className="text-slate-500 font-mono text-[10px]">Exp: {(opp.expiryDate || opp.expiry || '--').split("-").reverse().slice(0, 2).join("-")}</div>
+                          <div className="text-slate-400 font-mono text-[10px]">T: {fmtTime(opp.scanTime)}</div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="font-bold text-indigo-700 text-sm">Iron Condor {opp.strike}</div>
+                          <div className="text-slate-600 font-mono text-[10px] mt-0.5">Width: {opp.wingWidth} | R:R: {opp.riskReward}x</div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="text-slate-700 font-bold text-xs"><span className="text-slate-400">BE:</span> {beRange}</div>
+                          <div className="text-[10px] mt-0.5 font-bold flex items-center gap-1"><span className="text-slate-400">POP:</span> <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-[9px]">{opp.confidence ? opp.confidence.toFixed(1) : 95.0}%</span></div>
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <div className={`font-mono font-black text-sm ${edge >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{edge >= 0 ? '+' : ''}₹{Math.round(edge)}</div>
+                          <div className="text-slate-500 font-mono text-[10px] mt-0.5">Credit: {opp.credit ? opp.credit.toFixed(1) : '--'} pt</div>
+                        </td>
+                        <td className="px-3 py-3 text-center align-middle">
+                          <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${stColor}`}>{st}</span>
+                        </td>
+                        <td className="px-3 py-3 text-center align-middle">
                           <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
-                            className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded shadow-sm">
-                            Execute
+                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-md transition-colors">
+                            Deploy
                           </button>
                         </td>
                       </tr>
@@ -5696,7 +5765,6 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
   );
 }
 
-/* 5. CASH SURGE VIEW */
 function CashSurgeView({ handleExecuteInline, executionBroker }) {
   const [expandedId, setExpandedId] = useState(null);
 
@@ -7310,15 +7378,11 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                         <tr className="bg-indigo-50/40 border-b border-indigo-100">
                           <td colSpan={12} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Historical Signal Audit Breakdown:</span>
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
-                                {item.legs || `${item.action} on ${item.underlying} ${item.strike}`}
-                              </p>
+                              <span className="font-bold text-slate-800 text-xs uppercase block mb-3">Historical Signal Audit Breakdown</span>
+                              
                               {(() => {
                                 let oppToPass = item;
                                 if ((!Array.isArray(item.legList) || item.legList.length < 2) && typeof item.legs === 'string') {
-                                  // Synthesize legList from the legs string
-                                  // e.g. BUY 15000 CE @ 17.0 | SELL 15000 PE @ 150.6 | SELL MIDCPNIFTY FUT @ 14876.7
                                   const legStrs = item.legs.split('|').map(s => s.trim()).filter(Boolean);
                                   const legList = legStrs.map(ls => {
                                     let side = ls.includes('BUY') ? 'BUY' : 'SELL';
@@ -7327,22 +7391,80 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                                     let price = priceMatch ? Number(priceMatch[1]) : 0;
                                     let strikeMatch = type !== 'FUT' ? ls.match(/(\d+(?:\.\d+)?)\s+(?:CE|PE)/) : null;
                                     let strike = strikeMatch ? Number(strikeMatch[1]) : (type === 'FUT' ? 0 : item.strike);
-                                    
-                                    if (price > 0) {
-                                      return { side, optionType: type, strike, price, qty: 1 };
-                                    }
+                                    if (price > 0) return { side, optionType: type, strike, price, qty: 1 };
                                     return null;
                                   }).filter(Boolean);
-                                  
-                                  if (legList.length >= 2) {
-                                    oppToPass = { ...item, legList };
-                                  }
+                                  if (legList.length >= 2) oppToPass = { ...item, legList };
                                 }
                                 
-                                if (Array.isArray(oppToPass.legList) && oppToPass.legList.length >= 2) {
-                                  return <ArbitrageSignalPayoffChart opp={oppToPass} />;
-                                }
-                                return null;
+                                const hasLegs = Array.isArray(oppToPass.legList) && oppToPass.legList.length > 0;
+                                
+                                return (
+                                  <div className="space-y-4">
+                                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                      {/* Left Column: Execution Legs Table */}
+                                      <div className="bg-white border border-indigo-100 rounded-xl overflow-hidden shadow-sm">
+                                        <div className="bg-slate-50 border-b border-indigo-100 px-3 py-2 flex justify-between items-center">
+                                          <span className="text-xs font-black text-slate-600 uppercase">Execution Legs</span>
+                                          <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">{oppToPass.expiryDate || oppToPass.expiry || '--'}</span>
+                                        </div>
+                                        {hasLegs ? (
+                                          <table className="w-full text-left text-xs">
+                                            <thead className="bg-slate-50/50 text-slate-500 font-bold border-b border-slate-100">
+                                              <tr>
+                                                <th className="py-2 px-3">Action</th>
+                                                <th className="py-2 px-3">Strike</th>
+                                                <th className="py-2 px-3">Type</th>
+                                                <th className="py-2 px-3 text-right">Price</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 font-mono">
+                                              {oppToPass.legList.map((leg, i) => (
+                                                <tr key={i} className={leg.side === 'BUY' ? 'bg-blue-50/30' : 'bg-red-50/30'}>
+                                                  <td className="py-2 px-3 font-bold text-slate-700">
+                                                    <span className={leg.side === 'BUY' ? 'text-blue-600' : 'text-red-600'}>{leg.side}</span>
+                                                  </td>
+                                                  <td className="py-2 px-3 font-bold text-slate-700">{leg.strike || 'FUT'}</td>
+                                                  <td className="py-2 px-3 font-bold text-slate-500">{leg.optionType}</td>
+                                                  <td className="py-2 px-3 font-bold text-slate-800 text-right">₹{leg.price.toFixed(2)}</td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        ) : (
+                                          <div className="p-4 text-center text-xs text-slate-500 font-mono">{item.legs || `${item.action} on ${item.underlying} ${item.strike}`}</div>
+                                        )}
+                                      </div>
+
+                                      {/* Right Column: Risk/Reward Profile */}
+                                      <div className="grid grid-cols-2 gap-3">
+                                        <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex flex-col justify-center">
+                                          <span className="text-[10px] font-black text-emerald-600 uppercase mb-1">Max Profit</span>
+                                          <span className="text-lg font-black text-emerald-700">+{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(oppToPass.maxProfit || oppToPass.edgeAfterCosts || 0)}</span>
+                                        </div>
+                                        <div className="bg-red-50 border border-red-100 p-3 rounded-xl flex flex-col justify-center">
+                                          <span className="text-[10px] font-black text-red-600 uppercase mb-1">Max Loss</span>
+                                          <span className="text-lg font-black text-red-700">{oppToPass.maxLoss ? '-' + new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(oppToPass.maxLoss) : 'Defined'}</span>
+                                        </div>
+                                        <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-col justify-center">
+                                          <span className="text-[10px] font-black text-slate-500 uppercase mb-1">Risk:Reward</span>
+                                          <span className="text-sm font-black text-slate-800">{oppToPass.riskReward ? oppToPass.riskReward + 'x' : '--'}</span>
+                                        </div>
+                                        <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-col justify-center">
+                                          <span className="text-[10px] font-black text-slate-500 uppercase mb-1">POP (Win Rate)</span>
+                                          <span className="text-sm font-black text-slate-800">{oppToPass.confidence ? oppToPass.confidence.toFixed(1) + '%' : '> 90%'}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Payoff Chart */}
+                                    {hasLegs && (
+                                      <div className="mt-4">
+                                        <ArbitrageSignalPayoffChart opp={oppToPass} />
+                                      </div>
+                                    )}
+                                  </div>
+                                );
                               })()}
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(item); }} className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold shadow-md">⚡ Deploy ({executionBroker})

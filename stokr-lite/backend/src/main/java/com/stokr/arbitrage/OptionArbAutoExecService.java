@@ -434,6 +434,12 @@ public class OptionArbAutoExecService {
                 if (pe instanceof Number n) opp.setPeEntryPrice(BigDecimal.valueOf(n.doubleValue()));
                 Object fut = m.get("futuresPrice");
                 if (fut instanceof Number n) opp.setFuturesPrice(BigDecimal.valueOf(n.doubleValue()));
+                Object est = m.get("estimatedMargin");
+                if (est instanceof Number n) opp.setEstimatedMargin(BigDecimal.valueOf(n.doubleValue()));
+                Object roi = m.get("roiPct");
+                if (roi instanceof Number n) opp.setRoiPct(BigDecimal.valueOf(n.doubleValue()));
+                Object risk = m.get("riskProfile");
+                if (risk instanceof String s) opp.setRiskProfile(s);
                 Object id = m.get("id");
                 if (id instanceof Number n) opp.setId(n.longValue());
                 Object legListObj = m.get("legList");
