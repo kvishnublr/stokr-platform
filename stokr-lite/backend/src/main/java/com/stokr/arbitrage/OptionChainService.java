@@ -114,7 +114,7 @@ public class OptionChainService {
         return null;
     }
 
-    public Map<String, OptionQuote> fetchQuotes(List<String> instruments) {
+    public synchronized Map<String, OptionQuote> fetchQuotes(List<String> instruments) {
         Map<String, OptionQuote> quotes = new ConcurrentHashMap<>();
         if (instruments == null || instruments.isEmpty()) return quotes;
 
