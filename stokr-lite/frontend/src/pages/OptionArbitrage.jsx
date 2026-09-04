@@ -2063,7 +2063,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const [sortCol, setSortCol] = useState('scanTime');
   const [sortAsc, setSortAsc] = useState(false);
   const [histPage, setHistPage] = useState(0);
-  const PAGE_SIZE = 200;
+  const PAGE_SIZE = 2500;
 
   const { data: livePositionsData } = useQuery({
     queryKey: ['live-positions-global-cache'],
@@ -2470,7 +2470,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const [sortCol, setSortCol] = useState('scanTime');
   const [sortAsc, setSortAsc] = useState(false);
   const [histPage, setHistPage] = useState(0);
-  const PAGE_SIZE = 200;
+  const PAGE_SIZE = 2500;
 
   const { data: liveData, isLoading } = useQuery({
     queryKey: ['box-spread-scan', underlying],
@@ -2893,7 +2893,7 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
   const [sortCol, setSortCol] = useState('scanTime');
   const [sortAsc, setSortAsc] = useState(false);
   const [histPage, setHistPage] = useState(0);
-  const PAGE_SIZE = 200;
+  const PAGE_SIZE = 2500;
 
   const { data: liveData, isLoading } = useQuery({
     queryKey: ['vertical-spread-scan', underlying],
@@ -4054,7 +4054,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
   const [sortCol, setSortCol] = useState('scanTime');
   const [sortAsc, setSortAsc] = useState(false);
   const [histPage, setHistPage] = useState(0);
-  const PAGE_SIZE = 200;
+  const PAGE_SIZE = 2500;
 
   const { data: liveData, isLoading } = useQuery({
     queryKey: ['butterfly-spread-scan', underlying],
@@ -4916,7 +4916,7 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
   const [sortCol, setSortCol] = useState('scanTime');
   const [sortAsc, setSortAsc] = useState(false);
   const [histPage, setHistPage] = useState(0);
-  const PAGE_SIZE = 200;
+  const PAGE_SIZE = 2500;
 
   const { data: liveData, isLoading } = useQuery({
     queryKey: ['condor-spread-scan', underlying],
@@ -5615,7 +5615,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
   const [sortCol, setSortCol] = useState('scanTime');
   const [sortAsc, setSortAsc] = useState(false);
   const [histPage, setHistPage] = useState(0);
-  const PAGE_SIZE = 200;
+  const PAGE_SIZE = 2500;
 
   const { data: liveData, isLoading } = useQuery({
     queryKey: ['iron-condor-scan', underlying],
