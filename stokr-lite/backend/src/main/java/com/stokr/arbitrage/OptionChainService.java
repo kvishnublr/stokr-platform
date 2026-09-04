@@ -15,6 +15,13 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class OptionChainService {
+
+    private static class CachedQuote {
+        long timestamp;
+        OptionQuote quote;
+        CachedQuote(long t, OptionQuote q) { this.timestamp = t; this.quote = q; }
+    }
+    private final ConcurrentHashMap<String, CachedQuote> globalQuoteCache = new ConcurrentHashMap<>();
     private final java.util.Map<String, String> resolvedSymbolCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     private static final Logger log = LoggerFactory.getLogger(OptionChainService.class);
@@ -111,6 +118,24 @@ public class OptionChainService {
         Map<String, OptionQuote> quotes = new ConcurrentHashMap<>();
         if (instruments == null || instruments.isEmpty()) return quotes;
 
+        long now = System.currentTimeMillis();
+        List<String> toFetch = new ArrayList<>();
+        
+        for (String inst : instruments) {
+            String key = inst.startsWith("NFO:") ? inst : "NFO:" + inst;
+            CachedQuote cq = globalQuoteCache.get(key);
+            if (cq != null && (now - cq.timestamp) < 12000) { // 12 seconds cache
+                quotes.put(key, cq.quote);
+                quotes.put(key.replace("NFO:", ""), cq.quote);
+            } else {
+                toFetch.add(inst);
+            }
+        }
+        
+        if (toFetch.isEmpty()) {
+            return quotes;
+        }
+
         try {
             ZerodhaTokenManager.ZerodhaAuth auth = tokenManager.getCurrentAuth();
             String token = auth != null ? auth.getAccessToken() : null;
@@ -120,7 +145,7 @@ public class OptionChainService {
                 return quotes;
             }
 
-            List<String> uniqueInstruments = new ArrayList<>(new LinkedHashSet<>(instruments));
+            List<String> uniqueInstruments = new ArrayList<>(new LinkedHashSet<>(toFetch));
 
             for (int i = 0; i < uniqueInstruments.size(); i += 100) {
                 int end = Math.min(i + 100, uniqueInstruments.size());
