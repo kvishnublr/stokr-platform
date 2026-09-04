@@ -24,6 +24,14 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/option-arbitrage")
 public class OptionArbitrageController {
 
+    private static class SwrCacheEntry {
+        long timestamp;
+        ResponseEntity<Map<String, Object>> response;
+        volatile boolean isUpdating;
+        SwrCacheEntry(long t, ResponseEntity<Map<String, Object>> r) { timestamp = t; response = r; isUpdating = false; }
+    }
+    private final ConcurrentHashMap<String, SwrCacheEntry> topPicksCache = new ConcurrentHashMap<>();
+
     private static final Logger log = LoggerFactory.getLogger(OptionArbitrageController.class);
 
     private final OptionChainService optionChainService;
@@ -631,7 +639,7 @@ public class OptionArbitrageController {
         int lotSize = OptionChainService.getLotSize(underlying);
 
         List<Integer> strikes = new ArrayList<>();
-        for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
+        for (int i = -12; i <= 12; i++) strikes.add(atmStrike + i * step);
 
         List<String> instruments = new ArrayList<>();
         for (int s : strikes) {
@@ -640,7 +648,7 @@ public class OptionArbitrageController {
         }
         Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
-        for (int wingWidth = 1; wingWidth <= 3; wingWidth++) {
+        for (int wingWidth = 1; wingWidth <= 8; wingWidth++) {
             int putSell = atmStrike - wingWidth * step;
             int callSell = atmStrike + wingWidth * step;
             int putBuy = putSell - step;
@@ -1265,7 +1273,9 @@ public class OptionArbitrageController {
                                         OptionChainService.OptionQuote ceQ = ceSym != null ? bpQuotes.get(ceSym) : null;
                                         OptionChainService.OptionQuote peQ = peSym != null ? bpQuotes.get(peSym) : null;
                                         double ceCurrent = ceQ != null ? (ceIsLong ? ceQ.bid : ceQ.ask) : 0;
+                                        if (ceCurrent <= 0 && ceQ != null) ceCurrent = ceQ.lastPrice;
                                         double peCurrent = peQ != null ? (ceIsLong ? peQ.ask : peQ.bid) : 0;
+                                        if (peCurrent <= 0 && peQ != null) peCurrent = peQ.lastPrice;
 
                                         double[] futSpotFut = futLiveByUnderlying.computeIfAbsent(opp.getUnderlying(), u -> {
                                             try {
@@ -1992,7 +2002,7 @@ public class OptionArbitrageController {
         if (underlying != null && !underlying.isEmpty() && !"ALL".equalsIgnoreCase(underlying)) {
             positions = positions.stream().filter(p -> underlying.equalsIgnoreCase(p.getUnderlying())).toList();
         }
-if (!"ALL".equalsIgnoreCase(mode)) {            positions = positions.stream().filter(p -> {                String pb = p.getBroker() != null ? p.getBroker() : (p.getCeOrderId() != null && p.getCeOrderId().startsWith("PAPER") ? "PAPER" : "LIVE");                if ("LIVE".equalsIgnoreCase(mode)) return !"PAPER".equalsIgnoreCase(pb);                return mode.equalsIgnoreCase(pb);            }).toList();        }
+if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = positions.stream().filter(p -> {                String pb = p.getBroker() != null ? p.getBroker() : (p.getCeOrderId() != null && p.getCeOrderId().startsWith("PAPER") ? "PAPER" : "LIVE");                if ("LIVE".equalsIgnoreCase(mode)) return !"PAPER".equalsIgnoreCase(pb);                return mode.equalsIgnoreCase(pb);            }).toList();        }
 
         // Compute P&L for all positions
         List<String> symbols = new ArrayList<>();
@@ -2516,7 +2526,39 @@ if (!"ALL".equalsIgnoreCase(mode)) {            positions = positions.stream().f
     public ResponseEntity<Map<String, Object>> scanTopPicks(
             @RequestParam(defaultValue = "ALL") String underlying,
             @RequestParam(defaultValue = "1000.0") double minEdge) {
+            
+        String cacheKey = underlying + "_" + minEdge;
+        SwrCacheEntry cached = topPicksCache.get(cacheKey);
+        long now = System.currentTimeMillis();
         
+        if (cached != null) {
+            if (now - cached.timestamp > 15000) {
+                synchronized(cached) {
+                    if (!cached.isUpdating) {
+                        cached.isUpdating = true;
+                        java.util.concurrent.CompletableFuture.runAsync(() -> {
+                            try {
+                                ResponseEntity<Map<String, Object>> fresh = doScanTopPicks(underlying, minEdge);
+                                topPicksCache.put(cacheKey, new SwrCacheEntry(System.currentTimeMillis(), fresh));
+                            } catch (Exception e) {
+                                log.error("Error updating top picks cache: ", e);
+                            } finally {
+                                SwrCacheEntry latest = topPicksCache.get(cacheKey);
+                                if (latest != null) latest.isUpdating = false;
+                            }
+                        });
+                    }
+                }
+            }
+            return cached.response;
+        }
+        
+        ResponseEntity<Map<String, Object>> fresh = doScanTopPicks(underlying, minEdge);
+        topPicksCache.put(cacheKey, new SwrCacheEntry(now, fresh));
+        return fresh;
+    }
+
+    private ResponseEntity<Map<String, Object>> doScanTopPicks(String underlying, double minEdge) {
         java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
         boolean marketClosed = nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
         

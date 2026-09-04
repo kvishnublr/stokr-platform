@@ -88,6 +88,7 @@ public class ZerodhaSpotPriceFetcher {
             headers.set("Authorization", "token " + apiKey + ":" + token);
             headers.set("X-Kite-Version", "3");
 
+            ZerodhaRateLimiter.acquire();
             ResponseEntity<String> response = restTemplate.exchange(
                 new java.net.URI(urlStr), HttpMethod.GET, new HttpEntity<>(headers), String.class);
 
