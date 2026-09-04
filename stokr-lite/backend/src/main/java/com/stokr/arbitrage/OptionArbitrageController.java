@@ -1273,7 +1273,9 @@ public class OptionArbitrageController {
                                         OptionChainService.OptionQuote ceQ = ceSym != null ? bpQuotes.get(ceSym) : null;
                                         OptionChainService.OptionQuote peQ = peSym != null ? bpQuotes.get(peSym) : null;
                                         double ceCurrent = ceQ != null ? (ceIsLong ? ceQ.bid : ceQ.ask) : 0;
+                                        if (ceCurrent <= 0 && ceQ != null) ceCurrent = ceQ.lastPrice;
                                         double peCurrent = peQ != null ? (ceIsLong ? peQ.ask : peQ.bid) : 0;
+                                        if (peCurrent <= 0 && peQ != null) peCurrent = peQ.lastPrice;
 
                                         double[] futSpotFut = futLiveByUnderlying.computeIfAbsent(opp.getUnderlying(), u -> {
                                             try {
