@@ -216,7 +216,7 @@ public class OptionChainService {
             case "BANKNIFTY" -> 100;
             case "MIDCPNIFTY" -> 25;
             case "FINNIFTY" -> 50;
-            default -> 50; // NIFTY
+            default -> 100; // NIFTY
         };
     }
 
@@ -249,7 +249,8 @@ public class OptionChainService {
     public List<Integer> generateStrikes(int atmStrike, String underlying) {
         int step = getStrikeStep(underlying);
         List<Integer> strikes = new ArrayList<>();
-        for (int i = -5; i <= 5; i++) {
+        int range = "NIFTY".equalsIgnoreCase(underlying) || "BANKNIFTY".equalsIgnoreCase(underlying) ? 12 : 7;
+        for (int i = -range; i <= range; i++) {
             strikes.add(atmStrike + i * step);
         }
         return strikes;

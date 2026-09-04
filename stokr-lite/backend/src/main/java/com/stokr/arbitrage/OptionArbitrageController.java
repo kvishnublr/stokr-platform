@@ -639,7 +639,7 @@ public class OptionArbitrageController {
         int lotSize = OptionChainService.getLotSize(underlying);
 
         List<Integer> strikes = new ArrayList<>();
-        for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
+        for (int i = -12; i <= 12; i++) strikes.add(atmStrike + i * step);
 
         List<String> instruments = new ArrayList<>();
         for (int s : strikes) {
@@ -648,7 +648,7 @@ public class OptionArbitrageController {
         }
         Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
-        for (int wingWidth = 1; wingWidth <= 3; wingWidth++) {
+        for (int wingWidth = 1; wingWidth <= 8; wingWidth++) {
             int putSell = atmStrike - wingWidth * step;
             int callSell = atmStrike + wingWidth * step;
             int putBuy = putSell - step;

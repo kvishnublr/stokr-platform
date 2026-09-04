@@ -128,7 +128,7 @@ public class CondorSpreadService {
                 if (monthlyExpiry == null) continue;
 
                 List<Integer> strikes = new ArrayList<>();
-                for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
+                for (int i = -12; i <= 12; i++) strikes.add(atmStrike + i * step);
 
                 List<String> instruments = new ArrayList<>();
                 for (int strike : strikes) {
@@ -251,7 +251,7 @@ public class CondorSpreadService {
             if (monthlyExpiry == null) return opps;
 
             List<Integer> strikes = new ArrayList<>();
-            for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
+            for (int i = -12; i <= 12; i++) strikes.add(atmStrike + i * step);
 
             List<String> instruments = new ArrayList<>();
             for (int strike : strikes) {
