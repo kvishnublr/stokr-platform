@@ -2063,7 +2063,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const [sortCol, setSortCol] = useState('scanTime');
   const [sortAsc, setSortAsc] = useState(false);
   const [histPage, setHistPage] = useState(0);
-  const PAGE_SIZE = 200;
+  const PAGE_SIZE = 2500;
 
   const { data: livePositionsData } = useQuery({
     queryKey: ['live-positions-global-cache'],
@@ -2470,7 +2470,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const [sortCol, setSortCol] = useState('scanTime');
   const [sortAsc, setSortAsc] = useState(false);
   const [histPage, setHistPage] = useState(0);
-  const PAGE_SIZE = 200;
+  const PAGE_SIZE = 2500;
 
   const { data: liveData, isLoading } = useQuery({
     queryKey: ['box-spread-scan', underlying],
@@ -2893,7 +2893,7 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
   const [sortCol, setSortCol] = useState('scanTime');
   const [sortAsc, setSortAsc] = useState(false);
   const [histPage, setHistPage] = useState(0);
-  const PAGE_SIZE = 200;
+  const PAGE_SIZE = 2500;
 
   const { data: liveData, isLoading } = useQuery({
     queryKey: ['vertical-spread-scan', underlying],
@@ -3680,6 +3680,176 @@ function blackScholesPrice(S, K, t, r, v, type) {
   }
 }
 
+
+
+function DetailedOpportunityExpandedRow({ item, executionBroker, setPendingLiveDeploy, title = "Signal Breakdown" }) {
+  let oppToPass = item;
+  if ((!Array.isArray(item.legList) || item.legList.length < 2) && typeof item.legs === 'string') {
+    const legStrs = item.legs.split('|').map(s => s.trim()).filter(Boolean);
+    const legList = legStrs.map(ls => {
+      let side = ls.includes('BUY') ? 'BUY' : 'SELL';
+      let type = ls.includes('CE') ? 'CE' : ls.includes('PE') ? 'PE' : 'FUT';
+      let priceMatch = ls.match(/@\s+([\d.]+)/);
+      let price = priceMatch ? Number(priceMatch[1]) : 0;
+      let strikeMatch = type !== 'FUT' ? ls.match(/(\d+(?:\.\d+)?)\s+(?:CE|PE)/) : null;
+      let strike = strikeMatch ? Number(strikeMatch[1]) : (type === 'FUT' ? 0 : item.strike);
+      if (price > 0) return { side, optionType: type, strike, price, qty: 1 };
+      return null;
+    }).filter(Boolean);
+    if (legList.length >= 2) oppToPass = { ...item, legList };
+  }
+  
+  const hasLegs = Array.isArray(oppToPass.legList) && oppToPass.legList.length > 0;
+  const lotSize = Number(oppToPass.lotSize) > 0 ? Number(oppToPass.lotSize) : 1;
+  
+  const chart = useMemo(() => {
+    if (!hasLegs) return null;
+    const optionStrikes = [...new Set(oppToPass.legList.filter(l => String(l.optionType).toUpperCase() !== 'FUT')
+      .map(l => Number(l.strike)).filter(n => !isNaN(n)))].sort((a, b) => a - b);
+    if (optionStrikes.length === 0) return null;
+    const k1 = optionStrikes[0], k2 = optionStrikes[optionStrikes.length - 1];
+    const refPrice = oppToPass.spotPrice || oppToPass.futuresPrice || k1;
+    const cost = oppToPass.legList.reduce((s, leg) => {
+      const sign = leg.side === 'BUY' ? 1 : -1;
+      return s + sign * (Number(leg.price) || 0) * (Number(leg.qty) || 1);
+    }, 0);
+    const width = k2 > k1 ? k2 - k1 : Math.max(refPrice * 0.03, 1);
+    const lo = k1 - Math.max(width, 1) * 0.4, hi = k2 + Math.max(width, 1) * 0.4;
+    const steps = 150;
+    const points = [];
+    let minY = 0, maxY = 0;
+    for (let i = 0; i <= steps; i++) {
+      const x = lo + (hi - lo) * i / steps;
+      const payoff = oppToPass.legList.reduce((sum, leg) => {
+        const optType = String(leg.optionType).toUpperCase();
+        const sign = leg.side === 'BUY' ? 1 : -1;
+        if (optType === 'FUT') return sum + sign * x * (Number(leg.qty) || 1);
+        const strike = Number(leg.strike);
+        const isPe = optType === 'PE';
+        let val = 0;
+        if (oppToPass.strategyType === 'CALENDAR_SPREAD' && leg.symbol === oppToPass.farSymbol) {
+            const farT = Math.max(((oppToPass.farDte || 7) - (oppToPass.nearDte || 0)) / 365.0, 0.0027);
+            const farVol = (oppToPass.farIV || 20) / 100.0;
+            if (typeof blackScholesPrice !== 'undefined') val = blackScholesPrice(x, strike, farT, 0.07, farVol, isPe ? 'PE' : 'CE');
+        } else {
+            val = isPe ? Math.max(strike - x, 0) : Math.max(x - strike, 0);
+        }
+        return sum + sign * val * (Number(leg.qty) || 1);
+      }, 0);
+      const pnl = payoff - cost;
+      points.push({ x, y: pnl });
+      minY = Math.min(minY, pnl); maxY = Math.max(maxY, pnl);
+    }
+    const breakevens = [];
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1], b = points[i];
+      if ((a.y < 0 && b.y >= 0) || (a.y >= 0 && b.y < 0)) {
+        const t = a.y === b.y ? 0 : (0 - a.y) / (b.y - a.y);
+        breakevens.push(a.x + t * (b.x - a.x));
+      }
+    }
+    return { points, lo, hi, minY: Math.min(minY, 0), maxY: Math.max(maxY, 0), k1, k2, cost, breakevens };
+  }, [hasLegs, oppToPass.legList]);
+
+  let displayMaxProfit = oppToPass.maxProfit || oppToPass.edgeAfterCosts || (oppToPass.edgePoints * lotSize) || 0;
+  let displayMaxLoss = oppToPass.maxLoss || 0;
+  
+  if (chart) {
+      displayMaxProfit = chart.maxY * lotSize;
+      displayMaxLoss = chart.minY * lotSize;
+  }
+  
+  let riskReward = '--';
+  if (displayMaxProfit > 0 && displayMaxLoss < 0) {
+      riskReward = Math.abs(displayMaxProfit / displayMaxLoss).toFixed(2) + 'x';
+  } else if (displayMaxLoss >= 0) {
+      riskReward = 'Risk-Free';
+  }
+  
+  let computedPop = '> 90%';
+  if (oppToPass.confidence) {
+      computedPop = oppToPass.confidence.toFixed(1) + '%';
+  } else if (displayMaxLoss < -10) {
+      // Estimate POP if not risk free. 
+      // If we have no volatility, we can't do BS perfectly, so just show -- 
+      // unless it's a known strategy.
+      computedPop = '--';
+  }
+  
+  return (
+    <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-4">
+      <span className="font-bold text-slate-800 text-xs uppercase block mb-1">{title}</span>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {/* Left Column: Execution Legs Table */}
+        <div className="bg-white border border-indigo-100 rounded-xl overflow-hidden shadow-sm">
+          <div className="bg-slate-50 border-b border-indigo-100 px-3 py-2 flex justify-between items-center">
+            <span className="text-xs font-black text-slate-600 uppercase">Execution Legs</span>
+            <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">{oppToPass.expiryDate || oppToPass.expiry || '--'}</span>
+          </div>
+          {hasLegs ? (
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50/50 text-slate-500 font-bold border-b border-slate-100">
+                <tr>
+                  <th className="py-2 px-3">Action</th>
+                  <th className="py-2 px-3">Strike</th>
+                  <th className="py-2 px-3">Type</th>
+                  <th className="py-2 px-3 text-right">Price</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-mono">
+                {oppToPass.legList.map((leg, i) => (
+                  <tr key={i} className={leg.side === 'BUY' ? 'bg-blue-50/30' : 'bg-red-50/30'}>
+                    <td className="py-2 px-3 font-bold text-slate-700">
+                      <span className={leg.side === 'BUY' ? 'text-blue-600' : 'text-red-600'}>{leg.side}</span>
+                    </td>
+                    <td className="py-2 px-3 font-bold text-slate-700">{leg.strike || 'FUT'}</td>
+                    <td className="py-2 px-3 font-bold text-slate-500">{leg.optionType}</td>
+                    <td className="py-2 px-3 font-bold text-slate-800 text-right">₹{leg.price.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="p-4 text-center text-xs text-slate-500 font-mono">{item.legs || `${item.action} on ${item.underlying} ${item.strike}`}</div>
+          )}
+        </div>
+
+        {/* Right Column: Risk/Reward Profile */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex flex-col justify-center">
+            <span className="text-[10px] font-black text-emerald-600 uppercase mb-1">Max Profit</span>
+            <span className="text-lg font-black text-emerald-700">+{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(displayMaxProfit)}</span>
+          </div>
+          <div className="bg-red-50 border border-red-100 p-3 rounded-xl flex flex-col justify-center">
+            <span className="text-[10px] font-black text-red-600 uppercase mb-1">Max Loss</span>
+            <span className="text-lg font-black text-red-700">{displayMaxLoss < 0 ? '-' + new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Math.abs(displayMaxLoss)) : (displayMaxProfit > 0 ? 'Risk-Free' : '--')}</span>
+          </div>
+          <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-col justify-center">
+            <span className="text-[10px] font-black text-slate-500 uppercase mb-1">Risk:Reward</span>
+            <span className="text-sm font-black text-slate-800">{riskReward}</span>
+          </div>
+          <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-col justify-center">
+            <span className="text-[10px] font-black text-slate-500 uppercase mb-1">POP (Win Rate)</span>
+            <span className="text-sm font-black text-slate-800">{computedPop}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Payoff Chart */}
+      {hasLegs && (
+        <div className="mt-4">
+          <ArbitrageSignalPayoffChart opp={oppToPass} />
+        </div>
+      )}
+      
+      {setPendingLiveDeploy && (
+        <div className="flex justify-end pt-1">
+          <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(item); }} className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold shadow-md">⚡ Deploy ({executionBroker})</button>
+        </div>
+      )}
+    </div>
+  );
+}
 function ArbitrageSignalPayoffChart({ opp }) {
   const chartRef = useRef(null);
   const [hover, setHover] = useState(null);
@@ -3884,7 +4054,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
   const [sortCol, setSortCol] = useState('scanTime');
   const [sortAsc, setSortAsc] = useState(false);
   const [histPage, setHistPage] = useState(0);
-  const PAGE_SIZE = 200;
+  const PAGE_SIZE = 2500;
 
   const { data: liveData, isLoading } = useQuery({
     queryKey: ['butterfly-spread-scan', underlying],
@@ -4746,7 +4916,7 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
   const [sortCol, setSortCol] = useState('scanTime');
   const [sortAsc, setSortAsc] = useState(false);
   const [histPage, setHistPage] = useState(0);
-  const PAGE_SIZE = 200;
+  const PAGE_SIZE = 2500;
 
   const { data: liveData, isLoading } = useQuery({
     queryKey: ['condor-spread-scan', underlying],
@@ -5445,7 +5615,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
   const [sortCol, setSortCol] = useState('scanTime');
   const [sortAsc, setSortAsc] = useState(false);
   const [histPage, setHistPage] = useState(0);
-  const PAGE_SIZE = 200;
+  const PAGE_SIZE = 2500;
 
   const { data: liveData, isLoading } = useQuery({
     queryKey: ['iron-condor-scan', underlying],
@@ -7649,39 +7819,8 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
                       {isExp && (
                         <tr className="bg-orange-50/40 border-b border-orange-100">
                           <td colSpan={10} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-orange-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Signal Breakdown:</span>
-                              <p className="text-[11px] font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '?'}</p>
-                              {opp.description && <p className="text-[10px] text-slate-500">{opp.description}</p>}
-                              
-                              {opp.costBreakdown && (
-                                <div className="text-[10px] font-mono text-slate-600 flex flex-wrap gap-3 my-2 bg-slate-100 p-2 rounded-lg border border-slate-200">
-                                  <span className="font-bold uppercase text-slate-500 w-full mb-1">Costs & Net Edge Breakdown</span>
-                                  {Object.entries(opp.costBreakdown).map(([k,v]) => <span key={k} className="bg-white px-2 py-0.5 rounded border border-slate-200">{k}: ₹{v}</span>)}
-                                </div>
-                              )}
-                              
-                              {(() => {
-                                let oppToPass = opp;
-                                if ((!Array.isArray(opp.legList) || opp.legList.length < 2) && typeof opp.legs === 'string') {
-                                  const legStrs = opp.legs.split('|').map(s => s.trim()).filter(Boolean);
-                                  const legList = legStrs.map(ls => {
-                                    let side = ls.includes('BUY') ? 'BUY' : 'SELL';
-                                    let type = ls.includes('CE') ? 'CE' : ls.includes('PE') ? 'PE' : 'FUT';
-                                    let priceMatch = ls.match(/@\s+([\d.]+)/);
-                                    let price = priceMatch ? Number(priceMatch[1]) : 0;
-                                    let strikeMatch = type !== 'FUT' ? ls.match(/(\d+(?:\.\d+)?)\s+(?:CE|PE)/) : null;
-                                    let strike = strikeMatch ? Number(strikeMatch[1]) : (type === 'FUT' ? 0 : opp.strike);
-                                    if (price > 0) return { side, optionType: type, strike, price, qty: 1 };
-                                    return null;
-                                  }).filter(Boolean);
-                                  if (legList.length >= 2) {
-                                    oppToPass = { ...opp, legList };
-                                  }
-                                }
-                                return <ArbitrageSignalPayoffChart opp={oppToPass} />;
-                              })()}
-                            </div>
+                            <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={setPendingLiveDeploy} />
+                          
                           </td>
                         </tr>
                       )}

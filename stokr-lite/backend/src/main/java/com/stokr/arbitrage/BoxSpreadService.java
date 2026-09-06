@@ -9,6 +9,13 @@ import java.util.*;
 
 @Service
 public class BoxSpreadService {
+    private boolean isLiquid(OptionChainService.OptionQuote q, int lotSize) {
+        if (q == null) return false;
+        if (q.volume <= 0) return false;
+        if (q.bidQty < lotSize || q.askQty < lotSize) return false;
+        return true;
+    }
+
 
     private static final Logger log = LoggerFactory.getLogger(BoxSpreadService.class);
 
@@ -86,8 +93,8 @@ public class BoxSpreadService {
             int atmStrike = (int) (Math.round(spotPrice / step) * step);
             int lotSize = OptionChainService.getLotSize(underlying);
 
-            LocalDate weeklyExpiry = optionChainService.getWeeklyExpiryDate(underlying);
-            if (weeklyExpiry == null) {
+            LocalDate monthlyExpiry = optionChainService.getMonthlyExpiryDate(underlying);
+            if (monthlyExpiry == null) {
                 log.warn("No weekly expiry found for {}", underlying);
                 return opps;
             }
@@ -99,8 +106,8 @@ public class BoxSpreadService {
 
             List<String> instruments = new ArrayList<>();
             for (int strike : strikes) {
-                instruments.add(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, strike, "CE"));
-                instruments.add(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, strike, "PE"));
+                instruments.add(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, strike, "CE"));
+                instruments.add(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, strike, "PE"));
             }
 
             Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
@@ -111,17 +118,17 @@ public class BoxSpreadService {
                     int k2 = strikes.get(j);
                     double width = k2 - k1;
 
-                    String ce1Key = optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k1, "CE");
-                    String pe1Key = optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k1, "PE");
-                    String ce2Key = optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k2, "CE");
-                    String pe2Key = optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k2, "PE");
+                    String ce1Key = optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k1, "CE");
+                    String pe1Key = optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k1, "PE");
+                    String ce2Key = optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k2, "CE");
+                    String pe2Key = optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k2, "PE");
 
                     OptionChainService.OptionQuote ce1 = quotes.get(ce1Key);
                     OptionChainService.OptionQuote pe1 = quotes.get(pe1Key);
                     OptionChainService.OptionQuote ce2 = quotes.get(ce2Key);
                     OptionChainService.OptionQuote pe2 = quotes.get(pe2Key);
 
-                    if (ce1 == null || pe1 == null || ce2 == null || pe2 == null) continue;
+                    if (!isLiquid(ce1, lotSize) || !isLiquid(pe1, lotSize) || !isLiquid(ce2, lotSize) || !isLiquid(pe2, lotSize)) continue;
 
                     // Require real live bid/ask -- no fallback to lastPrice. A missing quote
                     // (empty order book, illiquid strike, or market closed) must be skipped,
@@ -162,7 +169,7 @@ public class BoxSpreadService {
 
                     if (netBuyEdge >= MIN_BOX_EDGE_AFTER_COSTS) {
                         long daysToExpiry = java.time.Duration.between(
-                            LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays();
+                            LocalDate.now().atStartOfDay(), monthlyExpiry.atStartOfDay()).toDays();
 
                         ArbitrageOpportunity opp = new ArbitrageOpportunity();
                         opp.underlying = underlying;
@@ -227,7 +234,7 @@ public class BoxSpreadService {
 
                     if (netSellEdge >= MIN_BOX_EDGE_AFTER_COSTS) {
                         long daysToExpiry = java.time.Duration.between(
-                            LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays();
+                            LocalDate.now().atStartOfDay(), monthlyExpiry.atStartOfDay()).toDays();
 
                         ArbitrageOpportunity opp = new ArbitrageOpportunity();
                         opp.underlying = underlying;
@@ -271,7 +278,7 @@ public class BoxSpreadService {
             }
 
             log.info("Box spread scan for {}: {} strikes, {} combos, {} profitable (expiry={}, ATM={})",
-                underlying, strikes.size(), (strikes.size() * (strikes.size()-1))/2, opps.size(), weeklyExpiry, atmStrike);
+                underlying, strikes.size(), (strikes.size() * (strikes.size()-1))/2, opps.size(), monthlyExpiry, atmStrike);
         } catch (Exception e) {
             log.error("Error calculating Box Spread for {}: {}", underlying, e.getMessage(), e);
         }
@@ -314,16 +321,16 @@ public class BoxSpreadService {
                 int atmStrike = (int) (Math.round(spot / step) * step);
                 int lotSize = OptionChainService.getLotSize(u);
 
-                LocalDate weeklyExpiry = optionChainService.getWeeklyExpiryDate(u);
-                if (weeklyExpiry == null) continue;
+                LocalDate monthlyExpiry = optionChainService.getMonthlyExpiryDate(u);
+                if (monthlyExpiry == null) continue;
 
                 List<Integer> strikes = new ArrayList<>();
                 for (int i = -3; i <= 3; i++) strikes.add(atmStrike + i * step);
 
                 List<String> instruments = new ArrayList<>();
                 for (int strike : strikes) {
-                    instruments.add(optionChainService.buildNfoSymbol(u, weeklyExpiry, strike, "CE"));
-                    instruments.add(optionChainService.buildNfoSymbol(u, weeklyExpiry, strike, "PE"));
+                    instruments.add(optionChainService.buildNfoSymbol(u, monthlyExpiry, strike, "CE"));
+                    instruments.add(optionChainService.buildNfoSymbol(u, monthlyExpiry, strike, "PE"));
                 }
                 Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
@@ -333,11 +340,11 @@ public class BoxSpreadService {
                         int k2 = strikes.get(j);
                         double width = k2 - k1;
 
-                        OptionChainService.OptionQuote ce1 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k1, "CE"));
-                        OptionChainService.OptionQuote pe1 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k1, "PE"));
-                        OptionChainService.OptionQuote ce2 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k2, "CE"));
-                        OptionChainService.OptionQuote pe2 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k2, "PE"));
-                        if (ce1 == null || pe1 == null || ce2 == null || pe2 == null) continue;
+                        OptionChainService.OptionQuote ce1 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k1, "CE"));
+                        OptionChainService.OptionQuote pe1 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k1, "PE"));
+                        OptionChainService.OptionQuote ce2 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k2, "CE"));
+                        OptionChainService.OptionQuote pe2 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k2, "PE"));
+                        if (!isLiquid(ce1, lotSize) || !isLiquid(pe1, lotSize) || !isLiquid(ce2, lotSize) || !isLiquid(pe2, lotSize)) continue;
                         if (ce1.ask <= 0 || pe1.bid <= 0 || ce2.bid <= 0 || pe2.ask <= 0) continue;
                         if (ce1.bid <= 0 || pe1.ask <= 0 || ce2.ask <= 0 || pe2.bid <= 0) continue;
 
@@ -374,8 +381,8 @@ public class BoxSpreadService {
                         m.put("gapPct", Math.round(gapPct * 1000.0) / 10.0);
                         m.put("lotSize", lotSize);
                         m.put("spotPrice", spot);
-                        m.put("daysToExpiry", java.time.Duration.between(LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays());
-                        m.put("expiryDate", weeklyExpiry.toString());
+                        m.put("daysToExpiry", java.time.Duration.between(LocalDate.now().atStartOfDay(), monthlyExpiry.atStartOfDay()).toDays());
+                        m.put("expiryDate", monthlyExpiry.toString());
                         m.put("legs", buyCloser
                             ? String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %d CE @ %.1f | BUY %d PE @ %.1f",
                                 k1, ce1.ask, k1, pe1.bid, k2, ce2.bid, k2, pe2.ask)

@@ -15,6 +15,13 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class OptionChainService {
+
+    private static class CachedQuote {
+        long timestamp;
+        OptionQuote quote;
+        CachedQuote(long t, OptionQuote q) { this.timestamp = t; this.quote = q; }
+    }
+    private final ConcurrentHashMap<String, CachedQuote> globalQuoteCache = new ConcurrentHashMap<>();
     private final java.util.Map<String, String> resolvedSymbolCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     private static final Logger log = LoggerFactory.getLogger(OptionChainService.class);
@@ -45,7 +52,7 @@ public class OptionChainService {
         try {
             int atmStrike = getATMStrike(underlying, spotPrice);
             List<Integer> strikes = generateStrikes(atmStrike, underlying);
-            LocalDate expiryDate = getWeeklyExpiryDate(underlying);
+            LocalDate expiryDate = getMonthlyExpiryDate(underlying);
 
             double daysToExpiry = Duration.between(LocalDate.now().atStartOfDay(), expiryDate.atStartOfDay()).toDays();
             double yearsToExpiry = Math.max(daysToExpiry, 0.5) / 365.0;
@@ -107,9 +114,27 @@ public class OptionChainService {
         return null;
     }
 
-    public Map<String, OptionQuote> fetchQuotes(List<String> instruments) {
+    public synchronized Map<String, OptionQuote> fetchQuotes(List<String> instruments) {
         Map<String, OptionQuote> quotes = new ConcurrentHashMap<>();
         if (instruments == null || instruments.isEmpty()) return quotes;
+
+        long now = System.currentTimeMillis();
+        List<String> toFetch = new ArrayList<>();
+        
+        for (String inst : instruments) {
+            String key = inst.startsWith("NFO:") ? inst : "NFO:" + inst;
+            CachedQuote cq = globalQuoteCache.get(key);
+            if (cq != null && (now - cq.timestamp) < 12000) { // 12 seconds cache
+                quotes.put(key, cq.quote);
+                quotes.put(key.replace("NFO:", ""), cq.quote);
+            } else {
+                toFetch.add(inst);
+            }
+        }
+        
+        if (toFetch.isEmpty()) {
+            return quotes;
+        }
 
         try {
             ZerodhaTokenManager.ZerodhaAuth auth = tokenManager.getCurrentAuth();
@@ -120,7 +145,7 @@ public class OptionChainService {
                 return quotes;
             }
 
-            List<String> uniqueInstruments = new ArrayList<>(new LinkedHashSet<>(instruments));
+            List<String> uniqueInstruments = new ArrayList<>(new LinkedHashSet<>(toFetch));
 
             for (int i = 0; i < uniqueInstruments.size(); i += 100) {
                 int end = Math.min(i + 100, uniqueInstruments.size());
@@ -129,7 +154,7 @@ public class OptionChainService {
                 StringBuilder sb = new StringBuilder();
                 for (int j = 0; j < batch.size(); j++) {
                     if (j > 0) sb.append("&i=");
-                    sb.append("NFO:").append(batch.get(j));
+                    String item = batch.get(j); sb.append(item.startsWith("NFO:") ? item : "NFO:" + item);
                 }
 
                 String url = "https://api.kite.trade/quote?i=" + sb.toString();
@@ -191,7 +216,7 @@ public class OptionChainService {
             case "BANKNIFTY" -> 100;
             case "MIDCPNIFTY" -> 25;
             case "FINNIFTY" -> 50;
-            default -> 50; // NIFTY
+            default -> 100; // NIFTY
         };
     }
 
@@ -224,7 +249,8 @@ public class OptionChainService {
     public List<Integer> generateStrikes(int atmStrike, String underlying) {
         int step = getStrikeStep(underlying);
         List<Integer> strikes = new ArrayList<>();
-        for (int i = -5; i <= 5; i++) {
+        int range = "NIFTY".equalsIgnoreCase(underlying) || "BANKNIFTY".equalsIgnoreCase(underlying) ? 12 : 7;
+        for (int i = -range; i <= range; i++) {
             strikes.add(atmStrike + i * step);
         }
         return strikes;
@@ -258,6 +284,9 @@ public class OptionChainService {
         return expiryDay;
     }
     public LocalDate getWeeklyExpiryDate(String underlying) {
+        // SEBI 2025 rule: Only NIFTY has weekly expiries on NSE.
+        if (!underlying.toUpperCase().equals("NIFTY")) return null;
+
         LocalDate today = LocalDate.now();
         LocalDate nextExpiry = today;
         DayOfWeek targetDay = getExpiryDayForUnderlying(underlying);

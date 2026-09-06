@@ -94,7 +94,7 @@ public final class ArbitrageCosts {
         breakdown.put("grossEdge", round2(grossEdge));
         breakdown.put("netEdge", round2(Math.max(0, grossEdge - totalCosts)));
 
-        return new CostResult(Math.max(0, grossEdge - totalCosts), breakdown);
+        return new CostResult(round2(grossEdge - totalCosts), breakdown);
     }
 
     /**

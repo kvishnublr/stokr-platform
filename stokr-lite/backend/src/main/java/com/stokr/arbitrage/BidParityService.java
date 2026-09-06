@@ -293,7 +293,7 @@ public class BidParityService {
             ArbitrageCosts.CostResult costs = ArbitrageCosts.calculate(
                     ceQuote.lastPrice, peQuote.lastPrice, fut, lotSize, grossEdge, action);
             double totalCosts = costs.breakdown().getOrDefault("totalCosts", 0.0);
-            edgeAfterCosts = Math.max(0, grossEdge - totalCosts);
+            edgeAfterCosts = grossEdge - totalCosts;
 
             map.put("lotSize", lotSize);
             map.put("confidence", Math.min(99.0, 70.0 + edgePoints * 1.5));

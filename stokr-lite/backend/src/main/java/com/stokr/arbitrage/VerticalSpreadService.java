@@ -19,6 +19,13 @@ import java.util.*;
  */
 @Service
 public class VerticalSpreadService {
+    private boolean isLiquid(OptionChainService.OptionQuote q, int lotSize) {
+        if (q == null) return false;
+        if (q.volume <= 0) return false;
+        if (q.bidQty < lotSize || q.askQty < lotSize) return false;
+        return true;
+    }
+
 
     private static final Logger log = LoggerFactory.getLogger(VerticalSpreadService.class);
 
@@ -116,21 +123,23 @@ public class VerticalSpreadService {
                 int atmStrike = (int) (Math.round(spot / step) * step);
                 int lotSize = OptionChainService.getLotSize(u);
 
-                LocalDate weeklyExpiry = optionChainService.getWeeklyExpiryDate(u);
-                if (weeklyExpiry == null) continue;
+                for (java.time.LocalDate monthlyExpiry : java.util.stream.Stream.of(
+                optionChainService.getWeeklyExpiryDate(u),
+                optionChainService.getMonthlyExpiryDate(u)
+            ).filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.toList())) {
 
                 List<Integer> strikes = new ArrayList<>();
                 for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
 
                 List<String> instruments = new ArrayList<>();
                 for (int strike : strikes) {
-                    instruments.add(optionChainService.buildNfoSymbol(u, weeklyExpiry, strike, "CE"));
-                    instruments.add(optionChainService.buildNfoSymbol(u, weeklyExpiry, strike, "PE"));
+                    instruments.add(optionChainService.buildNfoSymbol(u, monthlyExpiry, strike, "CE"));
+                    instruments.add(optionChainService.buildNfoSymbol(u, monthlyExpiry, strike, "PE"));
                 }
                 Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
                 double yearsToExpiry = Math.max(
-                    java.time.Duration.between(LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays(), 0.5) / 365.0;
+                    java.time.Duration.between(LocalDate.now().atStartOfDay(), monthlyExpiry.atStartOfDay()).toDays(), 0.5) / 365.0;
 
                 for (int i = 0; i < strikes.size(); i++) {
                     for (int j = i + 1; j < strikes.size(); j++) {
@@ -138,10 +147,10 @@ public class VerticalSpreadService {
                         int k2 = strikes.get(j);
                         double width = k2 - k1;
 
-                        OptionChainService.OptionQuote c1 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k1, "CE"));
-                        OptionChainService.OptionQuote c2 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k2, "CE"));
-                        OptionChainService.OptionQuote p1 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k1, "PE"));
-                        OptionChainService.OptionQuote p2 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k2, "PE"));
+                        OptionChainService.OptionQuote c1 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k1, "CE"));
+                        OptionChainService.OptionQuote c2 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k2, "CE"));
+                        OptionChainService.OptionQuote p1 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k1, "PE"));
+                        OptionChainService.OptionQuote p2 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k2, "PE"));
 
                         // Call debit spread: BUY K1 CE, SELL K2 CE -- profits above breakeven.
                         if (c1 != null && c2 != null && c1.ask > 0 && c2.bid > 0) {
@@ -154,7 +163,7 @@ public class VerticalSpreadService {
                                         (c1.bid + c1.ask) / 2.0, spot, k1, yearsToExpiry, ArbitrageCosts.RISK_FREE_RATE, true, 0.01, 50);
                                     double pop = BlackScholesCalculator.probabilityAbove(spot, breakeven, yearsToExpiry, ArbitrageCosts.RISK_FREE_RATE, iv);
                                     candidates.add(buildCandidate(u, "CE", k1, k2, width, cost, costRatio, lotSize,
-                                        breakeven, null, pop, iv, spot, weeklyExpiry,
+                                        breakeven, null, pop, iv, spot, monthlyExpiry,
                                         String.format("BUY %d CE @ %.1f | SELL %d CE @ %.1f", k1, c1.ask, k2, c2.bid),
                                         List.of(leg(k1, "CE", "BUY", 1, c1.ask), leg(k2, "CE", "SELL", 1, c2.bid)),
                                         c1.ask, c2.bid, ArbitrageCosts.STT_OPTION_BUY, ArbitrageCosts.STT_OPTION_SELL));
@@ -173,7 +182,7 @@ public class VerticalSpreadService {
                                         (p2.bid + p2.ask) / 2.0, spot, k2, yearsToExpiry, ArbitrageCosts.RISK_FREE_RATE, false, 0.01, 50);
                                     double pop = BlackScholesCalculator.probabilityBelow(spot, breakeven, yearsToExpiry, ArbitrageCosts.RISK_FREE_RATE, iv);
                                     candidates.add(buildCandidate(u, "PE", k1, k2, width, cost, costRatio, lotSize,
-                                        null, breakeven, pop, iv, spot, weeklyExpiry,
+                                        null, breakeven, pop, iv, spot, monthlyExpiry,
                                         String.format("BUY %d PE @ %.1f | SELL %d PE @ %.1f", k2, p2.ask, k1, p1.bid),
                                         List.of(leg(k2, "PE", "BUY", 1, p2.ask), leg(k1, "PE", "SELL", 1, p1.bid)),
                                         p2.ask, p1.bid, ArbitrageCosts.STT_OPTION_BUY, ArbitrageCosts.STT_OPTION_SELL));
@@ -182,7 +191,7 @@ public class VerticalSpreadService {
                         }
                     }
                 }
-            } catch (Exception e) {
+            } } catch (Exception e) {
                 log.error("Error scanning Vertical candidates for {}: {}", u, e.getMessage(), e);
             }
         }
@@ -194,7 +203,7 @@ public class VerticalSpreadService {
     private Map<String, Object> buildCandidate(String u, String optionType, int k1, int k2, double width,
                                                 double cost, double costRatio, int lotSize,
                                                 Double breakevenUpper, Double breakevenLower,
-                                                double pop, double iv, double spot, LocalDate weeklyExpiry,
+                                                double pop, double iv, double spot, LocalDate monthlyExpiry,
                                                 String legs, List<Map<String, Object>> legList,
                                                 double buyPrice, double sellPrice, double sttBuyRate, double sttSellRate) {
         double grossLoss = cost * lotSize;
@@ -239,8 +248,8 @@ public class VerticalSpreadService {
         m.put("pop", Math.round(pop * 1000.0) / 10.0);
         m.put("impliedVol", Math.round(iv * 1000.0) / 10.0);
         m.put("spotPrice", spot);
-        m.put("daysToExpiry", java.time.Duration.between(LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays());
-        m.put("expiryDate", weeklyExpiry.toString());
+        m.put("daysToExpiry", java.time.Duration.between(LocalDate.now().atStartOfDay(), monthlyExpiry.atStartOfDay()).toDays());
+        m.put("expiryDate", monthlyExpiry.toString());
         m.put("legs", legs);
         m.put("legList", legList);
         m.put("disclaimer", "Not arbitrage. Directional bet -- POP is a Black-Scholes model estimate from current implied volatility, not a backtested or historical win rate.");
@@ -254,16 +263,18 @@ public class VerticalSpreadService {
             int atmStrike = (int) (Math.round(spotPrice / step) * step);
             int lotSize = OptionChainService.getLotSize(underlying);
 
-            LocalDate weeklyExpiry = optionChainService.getWeeklyExpiryDate(underlying);
-            if (weeklyExpiry == null) return opps;
+            for (java.time.LocalDate monthlyExpiry : java.util.stream.Stream.of(
+                optionChainService.getWeeklyExpiryDate(underlying),
+                optionChainService.getMonthlyExpiryDate(underlying)
+            ).filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.toList())) {
 
             List<Integer> strikes = new ArrayList<>();
             for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
 
             List<String> instruments = new ArrayList<>();
             for (int strike : strikes) {
-                instruments.add(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, strike, "CE"));
-                instruments.add(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, strike, "PE"));
+                instruments.add(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, strike, "CE"));
+                instruments.add(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, strike, "PE"));
             }
             Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
@@ -273,19 +284,19 @@ public class VerticalSpreadService {
                     int k2 = strikes.get(j);
                     double width = k2 - k1;
 
-                    OptionChainService.OptionQuote ce1 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k1, "CE"));
-                    OptionChainService.OptionQuote ce2 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k2, "CE"));
-                    OptionChainService.OptionQuote pe1 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k1, "PE"));
-                    OptionChainService.OptionQuote pe2 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k2, "PE"));
+                    OptionChainService.OptionQuote ce1 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k1, "CE"));
+                    OptionChainService.OptionQuote ce2 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k2, "CE"));
+                    OptionChainService.OptionQuote pe1 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k1, "PE"));
+                    OptionChainService.OptionQuote pe2 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k2, "PE"));
 
-                    checkCallVertical(opps, underlying, weeklyExpiry, k1, k2, width, ce1, ce2, lotSize, spotPrice, futuresPrice);
-                    checkPutVertical(opps, underlying, weeklyExpiry, k1, k2, width, pe1, pe2, lotSize, spotPrice, futuresPrice);
+                    checkCallVertical(opps, underlying, monthlyExpiry, k1, k2, width, ce1, ce2, lotSize, spotPrice, futuresPrice);
+                    checkPutVertical(opps, underlying, monthlyExpiry, k1, k2, width, pe1, pe2, lotSize, spotPrice, futuresPrice);
                 }
             }
 
             log.info("Vertical spread scan for {}: {} strikes, {} combos, {} opportunities (expiry={}, ATM={})",
-                underlying, strikes.size(), (strikes.size() * (strikes.size() - 1)) / 2, opps.size(), weeklyExpiry, atmStrike);
-        } catch (Exception e) {
+                underlying, strikes.size(), (strikes.size() * (strikes.size() - 1)) / 2, opps.size(), monthlyExpiry, atmStrike);
+        } } catch (Exception e) {
             log.error("Error calculating Vertical Spread for {}: {}", underlying, e.getMessage(), e);
         }
         return opps;

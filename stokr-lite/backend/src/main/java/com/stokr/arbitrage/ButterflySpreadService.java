@@ -19,6 +19,13 @@ import java.util.*;
  */
 @Service
 public class ButterflySpreadService {
+    private boolean isLiquid(OptionChainService.OptionQuote q, int lotSize) {
+        if (q == null) return false;
+        if (q.volume <= 0) return false;
+        if (q.bidQty < lotSize || q.askQty < lotSize) return false;
+        return true;
+    }
+
 
     private static final Logger log = LoggerFactory.getLogger(ButterflySpreadService.class);
     private static final double MIN_EDGE_AFTER_COSTS = 0.0;
@@ -118,16 +125,18 @@ public class ButterflySpreadService {
                 int atmStrike = (int) (Math.round(spot / step) * step);
                 int lotSize = OptionChainService.getLotSize(u);
 
-                LocalDate weeklyExpiry = optionChainService.getWeeklyExpiryDate(u);
-                if (weeklyExpiry == null) continue;
+                for (java.time.LocalDate monthlyExpiry : java.util.stream.Stream.of(
+                optionChainService.getWeeklyExpiryDate(u),
+                optionChainService.getMonthlyExpiryDate(u)
+            ).filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.toList())) {
 
                 List<Integer> strikes = new ArrayList<>();
                 for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
 
                 List<String> instruments = new ArrayList<>();
                 for (int strike : strikes) {
-                    instruments.add(optionChainService.buildNfoSymbol(u, weeklyExpiry, strike, "CE"));
-                    instruments.add(optionChainService.buildNfoSymbol(u, weeklyExpiry, strike, "PE"));
+                    instruments.add(optionChainService.buildNfoSymbol(u, monthlyExpiry, strike, "CE"));
+                    instruments.add(optionChainService.buildNfoSymbol(u, monthlyExpiry, strike, "PE"));
                 }
                 Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
@@ -139,10 +148,10 @@ public class ButterflySpreadService {
                         double width = k2 - k1;
 
                         for (String optionType : List.of("CE", "PE")) {
-                            OptionChainService.OptionQuote q1 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k1, optionType));
-                            OptionChainService.OptionQuote q2 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k2, optionType));
-                            OptionChainService.OptionQuote q3 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k3, optionType));
-                            if (q1 == null || q2 == null || q3 == null) continue;
+                            OptionChainService.OptionQuote q1 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k1, optionType));
+                            OptionChainService.OptionQuote q2 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k2, optionType));
+                            OptionChainService.OptionQuote q3 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k3, optionType));
+                            if (!isLiquid(q1, lotSize) || !isLiquid(q2, lotSize) || !isLiquid(q3, lotSize)) continue;
                             if (q1.ask <= 0 || q2.bid <= 0 || q3.ask <= 0) continue;
 
                             double cost = q1.ask - 2 * q2.bid + q3.ask;
@@ -183,7 +192,7 @@ public class ButterflySpreadService {
                             // standard Black-Scholes lognormal assumption. A theoretical figure
                             // driven by current IV, not a backtested/historical win rate.
                             double yearsToExpiry = Math.max(
-                                java.time.Duration.between(LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays(), 0.5) / 365.0;
+                                java.time.Duration.between(LocalDate.now().atStartOfDay(), monthlyExpiry.atStartOfDay()).toDays(), 0.5) / 365.0;
                             double centerMid = (q2.bid + q2.ask) / 2.0;
                             double iv = BlackScholesCalculator.impliedVolatility(
                                 centerMid, spot, k2, yearsToExpiry, ArbitrageCosts.RISK_FREE_RATE,
@@ -220,8 +229,8 @@ public class ButterflySpreadService {
                             m.put("pop", Math.round(pop * 1000.0) / 10.0);
                             m.put("impliedVol", Math.round(iv * 1000.0) / 10.0);
                             m.put("spotPrice", spot);
-                            m.put("daysToExpiry", java.time.Duration.between(LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays());
-                            m.put("expiryDate", weeklyExpiry.toString());
+                            m.put("daysToExpiry", java.time.Duration.between(LocalDate.now().atStartOfDay(), monthlyExpiry.atStartOfDay()).toDays());
+                            m.put("expiryDate", monthlyExpiry.toString());
                             m.put("legs", String.format("BUY %d %s @ %.1f | SELL 2x %d %s @ %.1f | BUY %d %s @ %.1f",
                                 k1, optionType, q1.ask, k2, optionType, q2.bid, k3, optionType, q3.ask));
                             m.put("legList", List.of(leg(k1, optionType, "BUY", 1, q1.ask), leg(k2, optionType, "SELL", 2, q2.bid), leg(k3, optionType, "BUY", 1, q3.ask)));
@@ -230,7 +239,7 @@ public class ButterflySpreadService {
                         }
                     }
                 }
-            } catch (Exception e) {
+            } } catch (Exception e) {
                 log.error("Error scanning Butterfly candidates for {}: {}", u, e.getMessage(), e);
             }
         }
@@ -248,16 +257,18 @@ public class ButterflySpreadService {
             int atmStrike = (int) (Math.round(spotPrice / step) * step);
             int lotSize = OptionChainService.getLotSize(underlying);
 
-            LocalDate weeklyExpiry = optionChainService.getWeeklyExpiryDate(underlying);
-            if (weeklyExpiry == null) return opps;
+            for (java.time.LocalDate monthlyExpiry : java.util.stream.Stream.of(
+                optionChainService.getWeeklyExpiryDate(underlying),
+                optionChainService.getMonthlyExpiryDate(underlying)
+            ).filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.toList())) {
 
             List<Integer> strikes = new ArrayList<>();
             for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
 
             List<String> instruments = new ArrayList<>();
             for (int strike : strikes) {
-                instruments.add(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, strike, "CE"));
-                instruments.add(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, strike, "PE"));
+                instruments.add(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, strike, "CE"));
+                instruments.add(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, strike, "PE"));
             }
             Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
@@ -271,21 +282,21 @@ public class ButterflySpreadService {
                     int k3 = strikes.get(c + n);
                     double width = k2 - k1;
 
-                    OptionChainService.OptionQuote ce1 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k1, "CE"));
-                    OptionChainService.OptionQuote ce2 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k2, "CE"));
-                    OptionChainService.OptionQuote ce3 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k3, "CE"));
-                    OptionChainService.OptionQuote pe1 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k1, "PE"));
-                    OptionChainService.OptionQuote pe2 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k2, "PE"));
-                    OptionChainService.OptionQuote pe3 = quotes.get(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k3, "PE"));
+                    OptionChainService.OptionQuote ce1 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k1, "CE"));
+                    OptionChainService.OptionQuote ce2 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k2, "CE"));
+                    OptionChainService.OptionQuote ce3 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k3, "CE"));
+                    OptionChainService.OptionQuote pe1 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k1, "PE"));
+                    OptionChainService.OptionQuote pe2 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k2, "PE"));
+                    OptionChainService.OptionQuote pe3 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k3, "PE"));
 
-                    checkButterfly(opps, underlying, weeklyExpiry, k1, k2, k3, width, "CE", ce1, ce2, ce3, lotSize, spotPrice, futuresPrice);
-                    checkButterfly(opps, underlying, weeklyExpiry, k1, k2, k3, width, "PE", pe1, pe2, pe3, lotSize, spotPrice, futuresPrice);
+                    checkButterfly(opps, underlying, monthlyExpiry, k1, k2, k3, width, "CE", ce1, ce2, ce3, lotSize, spotPrice, futuresPrice);
+                    checkButterfly(opps, underlying, monthlyExpiry, k1, k2, k3, width, "PE", pe1, pe2, pe3, lotSize, spotPrice, futuresPrice);
                 }
             }
 
             log.info("Butterfly spread scan for {}: {} strikes, {} combos, {} opportunities (expiry={}, ATM={})",
-                underlying, strikes.size(), combos, opps.size(), weeklyExpiry, atmStrike);
-        } catch (Exception e) {
+                underlying, strikes.size(), combos, opps.size(), monthlyExpiry, atmStrike);
+        } } catch (Exception e) {
             log.error("Error calculating Butterfly Spread for {}: {}", underlying, e.getMessage(), e);
         }
         return opps;
