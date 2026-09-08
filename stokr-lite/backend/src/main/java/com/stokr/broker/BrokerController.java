@@ -102,14 +102,16 @@ public class BrokerController {
         String clientCode = body.getOrDefault("clientCode", "").trim();
         String password = body.getOrDefault("password", "").trim();
         String totpSecret = body.getOrDefault("totpSecret", "").trim();
-        if (clientCode.isBlank() || password.isBlank() || totpSecret.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "clientCode, password, and totpSecret are required"));
+        String apiKey = body.getOrDefault("apiKey", "").trim();
+        String apiSecret = body.getOrDefault("apiSecret", "").trim();
+        if (clientCode.isBlank() || password.isBlank() || totpSecret.isBlank() || apiKey.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "clientCode, password, totpSecret, and apiKey are required"));
         }
         try {
             Long userId = SecurityUtils.currentUserId();
             BrokerAdapter adapter = brokerRegistry.getAdapter("MOTILALOSWAL");
             if (adapter instanceof MotilalOswalAdapter mofsl) {
-                BrokerAccount account = mofsl.connectWithTotp(userId, clientCode, password, totpSecret);
+                BrokerAccount account = mofsl.connectWithTotp(userId, clientCode, password, totpSecret, apiKey, apiSecret);
                 log.info("MOFSL connected with TOTP for user {}, clientCode={}, account {}", userId, clientCode, account.getId());
                 return ResponseEntity.ok(Map.of("status", "ok", "accountId", account.getId(), "broker", "MOTILALOSWAL"));
             }

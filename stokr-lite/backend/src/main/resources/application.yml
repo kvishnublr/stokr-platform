@@ -64,9 +64,6 @@ broker:
     api-key: ${NAVIA_API_KEY:}
     api-secret: ${NAVIA_API_SECRET:}
     redirect-uri: ${NAVIA_REDIRECT_URI:http://localhost:8080/api/brokers/navia/callback}
-  mofsl:
-    api-key: ${BROKER_MOFSL_API_KEY:}
-    api-secret: ${BROKER_MOFSL_API_SECRET:}
 
 # Stokr UI base URL (used for OAuth callback redirects)
 stokr:

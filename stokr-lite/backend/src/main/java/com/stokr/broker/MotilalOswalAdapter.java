@@ -3,7 +3,6 @@ package com.stokr.broker;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -14,13 +13,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Motilal Oswal (MOFSL) OpenAPI adapter. TOTP-based auth.
+ * Motilal Oswal (MOFSL) OpenAPI adapter. TOTP-based auth, per-user API key/secret.
  * Aligned with MOFSL OpenAPI docs (v7 login, v2 placeorder, v4 positions, v5 orderbook).
- *
- * IMPORTANT: symboltoken must be a numeric exchange scrip code, not a text trading symbol.
- * The caller (e.g. OptionArbAutoExecService) must resolve the trading symbol to a numeric
- * scrip token before building the BrokerOrderRequest. If symboltoken is passed as a text
- * string, MOFSL will reject the order.
  */
 @Slf4j
 @Component
@@ -28,12 +22,6 @@ public class MotilalOswalAdapter implements BrokerAdapter {
 
     private static final String MOFSL_BASE = "https://openapi.motilaloswal.com";
     private static final ObjectMapper MAPPER = new ObjectMapper();
-
-    @Value("${broker.mofsl.api-key:}")
-    private String apiKey;
-
-    @Value("${broker.mofsl.api-secret:}")
-    private String apiSecret;
 
     private final RestClient http;
     private final BrokerAccountRepository repository;
@@ -45,7 +33,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         this.repository = repository;
     }
 
-    private record CachedSession(String token, String clientCode, long expiresAt) {
+    private record CachedSession(String token, String clientCode, String apiKey, String apiSecret, long expiresAt) {
         boolean isExpired() { return System.currentTimeMillis() > expiresAt; }
     }
 
@@ -62,9 +50,10 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         throw new UnsupportedOperationException("Motilal Oswal uses TOTP-based auth, not OAuth.");
     }
 
-    public BrokerAccount connectWithTotp(Long userId, String clientCode, String password, String totpSecret) {
+    public BrokerAccount connectWithTotp(Long userId, String clientCode, String password,
+                                          String totpSecret, String apiKey, String apiSecret) {
         if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalStateException("MOFSL API key is not configured. Set BROKER_MOFSL_API_KEY environment variable.");
+            throw new IllegalStateException("MOFSL API key is required. Get it from the Motilal Oswal developer portal.");
         }
         BrokerAccount account = repository.findByUserIdAndBrokerNameAndStatus(userId, "MOTILALOSWAL", "ACTIVE")
                 .stream().findFirst().orElse(null);
@@ -83,6 +72,8 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         account.setClientId(clientCode);
         account.setMofslPassword(password);
         account.setMofslTotpSecret(totpSecret);
+        account.setMofslApiKey(apiKey);
+        account.setMofslApiSecret(apiSecret);
         account.setTokenExpiry(java.time.Instant.now().plusSeconds(365L * 24 * 3600));
         BrokerAccount saved = repository.save(account);
         try {
@@ -100,12 +91,16 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         String clientCode = account.getClientId();
         String password = account.getMofslPassword();
         String totpSecret = account.getMofslTotpSecret();
+        String apiKey = account.getMofslApiKey();
 
         if (clientCode == null || clientCode.isBlank() || password == null || password.isBlank()) {
             throw new IllegalStateException("MOFSL client code and password are required.");
         }
         if (totpSecret == null || totpSecret.isBlank()) {
             throw new IllegalStateException("MOFSL TOTP secret is required.");
+        }
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException("MOFSL API key is required.");
         }
 
         CachedSession cached = sessionCache.get(account.getId());
@@ -125,7 +120,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         loginBody.put("totp", otp);
 
         try {
-            String respJson = mofslPost("/rest/login/v7/authdirectapi", loginBody, null);
+            String respJson = mofslPost("/rest/login/v7/authdirectapi", loginBody, null, apiKey, account.getMofslApiSecret());
             JsonNode root = MAPPER.readTree(respJson);
             String status = root.path("status").asText("");
             if (!"SUCCESS".equalsIgnoreCase(status)) {
@@ -135,7 +130,8 @@ public class MotilalOswalAdapter implements BrokerAdapter {
             if (token == null || token.isBlank()) {
                 throw new RuntimeException("MOFSL login returned no AuthToken");
             }
-            sessionCache.put(account.getId(), new CachedSession(token, clientCode, System.currentTimeMillis() + 8 * 60 * 60 * 1000));
+            sessionCache.put(account.getId(), new CachedSession(token, clientCode, apiKey, account.getMofslApiSecret(),
+                    System.currentTimeMillis() + 8 * 60 * 60 * 1000));
             log.info("MOFSL: login successful for clientCode={}", clientCode);
             return token;
         } catch (RuntimeException e) {
@@ -145,17 +141,27 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         }
     }
 
-    private String ensureToken(String accessToken) {
+    private record ResolvedAccount(String token, String apiKey, String apiSecret) {}
+
+    private ResolvedAccount ensureToken(String accessToken) {
         for (var entry : sessionCache.entrySet()) {
-            if (entry.getValue().token.equals(accessToken) && !entry.getValue().isExpired()) {
-                return accessToken;
+            CachedSession c = entry.getValue();
+            if (c.token.equals(accessToken) && !c.isExpired()) {
+                return new ResolvedAccount(accessToken, c.apiKey, c.apiSecret);
             }
         }
         List<BrokerAccount> accounts = repository.findByBrokerNameAndStatus("MOTILALOSWAL", "ACTIVE");
         if (!accounts.isEmpty()) {
-            try { return login(accounts.get(0)); } catch (Exception e) { log.warn("MOFSL re-login failed: {}", e.getMessage()); }
+            BrokerAccount acct = accounts.get(0);
+            try {
+                String token = login(acct);
+                return new ResolvedAccount(token, acct.getMofslApiKey(), acct.getMofslApiSecret());
+            } catch (Exception e) {
+                log.warn("MOFSL re-login failed: {}", e.getMessage());
+                return new ResolvedAccount(accessToken, acct.getMofslApiKey(), acct.getMofslApiSecret());
+            }
         }
-        return accessToken;
+        return new ResolvedAccount(accessToken, "", "");
     }
 
     private static String mapExchange(String exchange) {
@@ -174,7 +180,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     @Override
     public BrokerOrderResponse placeOrder(String accessToken, BrokerOrderRequest request) {
         log.info("MOFSL: placing order {} {} {} qty={}", request.side(), request.symbol(), request.orderType(), request.quantity());
-        String token = ensureToken(accessToken);
+        ResolvedAccount resolved = ensureToken(accessToken);
 
         String mofslExchange = mapExchange(request.exchange());
 
@@ -195,7 +201,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         body.put("tag", "STOKR");
 
         try {
-            String respJson = mofslPost("/rest/trans/v2/placeorder", body, token);
+            String respJson = mofslPost("/rest/trans/v2/placeorder", body, resolved.token, resolved.apiKey, resolved.apiSecret);
             JsonNode root = MAPPER.readTree(respJson);
             String status = root.path("status").asText("");
             String message = root.path("message").asText("");
@@ -216,10 +222,10 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     @Override
     public void cancelOrder(String accessToken, String orderId) {
         log.info("MOFSL: cancelling order {}", orderId);
-        String token = ensureToken(accessToken);
+        ResolvedAccount resolved = ensureToken(accessToken);
         Map<String, Object> body = Map.of("uniqueorderid", orderId);
         try {
-            mofslPost("/rest/trans/v1/cancelorder", body, token);
+            mofslPost("/rest/trans/v1/cancelorder", body, resolved.token, resolved.apiKey, resolved.apiSecret);
         } catch (Exception e) {
             log.warn("MOFSL cancel order {} failed: {}", orderId, e.getMessage());
         }
@@ -228,9 +234,9 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     @Override
     public List<BrokerPosition> getPositions(String accessToken) {
         log.info("MOFSL: fetching positions");
-        String token = ensureToken(accessToken);
+        ResolvedAccount resolved = ensureToken(accessToken);
         try {
-            String respJson = mofslPost("/rest/book/v4/getposition", Map.of(), token);
+            String respJson = mofslPost("/rest/book/v4/getposition", Map.of(), resolved.token, resolved.apiKey, resolved.apiSecret);
             JsonNode root = MAPPER.readTree(respJson);
             JsonNode positions = root.path("data");
             List<BrokerPosition> result = new ArrayList<>();
@@ -272,9 +278,9 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     @Override
     public BigDecimal getAvailableMargin(String accessToken) {
         log.info("MOFSL: fetching available margin");
-        String token = ensureToken(accessToken);
+        ResolvedAccount resolved = ensureToken(accessToken);
         try {
-            String respJson = mofslPost("/rest/report/v3/getreportmarginsummary", Map.of(), token);
+            String respJson = mofslPost("/rest/report/v3/getreportmarginsummary", Map.of(), resolved.token, resolved.apiKey, resolved.apiSecret);
             JsonNode root = MAPPER.readTree(respJson);
             String status = root.path("status").asText("");
             if ("SUCCESS".equalsIgnoreCase(status)) {
@@ -293,9 +299,9 @@ public class MotilalOswalAdapter implements BrokerAdapter {
 
     @Override
     public String getOrderStatus(String accessToken, String orderId) {
-        String token = ensureToken(accessToken);
+        ResolvedAccount resolved = ensureToken(accessToken);
         try {
-            String respJson = mofslPost("/rest/book/v5/getorderbook", Map.of(), token);
+            String respJson = mofslPost("/rest/book/v5/getorderbook", Map.of(), resolved.token, resolved.apiKey, resolved.apiSecret);
             JsonNode root = MAPPER.readTree(respJson);
             JsonNode orders = root.path("data");
             if (orders.isArray()) {
@@ -312,7 +318,8 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         return "UNKNOWN";
     }
 
-    private String mofslPost(String path, Map<String, Object> body, String token) throws Exception {
+    private String mofslPost(String path, Map<String, Object> body, String token,
+                              String apiKey, String apiSecret) throws Exception {
         String bodyJson = MAPPER.writeValueAsString(body);
         var spec = http.post()
                 .uri(MOFSL_BASE + path)
