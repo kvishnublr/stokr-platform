@@ -6,16 +6,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.io.BufferedReader;
+import java.io.StringReader;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Motilal Oswal (MOFSL) OpenAPI adapter. TOTP-based auth, per-user API key/secret.
- * Aligned with MOFSL OpenAPI docs (v7 login, v2 placeorder, v4 positions, v5 orderbook).
- */
 @Slf4j
 @Component
 public class MotilalOswalAdapter implements BrokerAdapter {
@@ -27,6 +25,11 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     private final BrokerAccountRepository repository;
 
     private final ConcurrentHashMap<Long, CachedSession> sessionCache = new ConcurrentHashMap<>();
+
+    // Scripmaster: maps "NSEFO|scripname" → scripcode (refreshed daily)
+    private volatile Map<String, Integer> scripMaster = Collections.emptyMap();
+    private volatile long scripMasterLoadedAt = 0;
+    private static final long SCRIP_MASTER_TTL = 6 * 60 * 60 * 1000L; // 6 hours
 
     public MotilalOswalAdapter(RestClient.Builder restClientBuilder, BrokerAccountRepository repository) {
         this.http = restClientBuilder.build();
@@ -49,6 +52,88 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     public String[] exchangeToken(String requestToken) {
         throw new UnsupportedOperationException("Motilal Oswal uses TOTP-based auth, not OAuth.");
     }
+
+    // ---- Scripmaster: resolve text trading symbol → numeric scrip code ----
+
+    private void ensureScripMaster(String exchange) {
+        if (!scripMaster.isEmpty() && (System.currentTimeMillis() - scripMasterLoadedAt) < SCRIP_MASTER_TTL) {
+            return;
+        }
+        try {
+            loadScripMasterCsv(exchange);
+        } catch (Exception e) {
+            log.warn("MOFSL: scripmaster CSV load failed for {}: {}", exchange, e.getMessage());
+        }
+    }
+
+    private synchronized void loadScripMasterCsv(String exchange) {
+        if (!scripMaster.isEmpty() && (System.currentTimeMillis() - scripMasterLoadedAt) < SCRIP_MASTER_TTL) {
+            return; // another thread loaded it
+        }
+        String url = MOFSL_BASE + "/getscripmastercsv?name=" + exchange;
+        log.info("MOFSL: downloading scripmaster CSV from {}", url);
+        try {
+            String csv = http.get().uri(url)
+                    .header("Accept", "text/csv")
+                    .retrieve().body(String.class);
+            if (csv == null || csv.isBlank()) {
+                log.warn("MOFSL: scripmaster CSV empty for {}", exchange);
+                return;
+            }
+            Map<String, Integer> newMap = new ConcurrentHashMap<>();
+            try (BufferedReader reader = new BufferedReader(new StringReader(csv))) {
+                String headerLine = reader.readLine();
+                if (headerLine == null) return;
+                // CSV columns: exchange,exchangename,scripcode,scripname,marketlot,scripshortname,...
+                String[] headers = headerLine.split(",", -1);
+                int scripCodeIdx = -1, scripNameIdx = -1, exchangeIdx = -1;
+                for (int i = 0; i < headers.length; i++) {
+                    String h = headers[i].trim().toLowerCase();
+                    if ("scripcode".equals(h)) scripCodeIdx = i;
+                    else if ("scripname".equals(h)) scripNameIdx = i;
+                    else if ("exchange".equals(h) || "exchangename".equals(h)) exchangeIdx = i;
+                }
+                if (scripCodeIdx < 0 || scripNameIdx < 0) {
+                    log.warn("MOFSL: scripmaster CSV missing scripcode/scripname columns. Headers: {}", headerLine);
+                    return;
+                }
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String[] cols = line.split(",", -1);
+                    if (cols.length <= Math.max(scripCodeIdx, scripNameIdx)) continue;
+                    try {
+                        int code = Integer.parseInt(cols[scripCodeIdx].trim());
+                        String name = cols[scripNameIdx].trim().toUpperCase();
+                        String exch = exchangeIdx >= 0 && cols.length > exchangeIdx
+                                ? cols[exchangeIdx].trim().toUpperCase() : exchange;
+                        newMap.put(exch + "|" + name, code);
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+            log.info("MOFSL: scripmaster loaded {} entries for {}", newMap.size(), exchange);
+            scripMaster = newMap;
+            scripMasterLoadedAt = System.currentTimeMillis();
+        } catch (Exception e) {
+            log.error("MOFSL: scripmaster download failed: {}", e.getMessage());
+        }
+    }
+
+    private Integer resolveScripCode(String exchange, String tradingSymbol) {
+        ensureScripMaster(exchange);
+        String key = exchange.toUpperCase() + "|" + tradingSymbol.toUpperCase();
+        Integer code = scripMaster.get(key);
+        if (code != null) return code;
+        // Try without exchange prefix (some entries use different exchange naming)
+        for (var entry : scripMaster.entrySet()) {
+            if (entry.getKey().endsWith("|" + tradingSymbol.toUpperCase())) {
+                return entry.getValue();
+            }
+        }
+        log.warn("MOFSL: no scripcode found for {} on {}", tradingSymbol, exchange);
+        return null;
+    }
+
+    // ---- Auth ----
 
     public BrokerAccount connectWithTotp(Long userId, String clientCode, String password,
                                           String totpSecret, String apiKey, String apiSecret) {
@@ -141,13 +226,13 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         }
     }
 
-    private record ResolvedAccount(String token, String apiKey, String apiSecret) {}
+    private record ResolvedAccount(String token, String clientCode, String apiKey, String apiSecret) {}
 
     private ResolvedAccount ensureToken(String accessToken) {
         for (var entry : sessionCache.entrySet()) {
             CachedSession c = entry.getValue();
             if (c.token.equals(accessToken) && !c.isExpired()) {
-                return new ResolvedAccount(accessToken, c.apiKey, c.apiSecret);
+                return new ResolvedAccount(accessToken, c.clientCode, c.apiKey, c.apiSecret);
             }
         }
         List<BrokerAccount> accounts = repository.findByBrokerNameAndStatus("MOTILALOSWAL", "ACTIVE");
@@ -155,13 +240,13 @@ public class MotilalOswalAdapter implements BrokerAdapter {
             BrokerAccount acct = accounts.get(0);
             try {
                 String token = login(acct);
-                return new ResolvedAccount(token, acct.getMofslApiKey(), acct.getMofslApiSecret());
+                return new ResolvedAccount(token, acct.getClientId(), acct.getMofslApiKey(), acct.getMofslApiSecret());
             } catch (Exception e) {
                 log.warn("MOFSL re-login failed: {}", e.getMessage());
-                return new ResolvedAccount(accessToken, acct.getMofslApiKey(), acct.getMofslApiSecret());
+                return new ResolvedAccount(accessToken, acct.getClientId(), acct.getMofslApiKey(), acct.getMofslApiSecret());
             }
         }
-        return new ResolvedAccount(accessToken, "", "");
+        return new ResolvedAccount(accessToken, "", "", "");
     }
 
     private static String mapExchange(String exchange) {
@@ -177,6 +262,8 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         };
     }
 
+    // ---- Order placement ----
+
     @Override
     public BrokerOrderResponse placeOrder(String accessToken, BrokerOrderRequest request) {
         log.info("MOFSL: placing order {} {} {} qty={}", request.side(), request.symbol(), request.orderType(), request.quantity());
@@ -184,9 +271,19 @@ public class MotilalOswalAdapter implements BrokerAdapter {
 
         String mofslExchange = mapExchange(request.exchange());
 
+        // Resolve text symbol → numeric scrip code
+        Integer scripCode = resolveScripCode(mofslExchange, request.symbol());
+        if (scripCode == null) {
+            log.error("MOFSL: cannot resolve scripcode for symbol={} exchange={}", request.symbol(), mofslExchange);
+            return new BrokerOrderResponse(null, "REJECTED",
+                    "Symbol not found in MOFSL scripmaster: " + request.symbol() + " on " + mofslExchange);
+        }
+        log.info("MOFSL: resolved {} → scripcode {}", request.symbol(), scripCode);
+
         Map<String, Object> body = new LinkedHashMap<>();
+        body.put("clientcode", resolved.clientCode);
         body.put("exchange", mofslExchange);
-        body.put("symboltoken", request.symbol());
+        body.put("symboltoken", scripCode);
         body.put("buyorsell", request.side().name());
         body.put("ordertype", request.price() != null && request.price() > 0 ? "LIMIT" : "MARKET");
         body.put("producttype", request.productType() != null ? request.productType() : "NORMAL");
@@ -207,14 +304,14 @@ public class MotilalOswalAdapter implements BrokerAdapter {
             String message = root.path("message").asText("");
             if ("SUCCESS".equalsIgnoreCase(status)) {
                 String orderId = root.path("uniqueorderid").asText(root.path("orderid").asText(null));
-                log.info("MOFSL order placed: {} -> {} (message={})", request.symbol(), orderId, message);
+                log.info("MOFSL order placed: {} (scrip={}) -> {} (message={})", request.symbol(), scripCode, orderId, message);
                 return new BrokerOrderResponse(orderId, "OPEN", message);
             }
-            log.warn("MOFSL order REJECTED: symbol={} side={} qty={} status={} message={}",
-                    request.symbol(), request.side(), request.quantity(), status, message);
+            log.warn("MOFSL order REJECTED: symbol={} scrip={} side={} qty={} status={} message={}",
+                    request.symbol(), scripCode, request.side(), request.quantity(), status, message);
             return new BrokerOrderResponse(null, "REJECTED", message);
         } catch (Exception e) {
-            log.error("MOFSL placeOrder failed for {}: {}", request.symbol(), e.getMessage());
+            log.error("MOFSL placeOrder failed for {} (scrip={}): {}", request.symbol(), scripCode, e.getMessage());
             return new BrokerOrderResponse(null, "REJECTED", e.getMessage());
         }
     }
@@ -318,17 +415,21 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         return "UNKNOWN";
     }
 
+    // ---- HTTP ----
+
     private String mofslPost(String path, Map<String, Object> body, String token,
                               String apiKey, String apiSecret) throws Exception {
         String bodyJson = MAPPER.writeValueAsString(body);
+        String serverIp = System.getProperty("server.public-ip", "173.249.55.84");
         var spec = http.post()
                 .uri(MOFSL_BASE + path)
                 .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
                 .header("ApiKey", apiKey != null ? apiKey : "")
                 .header("SourceId", "WEB")
                 .header("vendorinfo", "STOKR")
-                .header("ClientLocalIp", "127.0.0.1")
-                .header("ClientPublicIp", "127.0.0.1")
+                .header("ClientLocalIp", serverIp)
+                .header("ClientPublicIp", serverIp)
                 .header("MacAddress", "00:00:00:00:00:00");
         if (apiSecret != null && !apiSecret.isBlank()) {
             spec = spec.header("apisecretkey", apiSecret);
