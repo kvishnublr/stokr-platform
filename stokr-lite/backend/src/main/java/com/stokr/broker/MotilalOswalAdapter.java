@@ -136,7 +136,8 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     // ---- Auth ----
 
     public BrokerAccount connectWithTotp(Long userId, String clientCode, String password,
-                                          String totpSecret, String apiKey, String apiSecret) {
+                                          String totpSecret, String apiKey, String apiSecret,
+                                          String dob) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("MOFSL API key is required. Get it from the Motilal Oswal developer portal.");
         }
@@ -159,6 +160,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         account.setMofslTotpSecret(totpSecret);
         account.setMofslApiKey(apiKey);
         account.setMofslApiSecret(apiSecret);
+        if (dob != null && !dob.isBlank()) account.setMofslDob(dob.trim());
         account.setTokenExpiry(java.time.Instant.now().plusSeconds(365L * 24 * 3600));
         BrokerAccount saved = repository.save(account);
         try {
@@ -196,12 +198,13 @@ public class MotilalOswalAdapter implements BrokerAdapter {
 
         String otp = TotpUtils.generate(totpSecret);
         String hashedPassword = sha256(password + apiKey);
-        log.info("MOFSL: logging in with TOTP for clientCode={}", clientCode);
+        String dob = account.getMofslDob();
+        log.info("MOFSL: logging in with TOTP for clientCode={}, hasDob={}", clientCode, dob != null);
 
         Map<String, Object> loginBody = new LinkedHashMap<>();
         loginBody.put("userid", clientCode);
         loginBody.put("password", hashedPassword);
-        loginBody.put("2FA", otp);
+        loginBody.put("2FA", dob != null && !dob.isBlank() ? dob : otp);
         loginBody.put("totp", otp);
 
         try {

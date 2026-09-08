@@ -104,6 +104,7 @@ public class BrokerController {
         String totpSecret = body.getOrDefault("totpSecret", "").trim();
         String apiKey = body.getOrDefault("apiKey", "").trim();
         String apiSecret = body.getOrDefault("apiSecret", "").trim();
+        String dob = body.getOrDefault("dob", "").trim();
         if (clientCode.isBlank() || password.isBlank() || totpSecret.isBlank() || apiKey.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "clientCode, password, totpSecret, and apiKey are required"));
         }
@@ -111,7 +112,7 @@ public class BrokerController {
             Long userId = SecurityUtils.currentUserId();
             BrokerAdapter adapter = brokerRegistry.getAdapter("MOTILALOSWAL");
             if (adapter instanceof MotilalOswalAdapter mofsl) {
-                BrokerAccount account = mofsl.connectWithTotp(userId, clientCode, password, totpSecret, apiKey, apiSecret);
+                BrokerAccount account = mofsl.connectWithTotp(userId, clientCode, password, totpSecret, apiKey, apiSecret, dob);
                 log.info("MOFSL connected with TOTP for user {}, clientCode={}, account {}", userId, clientCode, account.getId());
                 return ResponseEntity.ok(Map.of("status", "ok", "accountId", account.getId(), "broker", "MOTILALOSWAL"));
             }

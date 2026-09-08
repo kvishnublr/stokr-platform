@@ -64,6 +64,9 @@ public class BrokerAccount {
     @Column(name = "mofsl_api_secret", columnDefinition = "TEXT")
     private String mofslApiSecret;
 
+    @Column(name = "mofsl_dob", columnDefinition = "TEXT")
+    private String mofslDob;
+
     @Column(name = "auto_reconnect")
     @Builder.Default
     private Boolean autoReconnect = false;
