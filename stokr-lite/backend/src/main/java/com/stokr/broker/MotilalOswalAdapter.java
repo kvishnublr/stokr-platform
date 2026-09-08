@@ -8,27 +8,19 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Motilal Oswal (MOFSL) Investor/Trading API adapter. TOTP-based auth, same shape as
- * NaviaAdapter -- client code + password + TOTP secret, no OAuth redirect.
+ * Motilal Oswal (MOFSL) OpenAPI adapter. TOTP-based auth.
+ * Aligned with MOFSL OpenAPI docs (v7 login, v2 placeorder, v4 positions, v5 orderbook).
  *
- * IMPORTANT -- this is a best-effort implementation against MOFSL's publicly documented
- * REST API conventions (login endpoint, ApiKey/vendor headers on every call, SHA256-hashed
- * password, order placement by trading symbol + exchange). It has NOT been validated against
- * a real MOFSL account or their current API docs/Postman collection. Before trusting this for
- * a live order:
- *   1. Confirm the base URL and exact endpoint paths below against your MOFSL developer
- *      portal docs (these can change between UAT/production and API versions).
- *   2. Confirm whether MOFSL expects a plain trading-symbol string for `tradingsymbol`
- *      (like Navia/Zerodha in this codebase) or a numeric scrip/symbol token instead
- *      (like several other Indian broker APIs) -- if it's token-based, placeOrder below
- *      will need a symbol->token resolution step added before it can safely place NFO
-     *  option orders.
- *   3. Test getAvailableMargin() first (read-only, low risk) before placeOrder().
+ * IMPORTANT: symboltoken must be a numeric exchange scrip code, not a text trading symbol.
+ * The caller (e.g. OptionArbAutoExecService) must resolve the trading symbol to a numeric
+ * scrip token before building the BrokerOrderRequest. If symboltoken is passed as a text
+ * string, MOFSL will reject the order.
  */
 @Slf4j
 @Component
@@ -39,6 +31,9 @@ public class MotilalOswalAdapter implements BrokerAdapter {
 
     @Value("${broker.mofsl.api-key:}")
     private String apiKey;
+
+    @Value("${broker.mofsl.api-secret:}")
+    private String apiSecret;
 
     private final RestClient http;
     private final BrokerAccountRepository repository;
@@ -120,16 +115,17 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         }
 
         String otp = TotpUtils.generate(totpSecret);
+        String hashedPassword = sha256(password + apiKey);
         log.info("MOFSL: logging in with TOTP for clientCode={}", clientCode);
 
         Map<String, Object> loginBody = new LinkedHashMap<>();
         loginBody.put("userid", clientCode);
-        loginBody.put("password", sha256(password));
+        loginBody.put("password", hashedPassword);
         loginBody.put("2FA", otp);
         loginBody.put("totp", otp);
 
         try {
-            String respJson = mofslPost("/rest/login/v3/authdirectapi", loginBody, null);
+            String respJson = mofslPost("/rest/login/v7/authdirectapi", loginBody, null);
             JsonNode root = MAPPER.readTree(respJson);
             String status = root.path("status").asText("");
             if (!"SUCCESS".equalsIgnoreCase(status)) {
@@ -150,9 +146,6 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     }
 
     private String ensureToken(String accessToken) {
-        // accessToken passed in is the stored value from broker_accounts.access_token, which
-        // may be stale (MOFSL sessions expire); re-login using the account's saved credentials
-        // whenever we can resolve which account this token belongs to.
         for (var entry : sessionCache.entrySet()) {
             if (entry.getValue().token.equals(accessToken) && !entry.getValue().isExpired()) {
                 return accessToken;
@@ -165,15 +158,29 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         return accessToken;
     }
 
+    private static String mapExchange(String exchange) {
+        if (exchange == null) return "NSEFO";
+        return switch (exchange.toUpperCase()) {
+            case "NFO", "NSEFO" -> "NSEFO";
+            case "NSE" -> "NSE";
+            case "BSE" -> "BSE";
+            case "MCX" -> "MCX";
+            case "NSECD", "CDS" -> "NSECD";
+            case "BSEFO", "BFO" -> "BSEFO";
+            default -> exchange;
+        };
+    }
+
     @Override
     public BrokerOrderResponse placeOrder(String accessToken, BrokerOrderRequest request) {
         log.info("MOFSL: placing order {} {} {} qty={}", request.side(), request.symbol(), request.orderType(), request.quantity());
         String token = ensureToken(accessToken);
 
+        String mofslExchange = mapExchange(request.exchange());
+
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("exchange", request.exchange() != null ? request.exchange() : "NFO");
-        body.put("symboltoken", request.symbol()); // see class javadoc -- may need numeric token instead
-        body.put("tradingsymbol", request.symbol());
+        body.put("exchange", mofslExchange);
+        body.put("symboltoken", request.symbol());
         body.put("buyorsell", request.side().name());
         body.put("ordertype", request.price() != null && request.price() > 0 ? "LIMIT" : "MARKET");
         body.put("producttype", request.productType() != null ? request.productType() : "NORMAL");
@@ -188,7 +195,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         body.put("tag", "STOKR");
 
         try {
-            String respJson = mofslPost("/rest/trans/v1/placeorder", body, token);
+            String respJson = mofslPost("/rest/trans/v2/placeorder", body, token);
             JsonNode root = MAPPER.readTree(respJson);
             String status = root.path("status").asText("");
             String message = root.path("message").asText("");
@@ -223,22 +230,35 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         log.info("MOFSL: fetching positions");
         String token = ensureToken(accessToken);
         try {
-            String respJson = mofslPost("/rest/book/v1/getposition", Map.of(), token);
+            String respJson = mofslPost("/rest/book/v4/getposition", Map.of(), token);
             JsonNode root = MAPPER.readTree(respJson);
             JsonNode positions = root.path("data");
             List<BrokerPosition> result = new ArrayList<>();
             if (positions.isArray()) {
                 for (JsonNode p : positions) {
-                    int qty = p.path("buyquantity").asInt(0) - p.path("sellquantity").asInt(0);
+                    int buyQty = p.path("buyquantity").asInt(0);
+                    int sellQty = p.path("sellquantity").asInt(0);
+                    int qty = buyQty - sellQty;
                     if (qty == 0) continue;
+
+                    BigDecimal buyAmount = new BigDecimal(p.path("buyamount").asText("0"));
+                    BigDecimal sellAmount = new BigDecimal(p.path("sellamount").asText("0"));
+                    BigDecimal avgPrice = qty > 0
+                            ? (buyQty > 0 ? buyAmount.divide(BigDecimal.valueOf(buyQty), 4, RoundingMode.HALF_UP) : BigDecimal.ZERO)
+                            : (sellQty > 0 ? sellAmount.divide(BigDecimal.valueOf(sellQty), 4, RoundingMode.HALF_UP) : BigDecimal.ZERO);
+                    BigDecimal ltp = new BigDecimal(p.path("LTP").asText(p.path("ltp").asText("0")));
+                    BigDecimal mtm = new BigDecimal(p.path("marktomarket").asText("0"));
+                    BigDecimal booked = new BigDecimal(p.path("bookedprofitloss").asText("0"));
+
                     result.add(new BrokerPosition(
                             p.path("symbol").asText(""),
-                            p.path("exchange").asText("NFO"),
+                            p.path("exchange").asText("NSEFO"),
                             qty,
-                            new BigDecimal(p.path("buyavgprice").asText("0")),
-                            new BigDecimal(p.path("ltp").asText("0")),
-                            BigDecimal.ZERO, BigDecimal.ZERO,
-                            p.path("producttype").asText("NORMAL")
+                            avgPrice,
+                            ltp,
+                            mtm,
+                            booked,
+                            p.path("productname").asText(p.path("producttype").asText("NORMAL"))
                     ));
                 }
             }
@@ -254,12 +274,13 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         log.info("MOFSL: fetching available margin");
         String token = ensureToken(accessToken);
         try {
-            String respJson = mofslPost("/rest/report/v1/getreportmargin", Map.of(), token);
+            String respJson = mofslPost("/rest/report/v3/getreportmarginsummary", Map.of(), token);
             JsonNode root = MAPPER.readTree(respJson);
             String status = root.path("status").asText("");
             if ("SUCCESS".equalsIgnoreCase(status)) {
                 JsonNode data = root.path("data");
-                double available = data.path("cashavailable").asDouble(0);
+                double available = data.path("cashavailable").asDouble(
+                        data.path("CashAvailable").asDouble(0));
                 log.info("MOFSL: available margin={}", available);
                 return BigDecimal.valueOf(available);
             }
@@ -274,7 +295,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     public String getOrderStatus(String accessToken, String orderId) {
         String token = ensureToken(accessToken);
         try {
-            String respJson = mofslPost("/rest/book/v1/getorderbook", Map.of(), token);
+            String respJson = mofslPost("/rest/book/v5/getorderbook", Map.of(), token);
             JsonNode root = MAPPER.readTree(respJson);
             JsonNode orders = root.path("data");
             if (orders.isArray()) {
@@ -302,8 +323,12 @@ public class MotilalOswalAdapter implements BrokerAdapter {
                 .header("ClientLocalIp", "127.0.0.1")
                 .header("ClientPublicIp", "127.0.0.1")
                 .header("MacAddress", "00:00:00:00:00:00");
+        if (apiSecret != null && !apiSecret.isBlank()) {
+            spec = spec.header("apisecretkey", apiSecret);
+        }
         if (token != null && !token.isBlank()) {
             spec = spec.header("Authorization", token);
+            spec = spec.header("accesstoken", token);
         }
         return spec.body(bodyJson).retrieve().body(String.class);
     }
