@@ -2,6 +2,7 @@ package com.stokr.broker;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -39,6 +40,28 @@ public class MotilalOswalAdapter implements BrokerAdapter {
 
     private record CachedSession(String token, String clientCode, String apiKey, String apiSecret, long expiresAt) {
         boolean isExpired() { return System.currentTimeMillis() > expiresAt; }
+    }
+
+    @PostConstruct
+    public void autoLoginOnStartup() {
+        try {
+            List<BrokerAccount> accounts = repository.findByBrokerNameAndStatus("MOTILALOSWAL", "ACTIVE");
+            for (BrokerAccount acct : accounts) {
+                if (acct.getMofslPassword() != null && acct.getMofslTotpSecret() != null && acct.getMofslApiKey() != null) {
+                    log.info("MOFSL: auto-login on startup for clientCode={}", acct.getClientId());
+                    try {
+                        String token = login(acct);
+                        acct.setAccessToken(token);
+                        repository.save(acct);
+                        log.info("MOFSL: startup login successful, token saved for account {}", acct.getId());
+                    } catch (Exception e) {
+                        log.warn("MOFSL: startup login failed for {}: {}", acct.getClientId(), e.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("MOFSL: startup auto-login error: {}", e.getMessage());
+        }
     }
 
     @Override
