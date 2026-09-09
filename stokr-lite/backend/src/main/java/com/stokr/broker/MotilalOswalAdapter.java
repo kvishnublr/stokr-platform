@@ -331,7 +331,6 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         log.info("MOFSL: resolved {} → scripcode {}", request.symbol(), scripCode);
 
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("clientcode", resolved.clientCode);
         body.put("exchange", mofslExchange);
         body.put("symboltoken", scripCode);
         body.put("buyorsell", request.side().name());
@@ -506,19 +505,19 @@ public class MotilalOswalAdapter implements BrokerAdapter {
             reqBuilder = reqBuilder.header("apisecretkey", apiSecret);
         }
         if (token != null && !token.isBlank()) {
-            reqBuilder = reqBuilder.header("Authorization", token);
+            reqBuilder = reqBuilder.header("Authorization", "Bearer " + token);
             reqBuilder = reqBuilder.header("accesstoken", token);
         }
 
         var request = reqBuilder.POST(java.net.http.HttpRequest.BodyPublishers.ofString(bodyJson))
                 .build();
 
-        log.debug("MOFSL HTTP: {} vendorinfo={}", path, vendorVal);
+        log.info("MOFSL HTTP: {} vendorinfo={} hasToken={}", path, vendorVal, token != null && !token.isBlank());
 
         var response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
         String responseBody = response.body();
-        log.debug("MOFSL HTTP response: status={} body={}", response.statusCode(),
-                responseBody.length() > 300 ? responseBody.substring(0, 300) : responseBody);
+        log.info("MOFSL HTTP response: {} status={} body={}", path, response.statusCode(),
+                responseBody.length() > 500 ? responseBody.substring(0, 500) : responseBody);
         return responseBody;
     }
 
