@@ -13,6 +13,7 @@ import java.math.RoundingMode;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -254,7 +255,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         loginBody.put("totp", otp);
 
         try {
-            String respJson = mofslPost("/rest/login/v7/authdirectapi", loginBody, null, apiKey, account.getMofslApiSecret());
+            String respJson = mofslPost("/rest/login/v7/authdirectapi", loginBody, null, apiKey, account.getMofslApiSecret(), clientCode);
             JsonNode root = MAPPER.readTree(respJson);
             String status = root.path("status").asText("");
             if (!"SUCCESS".equalsIgnoreCase(status)) {
@@ -350,7 +351,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         body.put("tag", "STOKR");
 
         try {
-            String respJson = mofslPost("/rest/trans/v2/placeorder", body, resolved.token, resolved.apiKey, resolved.apiSecret);
+            String respJson = mofslPost("/rest/trans/v2/placeorder", body, resolved.token, resolved.apiKey, resolved.apiSecret, resolved.clientCode);
             JsonNode root = MAPPER.readTree(respJson);
             String status = root.path("status").asText("");
             String message = root.path("message").asText("");
@@ -374,7 +375,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         ResolvedAccount resolved = ensureToken(accessToken);
         Map<String, Object> body = Map.of("uniqueorderid", orderId);
         try {
-            mofslPost("/rest/trans/v1/cancelorder", body, resolved.token, resolved.apiKey, resolved.apiSecret);
+            mofslPost("/rest/trans/v1/cancelorder", body, resolved.token, resolved.apiKey, resolved.apiSecret, resolved.clientCode);
         } catch (Exception e) {
             log.warn("MOFSL cancel order {} failed: {}", orderId, e.getMessage());
         }
@@ -385,7 +386,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         log.info("MOFSL: fetching positions");
         ResolvedAccount resolved = ensureToken(accessToken);
         try {
-            String respJson = mofslPost("/rest/book/v4/getposition", Map.of(), resolved.token, resolved.apiKey, resolved.apiSecret);
+            String respJson = mofslPost("/rest/book/v4/getposition", Map.of(), resolved.token, resolved.apiKey, resolved.apiSecret, resolved.clientCode);
             JsonNode root = MAPPER.readTree(respJson);
             JsonNode positions = root.path("data");
             List<BrokerPosition> result = new ArrayList<>();
@@ -429,7 +430,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         log.info("MOFSL: fetching available margin");
         ResolvedAccount resolved = ensureToken(accessToken);
         try {
-            String respJson = mofslPost("/rest/report/v3/getreportmarginsummary", Map.of(), resolved.token, resolved.apiKey, resolved.apiSecret);
+            String respJson = mofslPost("/rest/report/v3/getreportmarginsummary", Map.of(), resolved.token, resolved.apiKey, resolved.apiSecret, resolved.clientCode);
             JsonNode root = MAPPER.readTree(respJson);
             String status = root.path("status").asText("");
             if ("SUCCESS".equalsIgnoreCase(status)) {
@@ -450,7 +451,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     public String getOrderStatus(String accessToken, String orderId) {
         ResolvedAccount resolved = ensureToken(accessToken);
         try {
-            String respJson = mofslPost("/rest/book/v5/getorderbook", Map.of(), resolved.token, resolved.apiKey, resolved.apiSecret);
+            String respJson = mofslPost("/rest/book/v5/getorderbook", Map.of(), resolved.token, resolved.apiKey, resolved.apiSecret, resolved.clientCode);
             JsonNode root = MAPPER.readTree(respJson);
             JsonNode orders = root.path("data");
             if (orders.isArray()) {
@@ -470,27 +471,55 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     // ---- HTTP ----
 
     private String mofslPost(String path, Map<String, Object> body, String token,
-                              String apiKey, String apiSecret) throws Exception {
+                              String apiKey, String apiSecret, String clientCode) throws Exception {
         String bodyJson = MAPPER.writeValueAsString(body);
         String serverIp = System.getProperty("server.public-ip", "173.249.55.84");
-        var spec = http.post()
-                .uri(MOFSL_BASE + path)
-                .accept(org.springframework.http.MediaType.APPLICATION_JSON)
+        String vendorVal = (clientCode != null && !clientCode.isBlank()) ? clientCode : "";
+
+        java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                .version(java.net.http.HttpClient.Version.HTTP_1_1)
+                .connectTimeout(java.time.Duration.ofSeconds(30))
+                .build();
+
+        var reqBuilder = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(MOFSL_BASE + path))
+                .timeout(java.time.Duration.ofSeconds(30))
                 .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
                 .header("ApiKey", apiKey != null ? apiKey : "")
                 .header("SourceId", "WEB")
-                .header("vendorinfo", "STOKR")
+                .header("vendorinfo", vendorVal)
+                .header("User-Agent", "MOSL/V.1.1.0")
                 .header("ClientLocalIp", serverIp)
                 .header("ClientPublicIp", serverIp)
-                .header("MacAddress", "00:00:00:00:00:00");
+                .header("MacAddress", "00:00:00:00:00:00")
+                .header("osname", "WEB")
+                .header("osversion", "1.0.0")
+                .header("devicemodel", "WEB")
+                .header("manufacturer", "WEB")
+                .header("productname", "STOKR")
+                .header("productversion", "1.0.0")
+                .header("browsername", "Chrome")
+                .header("browserversion", "120.0.0");
+
         if (apiSecret != null && !apiSecret.isBlank()) {
-            spec = spec.header("apisecretkey", apiSecret);
+            reqBuilder = reqBuilder.header("apisecretkey", apiSecret);
         }
         if (token != null && !token.isBlank()) {
-            spec = spec.header("Authorization", token);
-            spec = spec.header("accesstoken", token);
+            reqBuilder = reqBuilder.header("Authorization", token);
+            reqBuilder = reqBuilder.header("accesstoken", token);
         }
-        return spec.body(bodyJson).retrieve().body(String.class);
+
+        var request = reqBuilder.POST(java.net.http.HttpRequest.BodyPublishers.ofString(bodyJson))
+                .build();
+
+        log.debug("MOFSL HTTP: {} vendorinfo={}", path, vendorVal);
+
+        var response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+        String responseBody = response.body();
+        log.debug("MOFSL HTTP response: status={} body={}", response.statusCode(),
+                responseBody.length() > 300 ? responseBody.substring(0, 300) : responseBody);
+        return responseBody;
     }
 
     private static String sha256(String input) {
