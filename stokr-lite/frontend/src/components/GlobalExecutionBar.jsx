@@ -6,7 +6,7 @@ export default function GlobalExecutionBar({ showToast, title, subtitle }) {
   const { executionBroker, changeExecutionBroker, mofslModalOpen, setMofslModalOpen } = useGlobalExecutionBroker();
   const [isTestingBroker, setIsTestingBroker] = useState(false);
   
-  const [mofslForm, setMofslForm] = useState({ clientCode: '', password: '', totpSecret: '', apiKey: '', apiSecret: '', panNumber: '' });
+  const [mofslForm, setMofslForm] = useState({ clientCode: '', password: '', totpSecret: '', apiKey: '', apiSecret: '', dob: '' });
   const [mofslSaving, setMofslSaving] = useState(false);
   const [mofslError, setMofslError] = useState(null);
 
@@ -26,8 +26,8 @@ export default function GlobalExecutionBar({ showToast, title, subtitle }) {
   };
 
   const handleMofslConnect = async () => {
-    if (!mofslForm.clientCode || !mofslForm.password || !mofslForm.totpSecret || !mofslForm.apiKey || !mofslForm.apiSecret || !mofslForm.panNumber) {
-      setMofslError('All fields including PAN Number are required for TOTP authentication.');
+    if (!mofslForm.clientCode || !mofslForm.password || !mofslForm.totpSecret || !mofslForm.apiKey || !mofslForm.apiSecret || !mofslForm.dob) {
+      setMofslError('All fields including Date of Birth (DD/MM/YYYY) are required for TOTP authentication.');
       return;
     }
     setMofslSaving(true);
@@ -105,9 +105,9 @@ export default function GlobalExecutionBar({ showToast, title, subtitle }) {
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-violet-500 focus:bg-white transition-all" placeholder="Your MOFSL API Secret" />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-600 uppercase tracking-wide block mb-1.5">PAN NUMBER (Required)</label>
-                  <input type="text" value={mofslForm.panNumber} onChange={e => setMofslForm({...mofslForm, panNumber: e.target.value})} 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-violet-500 focus:bg-white transition-all uppercase" placeholder="Your PAN Number" />
+                  <label className="text-xs font-bold text-slate-600 uppercase tracking-wide block mb-1.5">Date of Birth (Required)</label>
+                  <input type="text" value={mofslForm.dob} onChange={e => setMofslForm({...mofslForm, dob: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-violet-500 focus:bg-white transition-all" placeholder="DD/MM/YYYY (e.g. 15/08/1990)" />
                 </div>
               </div>
               
