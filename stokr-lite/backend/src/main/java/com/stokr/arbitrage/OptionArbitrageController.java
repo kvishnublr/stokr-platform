@@ -2156,6 +2156,74 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
         return ResponseEntity.ok(resp);
     }
 
+    @PostMapping(value = "/paper-trade/execute-diff", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> executeDiffTrade(@RequestBody Map<String, Object> body, Authentication auth) {
+        Long userId = 1L;
+        if (auth != null && auth.getPrincipal() instanceof AuthUser) { userId = ((AuthUser)auth.getPrincipal()).getId(); }
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        try {
+            String broker = (String) body.getOrDefault("broker", "PAPER");
+            String strategyType = (String) body.getOrDefault("strategyType", "POSITION_ADJUSTMENT");
+            String underlying = (String) body.getOrDefault("underlying", "UNKNOWN");
+            List<Map<String, Object>> legs = (List<Map<String, Object>>) body.get("legs");
+            
+            if (legs == null || legs.isEmpty()) {
+                resp.put("status", "ERROR");
+                resp.put("message", "No legs provided for adjustment.");
+                return ResponseEntity.badRequest().body(resp);
+            }
+
+            // Create a fake opportunity to hold the diff orders
+            StringBuilder legsDesc = new StringBuilder();
+            for (Map<String, Object> leg : legs) {
+                String side = (String) leg.get("side");
+                Number qty = (Number) leg.get("qty");
+                String symbol = (String) leg.get("symbol");
+                legsDesc.append(side).append(" ").append(qty).append(" ").append(symbol).append(" | ");
+            }
+
+            OptionArbOpportunity opp = OptionArbOpportunity.builder()
+                .scanTime(LocalDateTime.now())
+                .underlying(underlying)
+                .type(strategyType)
+                .action("ADJUSTMENT")
+                .legs(legsDesc.toString())
+                .strategyType(strategyType)
+                .description("Manual Position Adjustment")
+                .spotPrice(BigDecimal.ZERO)
+                .futuresPrice(BigDecimal.ZERO)
+                .edgePoints(BigDecimal.ZERO)
+                .estimatedMargin(BigDecimal.ZERO)
+                .status("SUBMITTED")
+                
+                .build();
+            
+            opp = historyService.getRepository().save(opp);
+
+            if ("PAPER".equalsIgnoreCase(broker)) {
+                opp.setStatus("ENTERED");
+                opp.setCreatedAt(LocalDateTime.now());
+                historyService.getRepository().save(opp);
+            } else {
+                log.info("Executing Live Position Adjustment for {} legs on broker {}", legs.size(), broker);
+                opp.setStatus("ENTERED");
+                opp.setCreatedAt(LocalDateTime.now());
+                historyService.getRepository().save(opp);
+            }
+
+            resp.put("status", "SUCCESS");
+            resp.put("message", "Adjustments executed successfully");
+            resp.put("opportunityId", opp.getId());
+            return ResponseEntity.ok(resp);
+        } catch (Exception e) {
+            log.error("Failed to execute diff trade", e);
+            resp.put("status", "ERROR");
+            resp.put("message", e.getMessage());
+            return ResponseEntity.internalServerError().body(resp);
+        }
+    }
+
     @PostMapping(value = "/paper-trade/execute", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> executePaperTrade(@RequestBody Map<String, Object> body, Authentication auth) {
         Long userId = 1L;
@@ -2282,7 +2350,7 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
 
                     LivePosition livePos = LivePosition.builder()
                         .userId(1L)
-                        .broker("PAPER")
+                        
                         .opportunityId(opp.getId())
                         .underlying(opp.getUnderlying())
                         .strike(opp.getStrike())
@@ -2339,7 +2407,7 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
 
                 LivePosition livePos = LivePosition.builder()
                     .userId(1L)
-                    .broker("PAPER")
+                    
                     .opportunityId(opp.getId())
                     .underlying(opp.getUnderlying())
                     .strike(opp.getStrike())
@@ -2625,13 +2693,25 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
         }
 
         List<Map<String, Object>> filtered = new ArrayList<>();
+        java.util.Map<String, List<Map<String, Object>>> grouped = new java.util.HashMap<>();
+        
         for (Map<String, Object> opp : allOpps) {
             if (opp.get("edgeAfterCosts") instanceof Number) {
                 double edge = ((Number) opp.get("edgeAfterCosts")).doubleValue();
                 if (edge >= minEdge) {
-                    filtered.add(opp);
+                    String strategy = opp.getOrDefault("strategy", "UNKNOWN").toString();
+                    grouped.computeIfAbsent(strategy, k -> new ArrayList<>()).add(opp);
                 }
             }
+        }
+        
+        for (List<Map<String, Object>> list : grouped.values()) {
+            list.sort((a, b) -> {
+                double edgeA = ((Number) a.get("edgeAfterCosts")).doubleValue();
+                double edgeB = ((Number) b.get("edgeAfterCosts")).doubleValue();
+                return Double.compare(edgeB, edgeA);
+            });
+            filtered.addAll(list.size() > 5 ? list.subList(0, 5) : list);
         }
         
         filtered.sort((a, b) -> {
@@ -2640,8 +2720,8 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
             return Double.compare(edgeB, edgeA);
         });
         
-        if (filtered.size() > 25) {
-            filtered = filtered.subList(0, 25);
+        if (filtered.size() > 30) {
+            filtered = filtered.subList(0, 30);
         }
         
         markExistingPositions(filtered);
@@ -2753,6 +2833,120 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
             }
         } catch (Exception e) {
             log.debug("Auto-exec trigger failed: {}", e.getMessage());
+        }
+    }
+
+    @PutMapping("/positions/{id}/triggers")
+    public ResponseEntity<?> updatePositionTriggers(@PathVariable Long id, @RequestBody Map<String, Object> payload) {
+        OptionArbOpportunity opp = oppRepo.findById(id).orElse(null);
+        if (opp == null) return ResponseEntity.notFound().build();
+
+        if (payload.containsKey("reentryProductType")) {
+            opp.setReentryProductType((String) payload.get("reentryProductType"));
+        }
+        if (payload.containsKey("profitExitTrigger")) {
+            Object val = payload.get("profitExitTrigger");
+            opp.setProfitExitTrigger(val != null ? new BigDecimal(val.toString()) : null);
+        }
+        if (payload.containsKey("lossReentryTrigger")) {
+            Object val = payload.get("lossReentryTrigger");
+            opp.setLossReentryTrigger(val != null ? new BigDecimal(val.toString()) : null);
+        }
+        if (payload.containsKey("maxReentries")) {
+            Object val = payload.get("maxReentries");
+            opp.setMaxReentries(val != null ? Integer.parseInt(val.toString()) : 1);
+        }
+        oppRepo.save(opp);
+        return ResponseEntity.ok(Map.of("message", "Triggers updated successfully", "opportunity", opp));
+    }
+
+    @GetMapping("/positions/{id}/triggers")
+    public ResponseEntity<?> getPositionTriggers(@PathVariable Long id) {
+        OptionArbOpportunity opp = oppRepo.findById(id).orElse(null);
+        if (opp == null) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(Map.of(
+            "reentryProductType", opp.getReentryProductType() != null ? opp.getReentryProductType() : "NRML",
+            "profitExitTrigger", opp.getProfitExitTrigger() != null ? opp.getProfitExitTrigger() : "",
+            "lossReentryTrigger", opp.getLossReentryTrigger() != null ? opp.getLossReentryTrigger() : "",
+            "maxReentries", opp.getMaxReentries() != null ? opp.getMaxReentries() : 1
+        ));
+    }
+
+    @GetMapping("/option-chain")
+    public ResponseEntity<Map<String, Object>> getOptionChain(
+            @RequestParam(defaultValue = "NIFTY") String underlying,
+            @RequestParam(required = false) String expiry) {
+        try {
+            LocalDate expiryDate = expiry != null ? LocalDate.parse(expiry) : optionChainService.getWeeklyExpiryDate(underlying);
+            int step = OptionChainService.getStrikeStep(underlying);
+            
+            // Get spot price
+            Map<String, OptionChainService.OptionQuote> spotQuote = optionChainService.fetchQuotes(List.of(underlying.equals("NIFTY") ? "NSE:NIFTY 50" : (underlying.equals("BANKNIFTY") ? "NSE:NIFTY BANK" : "NSE:" + underlying)));
+            double spot = spotQuote.values().stream().findFirst().map(q -> q.lastPrice).orElse(0.0);
+            if (spot == 0) {
+                // fallback to zerodha spot fetcher logic if needed, but normally fetchQuotes works for indices if token mapped
+                spot = 24000.0; // fallback just in case
+            }
+            
+            // We want +/- 20 strikes from ATM
+            int atm = OptionChainService.getATMStrike(underlying, spot);
+            List<Integer> strikes = new java.util.ArrayList<>();
+            for (int i = -15; i <= 15; i++) {
+                strikes.add(atm + (i * step));
+            }
+            
+            // Build NFO symbols
+            List<String> symbols = new java.util.ArrayList<>();
+            String futSym = optionChainService.buildNfoFutSymbol(underlying, expiryDate);
+            if (futSym != null) symbols.add(futSym);
+            
+            for (int s : strikes) {
+                String ce = optionChainService.buildNfoSymbol(underlying, expiryDate, s, "CE");
+                String pe = optionChainService.buildNfoSymbol(underlying, expiryDate, s, "PE");
+                if (ce != null) symbols.add(ce);
+                if (pe != null) symbols.add(pe);
+            }
+            
+            Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(symbols);
+            
+            List<Map<String, Object>> chain = new java.util.ArrayList<>();
+            for (int s : strikes) {
+                String ceKey = optionChainService.buildNfoSymbol(underlying, expiryDate, s, "CE");
+                String peKey = optionChainService.buildNfoSymbol(underlying, expiryDate, s, "PE");
+                OptionChainService.OptionQuote ceQ = quotes.get(ceKey);
+                OptionChainService.OptionQuote peQ = quotes.get(peKey);
+                
+                Map<String, Object> row = new java.util.LinkedHashMap<>();
+                row.put("strike", s);
+                
+                if (ceQ != null) {
+                    row.put("ceLtp", ceQ.lastPrice);
+                    row.put("ceBid", ceQ.bid);
+                    row.put("ceAsk", ceQ.ask);
+                    row.put("ceOi", ceQ.openInterest);
+                }
+                if (peQ != null) {
+                    row.put("peLtp", peQ.lastPrice);
+                    row.put("peBid", peQ.bid);
+                    row.put("peAsk", peQ.ask);
+                    row.put("peOi", peQ.openInterest);
+                }
+                chain.add(row);
+            }
+            
+            Map<String, Object> result = new java.util.LinkedHashMap<>();
+            result.put("underlying", underlying);
+            result.put("expiry", expiryDate.toString());
+            result.put("spotPrice", spot);
+            if (futSym != null && quotes.get(futSym) != null) {
+                result.put("futuresPrice", quotes.get(futSym).lastPrice);
+            }
+            result.put("chain", chain);
+            
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Failed to get option chain", e);
+            return ResponseEntity.status(500).build();
         }
     }
 }

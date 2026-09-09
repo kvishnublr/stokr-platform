@@ -289,11 +289,14 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         body.put("symboltoken", scripCode);
         body.put("buyorsell", request.side().name());
         body.put("ordertype", request.price() != null && request.price() > 0 ? "LIMIT" : "MARKET");
-        body.put("producttype", request.productType() != null ? request.productType() : "NORMAL");
+        String prod = request.productType() != null ? request.productType() : "NORMAL";
+        if (prod.equalsIgnoreCase("NORMAL") || prod.equalsIgnoreCase("NRML") || prod.equalsIgnoreCase("MIS")) prod = "Normal";
+        body.put("producttype", prod);
         body.put("orderduration", "DAY");
         body.put("price", request.price() != null ? request.price() : 0.0);
         body.put("triggerprice", 0.0);
-        body.put("quantityinlot", request.quantity());
+        int lots = 1;
+        body.put("quantityinlot", lots);
         body.put("disclosedquantity", 0);
         body.put("amoorder", "N");
         body.put("algoid", "");
@@ -426,8 +429,8 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         String serverIp = System.getProperty("server.public-ip", "173.249.55.84");
         var spec = http.post()
                 .uri(MOFSL_BASE + path)
+                .accept(org.springframework.http.MediaType.APPLICATION_JSON)
                 .header("Content-Type", "application/json")
-                .header("Accept", "application/json")
                 .header("ApiKey", apiKey != null ? apiKey : "")
                 .header("SourceId", "WEB")
                 .header("vendorinfo", "STOKR")

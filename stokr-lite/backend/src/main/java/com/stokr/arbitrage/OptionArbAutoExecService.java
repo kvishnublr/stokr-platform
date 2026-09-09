@@ -230,9 +230,17 @@ public class OptionArbAutoExecService {
                 requiredMargin = realMargin != null ? realMargin.doubleValue() : estimateHedgedMargin(opp.getUnderlying(), lots);
             }
             if (requiredMargin > availableMargin * 0.9) {
-                addLog("MARGIN", "MANUAL_LOW", opp.getUnderlying() + " " + opp.getStrike()
-                    + " needs ~₹" + String.format("%.0f", requiredMargin) + " but only ₹" + String.format("%.0f", availableMargin)
-                    + " available -- attempting anyway, broker will be the final word");
+                if ("MANUAL_EXIT".equals(opp.getStrategyType())) {
+                    addLog("MARGIN", "MANUAL_LOW", "Exit order for " + opp.getUnderlying() + " bypassing margin check");
+                } else {
+                    String errMsg = opp.getUnderlying() + " " + opp.getStrike()
+                        + " needs ~₹" + String.format("%.0f", requiredMargin) + " but only ₹" + String.format("%.0f", availableMargin)
+                        + " available. Trade aborted due to insufficient margin.";
+                    addLog("MARGIN", "ERROR", errMsg);
+                    result.put("status", "ERROR");
+                    result.put("message", errMsg);
+                    return result;
+                }
             }
         } catch (Exception e) {
             log.warn("Manual live-trade margin check failed for {}: {}", opp.getUnderlying(), e.getMessage());
@@ -804,6 +812,58 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             int lots = pos.getLots() != null ? pos.getLots() : 1;
             double targetEdge = pos.getTargetEdge() != null ? pos.getTargetEdge().doubleValue() : 0;
 
+            OptionArbOpportunity opp = null;
+            if (pos.getOpportunityId() != null) {
+                opp = oppRepo.findById(pos.getOpportunityId()).orElse(null);
+            }
+
+            // PER-POSITION TRIGGER EVALUATION
+            if (opp != null) {
+                if (opp.getProfitExitTrigger() != null && pnl >= opp.getProfitExitTrigger().doubleValue()) {
+                    boolean squaredOff = false;
+                    if (isPaper) {
+                        squaredOff = true;
+                    } else if (userId != null && adapter != null) {
+                        squaredOff = isMultiLeg ? squareOffMultiLegPosition(account, adapter, pos) : squareOffPosition(account, adapter, pos);
+                    }
+                    if (squaredOff) {
+                        pos.setStatus("EXITED");
+                        positionRepo.save(pos);
+                        opp.setStatus("EXITED");
+                        opp.setExitTime(LocalDateTime.now());
+                        oppRepo.save(opp);
+                        addLog("AUTO_PROFIT_EXIT", "SUCCESS", pos.getUnderlying() + " P&L " + pnl + " >= trigger " + opp.getProfitExitTrigger());
+                        continue;
+                    }
+                }
+
+                if (opp.getLossReentryTrigger() != null && pnl <= opp.getLossReentryTrigger().doubleValue()) {
+                    int maxR = opp.getMaxReentries() != null ? opp.getMaxReentries() : 1;
+                    int curR = opp.getReentryCount() != null ? opp.getReentryCount() : 0;
+                    if (curR < maxR) {
+                        boolean reentered = false;
+                        if (isPaper) {
+                            reentered = true;
+                        } else if (userId != null && adapter != null) {
+                            // To actually respect the product type during execution, we would need to pass it.
+                            // But executeTrade/executeMultiLegTrade uses default logic.
+                            // For now, we execute the trade (averaging down).
+                            reentered = isMultiLeg ? executeMultiLegTrade(account, adapter, opp, lots, userId, pos.getLegs())
+                                                   : executeTrade(account, adapter, opp, lots, userId);
+                        }
+                        if (reentered) {
+                            opp.setReentryCount(curR + 1);
+                            // We need to double the lots on the LivePosition to reflect the average down
+                            pos.setLots(lots * 2);
+                            positionRepo.save(pos);
+                            oppRepo.save(opp);
+                            addLog("AUTO_LOSS_REENTRY", "SUCCESS", pos.getUnderlying() + " P&L " + pnl + " <= trigger " + opp.getLossReentryTrigger() + ". Averaged down.");
+                            continue;
+                        }
+                    }
+                }
+            }
+
             if (targetEdge <= 0) continue;
 
             double pnlPerLot = lots > 0 ? pnl / lots : 0;
@@ -1205,7 +1265,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         .side(side)
                         .quantity(qty).price(price)
                         .orderType(price > 0 ? BrokerOrderRequest.OrderType.LIMIT : BrokerOrderRequest.OrderType.MARKET)
-                        .productType("MIS").build();
+                        .productType(opp.getReentryProductType() != null ? opp.getReentryProductType() : "MIS").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
 
                 if (!resp.isSuccess() || resp.orderId() == null || resp.orderId().isBlank()) {
@@ -1302,9 +1362,14 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 int strike = ((Number) spec.get("strike")).intValue();
                 String optionType = (String) spec.get("optionType");
                 String side = (String) spec.get("side");
-                int qtyMult = spec.get("qty") instanceof Number n ? n.intValue() : 1;
                 String symbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), strike, optionType);
-                int qty = lots * lotSize * qtyMult;
+                int qty;
+                if (spec.containsKey("rawQty")) {
+                    qty = ((Number) spec.get("rawQty")).intValue();
+                } else {
+                    int qtyMult = spec.get("qty") instanceof Number n ? n.intValue() : 1;
+                    qty = lots * lotSize * qtyMult;
+                }
                 double specPrice = spec.get("price") instanceof Number n ? n.doubleValue() : 0.0;
                 // Apply 5% buffer: BUY +5%, SELL -5%. Converts MARKET to guaranteed-fill LIMIT.
                 double bufferedPrice = specPrice > 0
@@ -1336,7 +1401,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         .side(leg.side())
                         .quantity(leg.quantity()).price(leg.price())
                         .orderType(orderType)
-                        .productType("MIS").build();
+                        .productType(opp.getReentryProductType() != null ? opp.getReentryProductType() : "MIS").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
 
                 if (!resp.isSuccess() || resp.orderId() == null || resp.orderId().isBlank()) {
@@ -1826,13 +1891,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             return result;
         }
         
-        long openCount = positionRepo.countOpenLive();
-        int maxOpen = ((Number) getSettings(broker).getOrDefault("maxOpenPositions", 1)).intValue();
-        if (openCount >= maxOpen) {
-            result.put("status", "ERROR");
-            result.put("message", "Already have " + openCount + "/" + maxOpen + " open positions.");
-            return result;
-        }
+        // Bypassing maxOpenPositions check for manual trades
 
         com.stokr.broker.BrokerAccount account;
         com.stokr.broker.BrokerAdapter adapter;

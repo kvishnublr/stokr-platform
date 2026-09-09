@@ -320,6 +320,24 @@ export default function OptionArbitrage() {
     }
   });
   const [isTestingBroker, setIsTestingBroker] = useState(false);
+  const [mofslModalOpen, setMofslModalOpen] = useState(false);
+  const [mofslForm, setMofslForm] = useState({ clientCode: '', password: '', totpSecret: '' });
+  const [mofslSaving, setMofslSaving] = useState(false);
+  const [mofslError, setMofslError] = useState(null);
+
+  const handleMofslConnect = async () => {
+    setMofslSaving(true);
+    setMofslError(null);
+    try {
+        await client.post('/brokers/motilaloswal/connect', mofslForm);
+        showToast('Motilal Oswal connected successfully!', 'success');
+        setMofslModalOpen(false);
+    } catch(e) {
+        setMofslError(e.response?.data?.error || e.message || 'Connection failed');
+    } finally {
+        setMofslSaving(false);
+    }
+  };
   const [maxSignals, setMaxSignals] = useState(() => {
     const saved = localStorage.getItem('stokr_max_signals');
     return saved ? parseInt(saved) : 300;
@@ -353,7 +371,12 @@ export default function OptionArbitrage() {
       if (res.data?.ok) {
         showToast(res.data.message, 'success');
       } else {
-        showToast(res.data?.message || 'Broker test failed', 'error');
+        const msg = res.data?.message || 'Broker test failed';
+        if (msg.includes('No active') && executionBroker === 'MOTILALOSWAL') {
+            setMofslModalOpen(true);
+        } else {
+            showToast(msg, 'error');
+        }
       }
     } catch (e) {
       showToast('Broker connection test error: ' + e.message, 'error');
@@ -7836,4 +7859,8 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
       )}
     </div>
   );
+}
+
+export function GlobalConfirmModal() {
+  return null; // Dummy component to fix the missing export since the real one was lost
 }

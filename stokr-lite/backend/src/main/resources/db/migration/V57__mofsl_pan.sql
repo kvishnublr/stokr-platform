@@ -1,0 +1,1 @@
+ALTER TABLE broker_accounts ADD COLUMN IF NOT EXISTS pan_number VARCHAR(20);

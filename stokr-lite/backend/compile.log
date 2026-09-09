@@ -1,0 +1,644 @@
+[[1;34mINFO[m] Scanning for projects...
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m------------------------< [0;36mcom.stokr:stokr-lite[0;1m >------------------------[m
+[[1;34mINFO[m] [1mBuilding Stokr Lite 1.0.0-SNAPSHOT[m
+[[1;34mINFO[m] [1m--------------------------------[ jar ]---------------------------------[m
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-clean-plugin:3.4.0:clean[m [1m(default-clean)[m @ [36mstokr-lite[0;1m ---[m
+[[1;34mINFO[m] Deleting /root/stokr-platform/stokr-lite/backend/target
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-resources-plugin:3.3.1:resources[m [1m(default-resources)[m @ [36mstokr-lite[0;1m ---[m
+[[1;34mINFO[m] Copying 1 resource from src/main/resources to target/classes
+[[1;34mINFO[m] Copying 188 resources from src/main/resources to target/classes
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-compiler-plugin:3.13.0:compile[m [1m(default-compile)[m @ [36mstokr-lite[0;1m ---[m
+[[1;34mINFO[m] Recompiling the module because of [1mchanged source code[m.
+[[1;34mINFO[m] Compiling 247 source files with javac [debug parameters release 21] to target/classes
+[[1;34mINFO[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/arbitrage/OptionArbHistoryService.java: /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/arbitrage/OptionArbHistoryService.java uses or overrides a deprecated API.
+[[1;34mINFO[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/arbitrage/OptionArbHistoryService.java: Recompile with -Xlint:deprecation for details.
+[[1;34mINFO[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/arbitrage/OptionChainService.java: Some input files use unchecked or unsafe operations.
+[[1;34mINFO[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/arbitrage/OptionChainService.java: Recompile with -Xlint:unchecked for details.
+[[1;34mINFO[m] Some messages have been simplified; recompile with -Xdiags:verbose to get full output
+[[1;34mINFO[m] -------------------------------------------------------------
+[[1;31mERROR[m] COMPILATION ERROR : 
+[[1;34mINFO[m] -------------------------------------------------------------
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/arbitrage/OptionArbitrageController.java:[2161,5] org.springframework.web.bind.annotation.PostMapping is not a repeatable annotation interface
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[77,41] cannot find symbol
+  symbol:   method setStatus(java.lang.String)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[80,36] cannot find symbol
+  symbol:   method builder()
+  location: class com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[86,16] cannot find symbol
+  symbol:   method setClientId(java.lang.String)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[87,16] cannot find symbol
+  symbol:   method setMofslPassword(java.lang.String)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[88,16] cannot find symbol
+  symbol:   method setMofslTotpSecret(java.lang.String)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[89,16] cannot find symbol
+  symbol:   method setMofslApiKey(java.lang.String)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[90,16] cannot find symbol
+  symbol:   method setMofslApiSecret(java.lang.String)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[91,67] cannot find symbol
+  symbol:   method setPanNumber(java.lang.String)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[92,32] cannot find symbol
+  symbol:   method setPanNumber(java.lang.String)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[93,16] cannot find symbol
+  symbol:   method setTokenExpiry(java.time.Instant)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[96,14] cannot find symbol
+  symbol:   method setAccessToken(java.lang.String)
+  location: variable saved of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[98,9] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[103,36] cannot find symbol
+  symbol:   method getClientId()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[104,34] cannot find symbol
+  symbol:   method getMofslPassword()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[105,36] cannot find symbol
+  symbol:   method getMofslTotpSecret()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[114,56] cannot find symbol
+  symbol:   method getId()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[116,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[116,78] cannot find symbol
+  symbol:   method getId()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[121,9] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[125,60] cannot find symbol
+  symbol:   method getMofslApiKey()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[126,37] cannot find symbol
+  symbol:   method getPanNumber()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[126,72] cannot find symbol
+  symbol:   method getPanNumber()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[126,107] cannot find symbol
+  symbol:   method getPanNumber()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[128,9] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[131,97] cannot find symbol
+  symbol:   method getMofslApiKey()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[131,123] cannot find symbol
+  symbol:   method getMofslApiSecret()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[141,37] cannot find symbol
+  symbol:   method getId()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[142,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[161,37] cannot find symbol
+  symbol:   method getMofslApiKey()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[161,72] cannot find symbol
+  symbol:   method getMofslApiKey()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[164,74] cannot find symbol
+  symbol:   method getMofslApiSecret()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[164,103] cannot find symbol
+  symbol:   method getClientId()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[169,67] cannot find symbol
+  symbol:   method getMofslApiSecret()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[169,96] cannot find symbol
+  symbol:   method getClientId()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[171,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[173,66] cannot find symbol
+  symbol:   method getMofslApiSecret()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[173,95] cannot find symbol
+  symbol:   method getClientId()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[178,9] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[205,17] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[208,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[212,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[219,9] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[225,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[231,9] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[255,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[262,9] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[271,17] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[274,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[276,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[297,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminBrokerHealthService.java:[23,38] cannot find symbol
+  symbol:   method getId()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminBrokerHealthService.java:[24,42] cannot find symbol
+  symbol:   method getUserId()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminBrokerHealthService.java:[25,46] cannot find symbol
+  symbol:   method getBrokerName()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminBrokerHealthService.java:[26,42] cannot find symbol
+  symbol:   method getStatus()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminBrokerHealthService.java:[28,47] cannot find symbol
+  symbol:   method getTokenExpiry()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminBrokerHealthService.java:[29,42] cannot find symbol
+  symbol:   method getTokenExpiry()
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminBrokerHealthService.java:[31,25] incompatible types: inference variable T has incompatible bounds
+    equality constraints: java.util.Map<java.lang.String,java.lang.Object>
+    lower bounds: java.lang.Object
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[27,25] invalid method reference
+  cannot find symbol
+    symbol:   method getBrokerName()
+    location: class com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[55,41] cannot find symbol
+  symbol:   method setStatus(java.lang.String)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[63,20] cannot find symbol
+  symbol:   method setAccessToken(java.lang.String)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[64,20] cannot find symbol
+  symbol:   method setRefreshToken(java.lang.String)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[65,20] cannot find symbol
+  symbol:   method setTokenExpiry(java.time.Instant)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[66,42] cannot find symbol
+  symbol:   method setClientId(java.lang.String)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[68,36] cannot find symbol
+  symbol:   method builder()
+  location: class com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[84,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.BrokerService
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[93,16] cannot find symbol
+  symbol:   method setStatus(java.lang.String)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[94,16] cannot find symbol
+  symbol:   method setAccessToken(<nulltype>)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[95,16] cannot find symbol
+  symbol:   method setRefreshToken(<nulltype>)
+  location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[97,9] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.broker.BrokerService
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[41,39] constructor ZerodhaAuth in class com.stokr.external.ZerodhaTokenManager.ZerodhaAuth cannot be applied to given types;
+  required: no arguments
+  found:    <nulltype>,<nulltype>,<nulltype>,boolean
+  reason: actual and formal argument lists differ in length
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[48,24] cannot find symbol
+  symbol:   method getAccessToken()
+  location: variable acc of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[48,56] cannot find symbol
+  symbol:   method getTokenExpiry()
+  location: variable acc of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[49,54] cannot find symbol
+  symbol:   method getTokenExpiry()
+  location: variable acc of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[50,80] cannot find symbol
+  symbol:   method getTokenExpiry()
+  location: variable acc of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[51,32] cannot find symbol
+  symbol:   method getAccessToken()
+  location: variable acc of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[51,54] cannot find symbol
+  symbol:   method getRefreshToken()
+  location: variable acc of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[52,21] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[52,103] cannot find symbol
+  symbol:   method getId()
+  location: variable acc of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[56,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[58,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[71,9] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[76,28] constructor ZerodhaAuth in class com.stokr.external.ZerodhaTokenManager.ZerodhaAuth cannot be applied to given types;
+  required: no arguments
+  found:    java.lang.String,java.lang.String,java.time.Instant,boolean
+  reason: actual and formal argument lists differ in length
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[82,9] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[87,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[92,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[96,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[100,13] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[110,28] constructor ZerodhaAuth in class com.stokr.external.ZerodhaTokenManager.ZerodhaAuth cannot be applied to given types;
+  required: no arguments
+  found:    <nulltype>,<nulltype>,<nulltype>,boolean
+  reason: actual and formal argument lists differ in length
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[111,9] cannot find symbol
+  symbol:   variable log
+  location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[118,58] cannot find symbol
+  symbol:   method getAccessToken()
+  location: variable auth of type com.stokr.external.ZerodhaTokenManager.ZerodhaAuth
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[83,38] cannot find symbol
+  symbol:   method getId()
+  location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[83,53] cannot find symbol
+  symbol:   method getEmail()
+  location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[100,34] cannot find symbol
+  symbol:   method getId()
+  location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[100,49] cannot find symbol
+  symbol:   method getEmail()
+  location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[109,34] cannot find symbol
+  symbol:   method getId()
+  location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[109,49] cannot find symbol
+  symbol:   method getEmail()
+  location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[141,41] cannot find symbol
+  symbol:   method getId()
+  location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[143,34] cannot find symbol
+  symbol:   method getId()
+  location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[143,49] cannot find symbol
+  symbol:   method getEmail()
+  location: variable admin of type com.stokr.auth.AuthUser
+[[1;34mINFO[m] 100 errors 
+[[1;34mINFO[m] -------------------------------------------------------------
+[[1;34mINFO[m] [1m------------------------------------------------------------------------[m
+[[1;34mINFO[m] [1;31mBUILD FAILURE[m
+[[1;34mINFO[m] [1m------------------------------------------------------------------------[m
+[[1;34mINFO[m] Total time:  20.154 s
+[[1;34mINFO[m] Finished at: 2026-09-08T09:58:19+05:30
+[[1;34mINFO[m] [1m------------------------------------------------------------------------[m
+[[1;31mERROR[m] Failed to execute goal [32morg.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile[m [1m(default-compile)[m on project [36mstokr-lite[m: [1;31mCompilation failure[m: Compilation failure: 
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/arbitrage/OptionArbitrageController.java:[2161,5] org.springframework.web.bind.annotation.PostMapping is not a repeatable annotation interface
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[77,41] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setStatus(java.lang.String)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[80,36] cannot find symbol
+[[1;31mERROR[m]   symbol:   method builder()
+[[1;31mERROR[m]   location: class com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[86,16] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setClientId(java.lang.String)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[87,16] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setMofslPassword(java.lang.String)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[88,16] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setMofslTotpSecret(java.lang.String)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[89,16] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setMofslApiKey(java.lang.String)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[90,16] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setMofslApiSecret(java.lang.String)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[91,67] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setPanNumber(java.lang.String)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[92,32] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setPanNumber(java.lang.String)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[93,16] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setTokenExpiry(java.time.Instant)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[96,14] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setAccessToken(java.lang.String)
+[[1;31mERROR[m]   location: variable saved of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[98,9] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[103,36] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getClientId()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[104,34] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getMofslPassword()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[105,36] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getMofslTotpSecret()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[114,56] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getId()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[116,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[116,78] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getId()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[121,9] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[125,60] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getMofslApiKey()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[126,37] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getPanNumber()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[126,72] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getPanNumber()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[126,107] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getPanNumber()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[128,9] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[131,97] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getMofslApiKey()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[131,123] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getMofslApiSecret()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[141,37] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getId()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[142,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[161,37] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getMofslApiKey()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[161,72] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getMofslApiKey()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[164,74] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getMofslApiSecret()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[164,103] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getClientId()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[169,67] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getMofslApiSecret()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[169,96] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getClientId()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[171,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[173,66] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getMofslApiSecret()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[173,95] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getClientId()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[178,9] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[205,17] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[208,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[212,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[219,9] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[225,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[231,9] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[255,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[262,9] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[271,17] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[274,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[276,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/MotilalOswalAdapter.java:[297,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.MotilalOswalAdapter
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminBrokerHealthService.java:[23,38] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getId()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminBrokerHealthService.java:[24,42] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getUserId()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminBrokerHealthService.java:[25,46] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getBrokerName()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminBrokerHealthService.java:[26,42] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getStatus()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminBrokerHealthService.java:[28,47] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getTokenExpiry()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminBrokerHealthService.java:[29,42] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getTokenExpiry()
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminBrokerHealthService.java:[31,25] incompatible types: inference variable T has incompatible bounds
+[[1;31mERROR[m]     equality constraints: java.util.Map<java.lang.String,java.lang.Object>
+[[1;31mERROR[m]     lower bounds: java.lang.Object
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[27,25] invalid method reference
+[[1;31mERROR[m]   cannot find symbol
+[[1;31mERROR[m]     symbol:   method getBrokerName()
+[[1;31mERROR[m]     location: class com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[55,41] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setStatus(java.lang.String)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[63,20] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setAccessToken(java.lang.String)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[64,20] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setRefreshToken(java.lang.String)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[65,20] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setTokenExpiry(java.time.Instant)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[66,42] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setClientId(java.lang.String)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[68,36] cannot find symbol
+[[1;31mERROR[m]   symbol:   method builder()
+[[1;31mERROR[m]   location: class com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[84,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.BrokerService
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[93,16] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setStatus(java.lang.String)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[94,16] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setAccessToken(<nulltype>)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[95,16] cannot find symbol
+[[1;31mERROR[m]   symbol:   method setRefreshToken(<nulltype>)
+[[1;31mERROR[m]   location: variable account of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/broker/BrokerService.java:[97,9] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.broker.BrokerService
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[41,39] constructor ZerodhaAuth in class com.stokr.external.ZerodhaTokenManager.ZerodhaAuth cannot be applied to given types;
+[[1;31mERROR[m]   required: no arguments
+[[1;31mERROR[m]   found:    <nulltype>,<nulltype>,<nulltype>,boolean
+[[1;31mERROR[m]   reason: actual and formal argument lists differ in length
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[48,24] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getAccessToken()
+[[1;31mERROR[m]   location: variable acc of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[48,56] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getTokenExpiry()
+[[1;31mERROR[m]   location: variable acc of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[49,54] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getTokenExpiry()
+[[1;31mERROR[m]   location: variable acc of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[50,80] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getTokenExpiry()
+[[1;31mERROR[m]   location: variable acc of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[51,32] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getAccessToken()
+[[1;31mERROR[m]   location: variable acc of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[51,54] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getRefreshToken()
+[[1;31mERROR[m]   location: variable acc of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[52,21] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[52,103] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getId()
+[[1;31mERROR[m]   location: variable acc of type com.stokr.broker.BrokerAccount
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[56,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[58,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[71,9] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[76,28] constructor ZerodhaAuth in class com.stokr.external.ZerodhaTokenManager.ZerodhaAuth cannot be applied to given types;
+[[1;31mERROR[m]   required: no arguments
+[[1;31mERROR[m]   found:    java.lang.String,java.lang.String,java.time.Instant,boolean
+[[1;31mERROR[m]   reason: actual and formal argument lists differ in length
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[82,9] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[87,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[92,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[96,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[100,13] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[110,28] constructor ZerodhaAuth in class com.stokr.external.ZerodhaTokenManager.ZerodhaAuth cannot be applied to given types;
+[[1;31mERROR[m]   required: no arguments
+[[1;31mERROR[m]   found:    <nulltype>,<nulltype>,<nulltype>,boolean
+[[1;31mERROR[m]   reason: actual and formal argument lists differ in length
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[111,9] cannot find symbol
+[[1;31mERROR[m]   symbol:   variable log
+[[1;31mERROR[m]   location: class com.stokr.external.ZerodhaTokenManager
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/external/ZerodhaTokenManager.java:[118,58] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getAccessToken()
+[[1;31mERROR[m]   location: variable auth of type com.stokr.external.ZerodhaTokenManager.ZerodhaAuth
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[83,38] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getId()
+[[1;31mERROR[m]   location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[83,53] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getEmail()
+[[1;31mERROR[m]   location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[100,34] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getId()
+[[1;31mERROR[m]   location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[100,49] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getEmail()
+[[1;31mERROR[m]   location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[109,34] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getId()
+[[1;31mERROR[m]   location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[109,49] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getEmail()
+[[1;31mERROR[m]   location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[141,41] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getId()
+[[1;31mERROR[m]   location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[143,34] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getId()
+[[1;31mERROR[m]   location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] /root/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/admin/AdminController.java:[143,49] cannot find symbol
+[[1;31mERROR[m]   symbol:   method getEmail()
+[[1;31mERROR[m]   location: variable admin of type com.stokr.auth.AuthUser
+[[1;31mERROR[m] -> [1m[Help 1][m
+[[1;31mERROR[m] 
+[[1;31mERROR[m] To see the full stack trace of the errors, re-run Maven with the [1m-e[m switch.
+[[1;31mERROR[m] Re-run Maven using the [1m-X[m switch to enable full debug logging.
+[[1;31mERROR[m] 
+[[1;31mERROR[m] For more information about the errors and possible solutions, please read the following articles:
+[[1;31mERROR[m] [1m[Help 1][m http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
