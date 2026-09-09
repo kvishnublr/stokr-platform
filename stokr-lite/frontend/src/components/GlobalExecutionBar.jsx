@@ -11,10 +11,12 @@ export default function GlobalExecutionBar({ showToast, title, subtitle }) {
   const [mofslError, setMofslError] = useState(null);
 
   const handleTradeModeChange = (mode) => {
-    changeExecutionBroker(mode);
     if (mode === 'PAPER') {
+      changeExecutionBroker('PAPER');
       showToast('Switched to Paper Trading mode.', 'info');
     } else {
+      const liveBroker = (executionBroker && executionBroker !== 'PAPER' && executionBroker !== 'LIVE') ? executionBroker : 'MOTILALOSWAL';
+      changeExecutionBroker(liveBroker);
       showToast('Switched to Live Trading mode. Ensure your broker is connected.', 'warning');
     }
   };

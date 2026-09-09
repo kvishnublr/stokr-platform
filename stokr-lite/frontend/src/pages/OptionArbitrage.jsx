@@ -598,7 +598,7 @@ export default function OptionArbitrage() {
 <div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs">
   <span className="text-slate-300 font-medium">Trade Mode:</span>
   <select
-    value={executionBroker}
+    value={executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'}
     onChange={(e) => handleTradeModeChange(e.target.value)}
     className="bg-slate-900 text-amber-300 font-bold border border-slate-700 rounded-lg px-2 py-1 outline-none text-xs"
   >
