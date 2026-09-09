@@ -358,8 +358,8 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         body.put("symboltoken", scripCode);
         body.put("buyorsell", request.side().name());
         body.put("ordertype", request.price() != null && request.price() > 0 ? "LIMIT" : "MARKET");
-        String prod = request.productType() != null ? request.productType() : "NORMAL";
-        if (prod.equalsIgnoreCase("NORMAL") || prod.equalsIgnoreCase("NRML") || prod.equalsIgnoreCase("MIS")) prod = "Normal";
+        String prod = request.productType() != null ? request.productType().toUpperCase() : "NORMAL";
+        if ("NRML".equals(prod) || "MIS".equals(prod)) prod = "NORMAL";
         body.put("producttype", prod);
         body.put("orderduration", "DAY");
         body.put("price", request.price() != null ? request.price() : 0.0);
@@ -457,8 +457,19 @@ public class MotilalOswalAdapter implements BrokerAdapter {
             String status = root.path("status").asText("");
             if ("SUCCESS".equalsIgnoreCase(status)) {
                 JsonNode data = root.path("data");
-                double available = data.path("cashavailable").asDouble(
-                        data.path("CashAvailable").asDouble(0));
+                double available = 0;
+                if (data.isArray()) {
+                    for (JsonNode item : data) {
+                        int srno = item.path("srno").asInt(0);
+                        if (srno == 103) {
+                            available = item.path("amount").asDouble(0);
+                            break;
+                        }
+                    }
+                } else {
+                    available = data.path("cashavailable").asDouble(
+                            data.path("CashAvailable").asDouble(0));
+                }
                 log.info("MOFSL: available margin={}", available);
                 return BigDecimal.valueOf(available);
             }
@@ -528,8 +539,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
             reqBuilder = reqBuilder.header("apisecretkey", apiSecret);
         }
         if (token != null && !token.isBlank()) {
-            reqBuilder = reqBuilder.header("Authorization", "Bearer " + token);
-            reqBuilder = reqBuilder.header("accesstoken", token);
+            reqBuilder = reqBuilder.header("Authorization", token);
         }
 
         var request = reqBuilder.POST(java.net.http.HttpRequest.BodyPublishers.ofString(bodyJson))
