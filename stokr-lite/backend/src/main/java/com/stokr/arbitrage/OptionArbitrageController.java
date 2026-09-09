@@ -994,9 +994,12 @@ public class OptionArbitrageController {
                     String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
                     Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(List.of(ceSymbol, peSymbol));
 
-                    double ceLive = 0, peLive = 0;
-                    if (quotes.containsKey(ceSymbol) && quotes.get(ceSymbol).lastPrice > 0) ceLive = quotes.get(ceSymbol).lastPrice;
-                    if (quotes.containsKey(peSymbol) && quotes.get(peSymbol).lastPrice > 0) peLive = quotes.get(peSymbol).lastPrice;
+                    String action = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
+                    boolean ceLong = action.contains("BUY CE");
+                    var ceQ = quotes.get(ceSymbol);
+                    var peQ = quotes.get(peSymbol);
+                    double ceLive = ceQ != null ? (ceLong ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice)) : 0;
+                    double peLive = peQ != null ? (ceLong ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice)) : 0;
 
                     Map<String, String> spotKeyMap = Map.of(
                         "NIFTY", "NSE:NIFTY 50", "BANKNIFTY", "NSE:NIFTY BANK",
@@ -1201,10 +1204,14 @@ public class OptionArbitrageController {
                                 double pnl = autoExecService.computeMultiLegPnl(pos, quotes);
                                 pnlMap.put(oppIdStr, Math.round(pnl));
                             } else {
-                                double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
-                                if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
-                                if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) peCurrent = quotes.get(pos.getPeSymbol()).lastPrice;
-                                if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) futCurrent = quotes.get(pos.getFutSymbol()).lastPrice;
+                                String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
+                                boolean ceLong = action.contains("BUY CE");
+                                var ceQ = pos.getCeSymbol() != null ? quotes.get(pos.getCeSymbol()) : null;
+                                var peQ = pos.getPeSymbol() != null ? quotes.get(pos.getPeSymbol()) : null;
+                                var futQ = pos.getFutSymbol() != null ? quotes.get(pos.getFutSymbol()) : null;
+                                double ceCurrent = ceQ != null ? (ceLong ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice)) : 0;
+                                double peCurrent = peQ != null ? (ceLong ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice)) : 0;
+                                double futCurrent = futQ != null ? (ceLong ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice)) : 0;
 
                                 double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
                                 double peEntry = pos.getPeEntryPrice() != null ? pos.getPeEntryPrice().doubleValue() : 0;
@@ -1213,9 +1220,8 @@ public class OptionArbitrageController {
                                 int lots = pos.getLots() != null ? pos.getLots() : 1;
 
                                 double pnl = 0;
-                                String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
                                 if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
-                                    if (action.contains("BUY CE +")) {
+                                    if (ceLong) {
                                         if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
                                         if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                                         if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
@@ -1911,30 +1917,29 @@ public class OptionArbitrageController {
                 map.put("peCurrent", 0);
                 map.put("futCurrent", 0);
             } else {
-                double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
-                if (p.getCeSymbol() != null && quotes.containsKey(p.getCeSymbol())) ceCurrent = quotes.get(p.getCeSymbol()).lastPrice;
-                if (p.getPeSymbol() != null && quotes.containsKey(p.getPeSymbol())) peCurrent = quotes.get(p.getPeSymbol()).lastPrice;
-                if (p.getFutSymbol() != null && quotes.containsKey(p.getFutSymbol())) futCurrent = quotes.get(p.getFutSymbol()).lastPrice;
+                String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
+                boolean ceLong = action.contains("BUY CE");
+                var ceQ = p.getCeSymbol() != null ? quotes.get(p.getCeSymbol()) : null;
+                var peQ = p.getPeSymbol() != null ? quotes.get(p.getPeSymbol()) : null;
+                var futQ = p.getFutSymbol() != null ? quotes.get(p.getFutSymbol()) : null;
+                double ceCurrent = ceQ != null ? (ceLong ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice)) : 0;
+                double peCurrent = peQ != null ? (ceLong ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice)) : 0;
+                double futCurrent = futQ != null ? (ceLong ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice)) : 0;
 
                 double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
                 double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
                 double futEntry = p.getFutEntryPrice() != null ? p.getFutEntryPrice().doubleValue() : 0;
 
                 double legacyPnl = 0;
-                String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
                 if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
-                    if (action.contains("BUY CE +")) {
+                    if (ceLong) {
                         if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceCurrent - ceEntry;
                         if (peCurrent > 0 && peEntry > 0) legacyPnl += peEntry - peCurrent;
                         if (futCurrent > 0 && futEntry > 0) legacyPnl += futEntry - futCurrent;
-                    } else if (action.contains("SELL CE +")) {
+                    } else {
                         if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceEntry - ceCurrent;
                         if (peCurrent > 0 && peEntry > 0) legacyPnl += peCurrent - peEntry;
                         if (futCurrent > 0 && futEntry > 0) legacyPnl += futCurrent - futEntry;
-                    } else {
-                        if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceCurrent - ceEntry;
-                        if (peCurrent > 0 && peEntry > 0) legacyPnl += peEntry - peCurrent;
-                        if (futCurrent > 0 && futEntry > 0) legacyPnl += futEntry - futCurrent;
                     }
                 }
                 pnl = legacyPnl * lotSize * lots;
@@ -2073,15 +2078,18 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                 m.put("peCurrent", 0);
                 m.put("futCurrent", 0);
             } else {
-                // OPEN — compute from live quotes
-                double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
-                if (p.getCeSymbol() != null && q.containsKey(p.getCeSymbol())) ceCurrent = q.get(p.getCeSymbol()).lastPrice;
-                if (p.getPeSymbol() != null && q.containsKey(p.getPeSymbol())) peCurrent = q.get(p.getPeSymbol()).lastPrice;
-                if (p.getFutSymbol() != null && q.containsKey(p.getFutSymbol())) futCurrent = q.get(p.getFutSymbol()).lastPrice;
+                // OPEN — compute from live quotes using bid/ask
+                boolean ceLong = action.contains("BUY CE");
+                var ceQ = p.getCeSymbol() != null ? q.get(p.getCeSymbol()) : null;
+                var peQ = p.getPeSymbol() != null ? q.get(p.getPeSymbol()) : null;
+                var futQ = p.getFutSymbol() != null ? q.get(p.getFutSymbol()) : null;
+                double ceCurrent = ceQ != null ? (ceLong ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice)) : 0;
+                double peCurrent = peQ != null ? (ceLong ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice)) : 0;
+                double futCurrent = futQ != null ? (ceLong ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice)) : 0;
                 double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
                 double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
                 double futEntry = p.getFutEntryPrice() != null ? p.getFutEntryPrice().doubleValue() : 0;
-                if (action.contains("BUY CE +")) {
+                if (ceLong) {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
                     if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
@@ -2338,9 +2346,13 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                     double entryCost = 0;
                     for (Map<String, Object> leg : resolvedLegs) {
                         String sym = (String) leg.get("symbol");
-                        double live = (sym != null && legQuotes.containsKey(sym) && legQuotes.get(sym).lastPrice > 0)
-                            ? legQuotes.get(sym).lastPrice
-                            : (leg.get("price") instanceof Number n ? n.doubleValue() : 0);
+                        boolean isBuyLeg = "BUY".equals(leg.get("side"));
+                        var lq = (sym != null) ? legQuotes.get(sym) : null;
+                        double live = 0;
+                        if (lq != null) {
+                            live = isBuyLeg ? (lq.ask > 0 ? lq.ask : lq.lastPrice) : (lq.bid > 0 ? lq.bid : lq.lastPrice);
+                        }
+                        if (live <= 0) live = (leg.get("price") instanceof Number n ? n.doubleValue() : 0);
                         leg.put("price", live);
                         int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
                         boolean isBuy = "BUY".equals(leg.get("side"));
@@ -2381,13 +2393,17 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                 }
 
                 // Legacy single-strike CE+PE+FUT shape (Bid Parity / normal parity)
+                String oppAction = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
+                boolean oppCeLong = oppAction.contains("BUY CE");
                 double ceLive = 0, peLive = 0;
                 if (opp.getExpiryDate() != null && opp.getStrike() != null) {
                     String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
                     String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
                     Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(List.of(ceSymbol, peSymbol));
-                    if (quotes.containsKey(ceSymbol) && quotes.get(ceSymbol).lastPrice > 0) ceLive = quotes.get(ceSymbol).lastPrice;
-                    if (quotes.containsKey(peSymbol) && quotes.get(peSymbol).lastPrice > 0) peLive = quotes.get(peSymbol).lastPrice;
+                    var ceQ2 = quotes.get(ceSymbol);
+                    var peQ2 = quotes.get(peSymbol);
+                    if (ceQ2 != null) ceLive = oppCeLong ? (ceQ2.ask > 0 ? ceQ2.ask : ceQ2.lastPrice) : (ceQ2.bid > 0 ? ceQ2.bid : ceQ2.lastPrice);
+                    if (peQ2 != null) peLive = oppCeLong ? (peQ2.bid > 0 ? peQ2.bid : peQ2.lastPrice) : (peQ2.ask > 0 ? peQ2.ask : peQ2.lastPrice);
                 }
                 if (ceLive > 0) opp.setCeEntryPrice(BigDecimal.valueOf(ceLive));
                 if (peLive > 0) opp.setPeEntryPrice(BigDecimal.valueOf(peLive));

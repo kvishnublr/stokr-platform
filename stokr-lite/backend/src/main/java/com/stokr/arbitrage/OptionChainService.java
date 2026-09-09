@@ -388,8 +388,6 @@ public class OptionChainService {
         opp.detectedAt = LocalDateTime.now();
         opp.spotPrice = spotPrice;
         opp.futuresPrice = futuresPrice;
-        opp.cePrice = ceQuote.lastPrice;
-        opp.pePrice = peQuote.lastPrice;
         opp.ceBid = ceQuote.bid;
         opp.ceAsk = ceQuote.ask;
         opp.peBid = peQuote.bid;
@@ -401,10 +399,14 @@ public class OptionChainService {
 
         if (parityDev > 0) {
             opp.action = "BUY FUT + SELL CE + BUY PE";
+            opp.cePrice = ceQuote.bid > 0 ? ceQuote.bid : ceQuote.lastPrice;
+            opp.pePrice = peQuote.ask > 0 ? peQuote.ask : peQuote.lastPrice;
             opp.legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s FUT @ %.1f",
                 strike, ceQuote.bid, strike, peQuote.ask, underlying, futuresPrice);
         } else {
             opp.action = "BUY CE + SELL PE + SELL FUT";
+            opp.cePrice = ceQuote.ask > 0 ? ceQuote.ask : ceQuote.lastPrice;
+            opp.pePrice = peQuote.bid > 0 ? peQuote.bid : peQuote.lastPrice;
             opp.legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %s FUT @ %.1f",
                 strike, ceQuote.ask, strike, peQuote.bid, underlying, futuresPrice);
         }
