@@ -106,7 +106,53 @@ public class MotilalOswalAdapter implements BrokerAdapter {
                         String name = cols[scripNameIdx].trim().toUpperCase();
                         String exch = exchangeIdx >= 0 && cols.length > exchangeIdx
                                 ? cols[exchangeIdx].trim().toUpperCase() : exchange;
+                        
                         newMap.put(exch + "|" + name, code);
+                        
+                        try {
+                            String[] parts = name.split(" ");
+                            if (parts.length >= 4) {
+                                String underlying = parts[0];
+                                String dateStr = parts[1]; // 29-Sep-2026
+                                String type = parts[2]; // CE
+                                String strikeStr = parts[3]; // 24200
+                                String[] dateParts = dateStr.split("-");
+                                if (dateParts.length == 3) {
+                                    int day = Integer.parseInt(dateParts[0]);
+                                    String monStr = dateParts[1].toUpperCase();
+                                    int year = Integer.parseInt(dateParts[2]);
+                                    int yy = year % 100;
+                                    int strike = (int) Double.parseDouble(strikeStr);
+                                    
+                                    int month = 0;
+                                    switch (monStr) {
+                                        case "JAN": month = 1; break;
+                                        case "FEB": month = 2; break;
+                                        case "MAR": month = 3; break;
+                                        case "APR": month = 4; break;
+                                        case "MAY": month = 5; break;
+                                        case "JUN": month = 6; break;
+                                        case "JUL": month = 7; break;
+                                        case "AUG": month = 8; break;
+                                        case "SEP": month = 9; break;
+                                        case "OCT": month = 10; break;
+                                        case "NOV": month = 11; break;
+                                        case "DEC": month = 12; break;
+                                    }
+                                    
+                                    String mCode = (month == 10) ? "O" : (month == 11) ? "N" : (month == 12) ? "D" : String.valueOf(month);
+                                    
+                                    String cand1 = String.format("%s%02d%s%d%s", underlying, yy, monStr, strike, type);
+                                    String cand2 = String.format("%s%02d%s%02d%d%s", underlying, yy, mCode, day, strike, type);
+                                    String cand3 = String.format("%s%02d%d%02d%d%s", underlying, yy, month, day, strike, type);
+                                    
+                                    newMap.put(exch + "|" + cand1, code);
+                                    newMap.put(exch + "|" + cand2, code);
+                                    newMap.put(exch + "|" + cand3, code);
+                                }
+                            }
+                        } catch (Exception ignored) {}
+
                     } catch (NumberFormatException ignored) {}
                 }
             }
