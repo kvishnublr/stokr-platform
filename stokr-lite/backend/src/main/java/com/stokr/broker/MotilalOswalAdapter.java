@@ -474,7 +474,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
                               String apiKey, String apiSecret, String clientCode) throws Exception {
         String bodyJson = MAPPER.writeValueAsString(body);
         String serverIp = System.getProperty("server.public-ip", "173.249.55.84");
-        String vendorVal = (clientCode != null && !clientCode.isBlank()) ? clientCode : "";
+        String vendorVal = (clientCode != null && !clientCode.isBlank()) ? clientCode.toUpperCase() : "";
 
         java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
                 .version(java.net.http.HttpClient.Version.HTTP_1_1)
