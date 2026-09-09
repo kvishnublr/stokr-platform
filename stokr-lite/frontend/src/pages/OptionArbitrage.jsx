@@ -586,55 +586,7 @@ export default function OptionArbitrage() {
           </div>
         </div>
 
-        {/* Live Router & Execution Control */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-slate-300 font-medium">Data Feed:</span>
-            <span className="font-bold text-white">Zerodha Kite Connect</span>
-          </div>
-
-          {/* Trade Mode Toggle */}
-<div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs">
-  <span className="text-slate-300 font-medium">Trade Mode:</span>
-  <select
-    value={executionBroker === 'PAPER' ? 'PAPER' : 'LIVE'}
-    onChange={(e) => handleTradeModeChange(e.target.value)}
-    className="bg-slate-900 text-amber-300 font-bold border border-slate-700 rounded-lg px-2 py-1 outline-none text-xs"
-  >
-    <option value="PAPER">📝 Paper Trading</option>
-    <option value="LIVE">🔴 Live Execution</option>
-  </select>
-</div>
-
-{/* Live Broker Selection */}
-{executionBroker !== 'PAPER' && (
-<div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs transition-all">
-  <span className="text-red-300 font-medium">Live Broker:</span>
-  <select
-    value={executionBroker}
-    onChange={(e) => handleLiveBrokerChange(e.target.value)}
-    className="bg-red-900/30 text-red-300 font-bold border border-red-700/50 rounded-lg px-2 py-1 outline-none text-xs"
-  >
-    <option value="ZERODHA">Zerodha Kite Connect</option>
-    <option value="NAVIA">Navia Markets</option>
-    <option value="MOTILALOSWAL">Motilal Oswal</option>
-    <option value="ICICIDIRECT">ICICI Direct Breeze</option>
-    <option value="DHAN">DhanHQ</option>
-    <option value="FYERS">Fyers API</option>
-  </select>
-</div>
-)}
-
-          <button
-            onClick={testBrokerConnection}
-            disabled={isTestingBroker}
-            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition shadow-lg disabled:opacity-50"
-          >
-            {isTestingBroker ? 'Testing...' : '⚡ Test Connection'}
-          </button>
-        </div>
-      </div>
+              </div>
 
       {/* Tab Navigation Bar */}
       <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-2">
