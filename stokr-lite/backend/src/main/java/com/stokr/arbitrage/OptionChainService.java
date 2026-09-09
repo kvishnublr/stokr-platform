@@ -82,10 +82,19 @@ public class OptionChainService {
 
                 validStrikes++;
 
-                double ceExec = ceQuote.ask > 0 ? ceQuote.ask : ceQuote.lastPrice;
-                double peExec = peQuote.bid > 0 ? peQuote.bid : peQuote.lastPrice;
-                double parityDev = BlackScholesCalculator.parityDeviation(
-                    ceExec, peExec, strike, RISK_FREE_RATE, yearsToExpiry, futuresPrice);
+                // Compute parity deviation for both directions and pick the profitable one
+                double ceAskExec = ceQuote.ask > 0 ? ceQuote.ask : ceQuote.lastPrice;
+                double ceBidExec = ceQuote.bid > 0 ? ceQuote.bid : ceQuote.lastPrice;
+                double peAskExec = peQuote.ask > 0 ? peQuote.ask : peQuote.lastPrice;
+                double peBidExec = peQuote.bid > 0 ? peQuote.bid : peQuote.lastPrice;
+                // Reversal (SELL CE + BUY PE): use CE bid, PE ask
+                double revDev = BlackScholesCalculator.parityDeviation(
+                    ceBidExec, peAskExec, strike, RISK_FREE_RATE, yearsToExpiry, futuresPrice);
+                // Conversion (BUY CE + SELL PE): use CE ask, PE bid
+                double convDev = BlackScholesCalculator.parityDeviation(
+                    ceAskExec, peBidExec, strike, RISK_FREE_RATE, yearsToExpiry, futuresPrice);
+                // Pick the direction with profitable edge
+                double parityDev = Math.abs(revDev) >= Math.abs(convDev) ? revDev : convDev;
 
                 if (Math.abs(parityDev) >= MIN_PARITY_DEVIATION) {
                     double grossEdge = Math.abs(parityDev) * getLotSize(underlying);

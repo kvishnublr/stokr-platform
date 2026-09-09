@@ -1006,7 +1006,8 @@ public class OptionArbitrageController {
                         "MIDCPNIFTY", "NSE:NIFTY MID SELECT", "FINNIFTY", "NSE:NIFTY FIN SERVICE"
                     );
                     String resolvedSpotKey = spotKeyMap.getOrDefault(opp.getUnderlying(), opp.getUnderlying());
-                    double[] spotFut = spotFetcher.getSpotAndFutures(resolvedSpotKey, resolvedSpotKey);
+                    String resolvedFutKey = FuturesKeyResolver.resolveFuturesKey(opp.getUnderlying(), spotFetcher, resolvedSpotKey);
+                    double[] spotFut = spotFetcher.getSpotAndFutures(resolvedSpotKey, resolvedFutKey);
                     double futLive = spotFut[1];
 
                     Map<String, Object> lp = new LinkedHashMap<>();
@@ -2415,15 +2416,18 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                 if (futSymbol != null) {
                     try {
                         var futQuotes = optionChainService.fetchQuotes(List.of(futSymbol));
-                        if (futQuotes.containsKey(futSymbol) && futQuotes.get(futSymbol).lastPrice > 0) {
-                            futLive = futQuotes.get(futSymbol).lastPrice;
+                        if (futQuotes.containsKey(futSymbol)) {
+                            var futQ = futQuotes.get(futSymbol);
+                            boolean isRevFut = oppAction.contains("BUY FUT");
+                            // BUY FUT uses ask, SELL FUT uses bid
+                            futLive = isRevFut ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice);
                         }
                     } catch (Exception ignored) {}
                 }
 
                 LivePosition livePos = LivePosition.builder()
                     .userId(1L)
-                    
+
                     .opportunityId(opp.getId())
                     .underlying(opp.getUnderlying())
                     .strike(opp.getStrike())

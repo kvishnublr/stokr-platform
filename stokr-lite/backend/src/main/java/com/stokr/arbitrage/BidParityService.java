@@ -294,6 +294,7 @@ public class BidParityService {
                     ceQuote.lastPrice, peQuote.lastPrice, fut, lotSize, grossEdge, action);
             double totalCosts = costs.breakdown().getOrDefault("totalCosts", 0.0);
             edgeAfterCosts = grossEdge - totalCosts;
+            map.put("edgeAfterCosts", Math.round(edgeAfterCosts * 100.0) / 100.0);
 
             map.put("lotSize", lotSize);
             map.put("confidence", Math.min(99.0, 70.0 + edgePoints * 1.5));

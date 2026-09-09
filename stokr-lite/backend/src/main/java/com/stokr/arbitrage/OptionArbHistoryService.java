@@ -418,21 +418,22 @@ public class OptionArbHistoryService {
         log.info("Found {} OPEN opportunities to resolve", openOpps.size());
 
         // Collect all instruments to quote (CE, PE, and FUT)
-        Set<String> instruments = new HashSet<>();
+        Map<String, LocalDate> instrumentExpiries = new HashMap<>();
         Set<String> futInstruments = new HashSet<>();
         Map<Long, OptionArbOpportunity> oppMap = new HashMap<>();
         for (OptionArbOpportunity opp : openOpps) {
             String ceKey = opp.getUnderlying() + "_" + opp.getStrike() + "_CE";
             String peKey = opp.getUnderlying() + "_" + opp.getStrike() + "_PE";
             String futKey = opp.getUnderlying() + "_FUT";
-            instruments.add(ceKey);
-            instruments.add(peKey);
+            LocalDate expiry = opp.getExpiryDate() != null ? opp.getExpiryDate() : LocalDate.now();
+            instrumentExpiries.put(ceKey, expiry);
+            instrumentExpiries.put(peKey, expiry);
             futInstruments.add(futKey);
             oppMap.put(opp.getId(), opp);
         }
 
         // Fetch closing quotes from Zerodha (options + futures)
-        Map<String, Double> closingPrices = fetchClosingPrices(instruments);
+        Map<String, Double> closingPrices = fetchClosingPrices(instrumentExpiries);
         Map<String, Double> futClosingPrices = fetchFutClosingPrices(futInstruments, openOpps);
 
         // Resolve each opportunity
@@ -459,17 +460,20 @@ public class OptionArbHistoryService {
                 double futCloseVal = futClose != null ? futClose : 0;
 
                 // Calculate P&L based on action type (including futures leg)
+                // Actions are stored as "SELL CE + BUY PE + BUY FUT" (reversal) or "BUY CE + SELL PE + SELL FUT" (conversion)
                 BigDecimal pnl = BigDecimal.ZERO;
-                if ("REVERSAL".equals(opp.getAction())) {
+                String action = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
+                boolean isReversal = action.contains("SELL CE") || "REVERSAL".equals(action);
+                boolean isConversion = action.contains("BUY CE") || "CONVERSION".equals(action);
+
+                if (isReversal) {
                     // SELL CE + BUY PE + BUY FUT
-                    // P&L = (CE_entry - CE_close) + (PE_close - PE_entry) + (FUT_close - FUT_entry)
                     BigDecimal cePnl = opp.getCeEntryPrice().subtract(BigDecimal.valueOf(ceClose != null ? ceClose : 0));
                     BigDecimal pePnl = BigDecimal.valueOf(peClose != null ? peClose : 0).subtract(opp.getPeEntryPrice());
                     BigDecimal futPnl = (futEntry > 0 && futCloseVal > 0) ? BigDecimal.valueOf(futCloseVal - futEntry) : BigDecimal.ZERO;
                     pnl = cePnl.add(pePnl).add(futPnl);
-                } else if ("CONVERSION".equals(opp.getAction())) {
+                } else if (isConversion) {
                     // BUY CE + SELL PE + SELL FUT
-                    // P&L = (CE_close - CE_entry) + (PE_entry - PE_close) + (FUT_entry - FUT_close)
                     BigDecimal cePnl = BigDecimal.valueOf(ceClose != null ? ceClose : 0).subtract(opp.getCeEntryPrice());
                     BigDecimal pePnl = opp.getPeEntryPrice().subtract(BigDecimal.valueOf(peClose != null ? peClose : 0));
                     BigDecimal futPnl = (futEntry > 0 && futCloseVal > 0) ? BigDecimal.valueOf(futEntry - futCloseVal) : BigDecimal.ZERO;
@@ -512,7 +516,7 @@ public class OptionArbHistoryService {
         log.info("Resolved {}/{} opportunities for {}", resolved, openOpps.size(), today);
     }
 
-    private Map<String, Double> fetchClosingPrices(Set<String> instruments) {
+    private Map<String, Double> fetchClosingPrices(Map<String, LocalDate> instrumentExpiries) {
         Map<String, Double> prices = new HashMap<>();
         String token = spotFetcher.getAuthToken();
         if (token == null) {
@@ -520,16 +524,15 @@ public class OptionArbHistoryService {
             return prices;
         }
 
-        // Build NFO instrument symbols from our keys
+        // Build NFO instrument symbols from our keys using each opp's actual expiry
         List<String> nfoSymbols = new ArrayList<>();
-        for (String key : instruments) {
-            String[] parts = key.split("_");
+        for (Map.Entry<String, LocalDate> entry : instrumentExpiries.entrySet()) {
+            String[] parts = entry.getKey().split("_");
             if (parts.length == 3) {
                 String underlying = parts[0];
                 String strike = parts[1];
                 String type = parts[2];
-                // Use today's expiry
-                LocalDate expiry = LocalDate.now();
+                LocalDate expiry = entry.getValue();
                 String nfoSymbol = buildNfoSymbol(underlying, expiry, Integer.parseInt(strike), type);
                 nfoSymbols.add(nfoSymbol);
             }

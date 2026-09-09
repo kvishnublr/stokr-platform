@@ -1865,24 +1865,22 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
 
         if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
             if (action.contains("BUY CE +")) {
+                // BUY CE + SELL PE + SELL FUT (Conversion)
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceBid - ceEntry;
                 if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peAsk;
-                if (futCurrent > 0 && futEntry > 0) pnl += futBid > 0 ? (futEntry > futCurrent ? (futEntry - futAsk) : (futBid - futEntry)) : (futCurrent - futEntry);
-                // Actually, if it's BUY CE + SELL PE + SELL FUT, we sold fut. Exit = buy fut at ask
                 if (action.contains("SELL FUT")) {
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futAsk;
                 } else if (action.contains("BUY FUT")) {
                     if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
                 }
             } else if (action.contains("SELL CE +")) {
+                // SELL CE + BUY PE + BUY FUT (Reversal)
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceAsk;
                 if (peCurrent > 0 && peEntry > 0) pnl += peBid - peEntry;
                 if (action.contains("SELL FUT")) {
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futAsk;
                 } else if (action.contains("BUY FUT")) {
                     if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
-                } else {
-                    if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry; // Fallback
                 }
             } else {
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceBid - ceEntry;
