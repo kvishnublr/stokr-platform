@@ -1,7 +1,10 @@
 package com.stokr.broker;
 
+import com.stokr.arbitrage.AutoExecSetting;
+import com.stokr.arbitrage.AutoExecSettingRepository;
 import com.stokr.config.SecurityUtils;
 import com.stokr.engine.BrokerTokenRefresher;
+import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,12 +23,24 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class BrokerController {
 
+    private static final String EXEC_BROKER_KEY = "executionBroker";
+
     private final BrokerService           brokerService;
     private final BrokerAccountRepository brokerAccountRepository;
     private final BrokerTokenRefresher    tokenRefresher;
     private final BrokerRegistry          brokerRegistry;
+    private final AutoExecSettingRepository autoExecSettingRepository;
 
-    private String executionBroker = "PAPER";
+    private volatile String executionBroker = "PAPER";
+
+    @PostConstruct
+    void loadExecutionBroker() {
+        autoExecSettingRepository.findBySettingKey(EXEC_BROKER_KEY)
+            .ifPresent(s -> {
+                executionBroker = s.getSettingValue();
+                log.info("Loaded persisted execution broker: {}", executionBroker);
+            });
+    }
 
     @GetMapping("/decoupled-routing")
     public ResponseEntity<Map<String, Object>> getDecoupledRouting() {
@@ -34,10 +49,15 @@ public class BrokerController {
 
     @PostMapping("/decoupled-routing")
     public ResponseEntity<Map<String, Object>> setDecoupledRouting(@RequestBody Map<String, String> body) {
-        String broker = body.getOrDefault("executionBroker", "PAPER");
-        this.executionBroker = broker.toUpperCase();
-        log.info("Execution broker changed to {}", this.executionBroker);
-        return ResponseEntity.ok(Map.of("status", "ok", "executionBroker", this.executionBroker));
+        String broker = body.getOrDefault("executionBroker", "PAPER").toUpperCase();
+        this.executionBroker = broker;
+        AutoExecSetting setting = autoExecSettingRepository.findBySettingKey(EXEC_BROKER_KEY)
+                .orElseGet(() -> { AutoExecSetting s = new AutoExecSetting(); s.setSettingKey(EXEC_BROKER_KEY); return s; });
+        setting.setSettingValue(broker);
+        setting.setDescription("Active execution broker (PAPER / ZERODHA / MOTILALOSWAL / NAVIA)");
+        autoExecSettingRepository.save(setting);
+        log.info("Execution broker changed to {} (persisted)", broker);
+        return ResponseEntity.ok(Map.of("status", "ok", "executionBroker", broker));
     }
 
     @PostMapping("/test-connection")
