@@ -661,7 +661,7 @@ public class OptionArbitrageController {
         });
     }
 
-    private List<Map<String, Object>> scanIronCondorForUnderlying(String underlying) {
+    List<Map<String, Object>> scanIronCondorForUnderlying(String underlying) {
         List<Map<String, Object>> results = new ArrayList<>();
 
         double[] spotFut = null;
