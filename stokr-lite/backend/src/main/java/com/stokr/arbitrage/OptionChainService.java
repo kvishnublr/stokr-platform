@@ -273,12 +273,13 @@ public class OptionChainService {
 
     private DayOfWeek getExpiryDayForUnderlying(String underlying) {
         return switch (underlying.toUpperCase()) {
+            case "NIFTY" -> DayOfWeek.TUESDAY;
             case "BANKNIFTY" -> DayOfWeek.WEDNESDAY;
             case "FINNIFTY" -> DayOfWeek.TUESDAY;
             case "MIDCPNIFTY" -> DayOfWeek.MONDAY;
             case "SENSEX" -> DayOfWeek.FRIDAY;
             case "BANKEX" -> DayOfWeek.MONDAY;
-            default -> DayOfWeek.THURSDAY; // NIFTY weekly expiry
+            default -> DayOfWeek.TUESDAY;
         };
     }
 
