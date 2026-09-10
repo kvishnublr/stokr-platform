@@ -2,6 +2,7 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
+import { useGlobalExecutionBroker } from '../context/ExecutionBrokerContext';
 
 // Black-Scholes helpers for the "Today" MTM curve (theoretical value if spot moved to X
 // right now, same remaining time-to-expiry -- not a decay simulation). Mirrors
@@ -293,25 +294,9 @@ export default function OptionArbitrage() {
   const [activeGroup, setActiveGroup] = useState('core');
   const [underlyings, setUnderlyings] = useState(['ALL']);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [executionBroker, setExecutionBroker] = useState('PAPER');
-  const [liveBrokerPref, setLiveBrokerPref] = useState('ZERODHA');
-  
-  const handleTradeModeChange = (mode) => {
-    if (mode === 'PAPER') {
-      changeExecutionBroker('PAPER');
-    } else {
-      changeExecutionBroker(liveBrokerPref);
-    }
-  };
-  
-  const handleLiveBrokerChange = (broker) => {
-    setLiveBrokerPref(broker);
-    changeExecutionBroker(broker);
-  };
+  const { executionBroker, changeExecutionBroker } = useGlobalExecutionBroker();
+
   const [pendingLiveDeploy, setPendingLiveDeploy] = useState(null);
-  // Child views (BidParityView, HistoryView, each spread view) fire deploy requests through
-  // the module-level emitter rather than a threaded prop -- see requestLiveDeploy above.
-  // Bypass modal entirely for Paper trades
   useLiveDeployRequests((opp) => {
     if (executionBroker === 'PAPER') {
       handleExecuteInline(opp, 1);
@@ -319,74 +304,13 @@ export default function OptionArbitrage() {
       setPendingLiveDeploy(opp);
     }
   });
-  const [isTestingBroker, setIsTestingBroker] = useState(false);
-  const [mofslModalOpen, setMofslModalOpen] = useState(false);
-  const [mofslForm, setMofslForm] = useState({ clientCode: '', password: '', totpSecret: '' });
-  const [mofslSaving, setMofslSaving] = useState(false);
-  const [mofslError, setMofslError] = useState(null);
 
-  const handleMofslConnect = async () => {
-    setMofslSaving(true);
-    setMofslError(null);
-    try {
-        await client.post('/brokers/motilaloswal/connect', mofslForm);
-        showToast('Motilal Oswal connected successfully!', 'success');
-        setMofslModalOpen(false);
-    } catch(e) {
-        setMofslError(e.response?.data?.error || e.message || 'Connection failed');
-    } finally {
-        setMofslSaving(false);
-    }
-  };
   const [maxSignals, setMaxSignals] = useState(() => {
     const saved = localStorage.getItem('stokr_max_signals');
     return saved ? parseInt(saved) : 300;
   });
 
-  const fetchBrokerRouting = async () => {
-    try {
-      const res = await client.get('/brokers/decoupled-routing');
-      if (res.data?.executionBroker) {
-        setExecutionBroker(res.data.executionBroker);
-      }
-    } catch (e) {
-      // silent
-    }
-  };
-
-  const changeExecutionBroker = async (broker) => {
-    setExecutionBroker(broker);
-    try {
-      await client.post('/brokers/decoupled-routing', { executionBroker: broker });
-      showToast(`Order Execution Broker updated to ${broker}`, 'info');
-    } catch (e) {
-      showToast('Failed to update execution broker', 'error');
-    }
-  };
-
-  const testBrokerConnection = async () => {
-    setIsTestingBroker(true);
-    try {
-      const res = await client.post('/brokers/test-connection', { broker: executionBroker });
-      if (res.data?.ok) {
-        showToast(res.data.message, 'success');
-      } else {
-        const msg = res.data?.message || 'Broker test failed';
-        if (msg.includes('No active') && executionBroker === 'MOTILALOSWAL') {
-            setMofslModalOpen(true);
-        } else {
-            showToast(msg, 'error');
-        }
-      }
-    } catch (e) {
-      showToast('Broker connection test error: ' + e.message, 'error');
-    } finally {
-      setIsTestingBroker(false);
-    }
-  };
-
   useEffect(() => {
-    fetchBrokerRouting();
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
