@@ -66,13 +66,14 @@ public class OptionArbAutoExecService {
         // couldn't have different edge requirements, and Vertical/Butterfly/Condor/Iron Condor
         // had no dedicated control at all (they rode on "ALL").
         for (String prefix : STRATEGY_PREFIXES) {
+            double minEdge = "bidParity".equals(prefix) ? 1500.0 : 500.0;
             for (String u : List.of("Nifty", "Banknifty", "Finnifty", "Midcpnifty")) {
                 defaults.put(prefix + u + "Enabled", true);
-                defaults.put(prefix + u + "MinEdge", 800.0);
+                defaults.put(prefix + u + "MinEdge", minEdge);
                 defaults.put(prefix + u + "Lots", 1);
             }
         }
-        defaults.put("maxOpenPositions", 1);
+        defaults.put("maxOpenPositions", 50);
         defaults.put("maxDailyLoss", 5000.0);
         defaults.put("stopLossEnabled", true);
         defaults.put("stopLossPct", 50.0);
