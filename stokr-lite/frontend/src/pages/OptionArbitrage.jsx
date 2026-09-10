@@ -1341,10 +1341,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                     {isExpanded && canShowPayoff && (
                       <tr className="bg-fuchsia-50/40 border-b border-fuchsia-100">
                         <td colSpan={17} className="p-3">
-                          <div className="bg-white rounded-xl p-3 border border-fuchsia-200 shadow-md space-y-2">
-                            <span className="font-bold text-slate-800 text-xs uppercase block">Open Position Payoff -- {p.underlying} {p.action}:</span>
-                            <ArbitrageSignalPayoffChart opp={p} />
-                          </div>
+                          <DetailedOpportunityExpandedRow item={p} executionBroker={executionBroker} title={`Open Position — ${p.underlying} ${p.action}`} />
                         </td>
                       </tr>
                     )}
@@ -2304,108 +2301,34 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                       {isExp && (
                         <tr className="bg-amber-50/40 border-b border-amber-100">
                           <td colSpan={12} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-amber-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Bid Parity Leg Breakdown:</span>
                               {opp.existingOpenPosition && (
-                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">
+                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal.
                                 </p>
                               )}
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || `BUY ${opp.strike} CE @ ${ceVal} | SELL ${opp.strike} PE @ ${peVal} | ${opp.action}`}</p>
                               {opp.costBreakdown && (
-                                <div className="text-[10px] font-mono text-slate-600 grid grid-cols-4 gap-1">
+                                <div className="text-[10px] font-mono text-slate-600 grid grid-cols-4 gap-1 mb-2 bg-slate-50 p-2 rounded-lg border border-slate-200">
                                   {Object.entries(opp.costBreakdown).map(([k,v]) => <span key={k}>{k}: ₹{v}</span>)}
                                 </div>
                               )}
-                              
-                                {(() => {
-                                  let oppToPass = opp;
-                                  if ((!Array.isArray(opp.legList) || opp.legList.length < 2) && typeof opp.legs === 'string') {
-                                    const legStrs = opp.legs.split('|').map(s => s.trim()).filter(Boolean);
-                                    const legList = legStrs.map(ls => {
-                                      let side = ls.includes('BUY') ? 'BUY' : 'SELL';
-                                      let type = ls.includes('CE') ? 'CE' : ls.includes('PE') ? 'PE' : 'FUT';
-                                      let priceMatch = ls.match(/@\s+([\d.]+)/);
-                                      let price = priceMatch ? Number(priceMatch[1]) : 0;
-                                      let strikeMatch = type !== 'FUT' ? ls.match(/(\d+(?:\.\d+)?)\s+(?:CE|PE)/) : null;
-                                      let strike = strikeMatch ? Number(strikeMatch[1]) : (type === 'FUT' ? 0 : opp.strike);
-                                      if (price > 0) { return { side, optionType: type, strike, price, qty: 1 }; }
-                                      return null;
-                                    }).filter(Boolean);
-                                    if (legList.length >= 2) {
-                                      oppToPass = { ...opp, legList, strategyType: 'CONVERSION' }; // Use CONVERSION to force it to render properly if needed
-                                    }
-                                  }
-                                  
-                                  const existingPos = oppToPass.existingOpenPosition ? livePositionsData?.positions?.find(p => p.opportunityId === oppToPass.id) : null;
-                                  
-                                  return (
-                                    <>
-                                      {existingPos && (
-                                        <div className="my-3 p-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl flex items-center justify-between">
-                                          <div>
-                                            <span className="font-bold text-emerald-800 text-[10px] uppercase block mb-1">Current Active Trade P&L</span>
-                                            <span className={`font-mono text-2xl font-black ${existingPos.currentPnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                              {existingPos.currentPnl > 0 ? '+' : ''}₹{existingPos.currentPnl?.toFixed(2)}
-                                            </span>
-                                            <span className="text-xs font-bold text-slate-500 ml-2">({existingPos.lots} lots on {existingPos.broker})</span>
-                                          </div>
-                                          <div>
-                                             <button onClick={(e) => { e.stopPropagation(); client.post(`/option-arbitrage/positions/${existingPos.id}/exit`).then(()=>alert('Exit orders sent')).catch(e=>alert(e.message)) }} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-black shadow-md">
-                                                EXIT POSITION
-                                             </button>
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {oppToPass.status === 'EXITED' && (
-                                        <div className="my-3 p-3 bg-red-50/50 border border-red-200 rounded-xl">
-                                          <div className="flex items-center justify-between mb-3 border-b border-red-100 pb-2">
-                                            <span className="font-bold text-red-800 text-[10px] uppercase block tracking-wider">Trade Exited</span>
-                                            <span className="text-[10px] text-slate-500 font-mono bg-white px-2 py-0.5 rounded border border-slate-200">
-                                              {oppToPass.exitTime ? new Date(oppToPass.exitTime).toLocaleString() : 'Time Unknown'}
-                                            </span>
-                                          </div>
-                                          
-                                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                                            <div className="bg-white p-2.5 rounded-lg border border-red-100 shadow-sm">
-                                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">CE Exit Price</span>
-                                              <span className="font-mono text-sm font-black text-slate-700">{oppToPass.ceExitPrice ? '₹' + oppToPass.ceExitPrice : '--'}</span>
-                                            </div>
-                                            <div className="bg-white p-2.5 rounded-lg border border-red-100 shadow-sm">
-                                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">PE Exit Price</span>
-                                              <span className="font-mono text-sm font-black text-slate-700">{oppToPass.peExitPrice ? '₹' + oppToPass.peExitPrice : '--'}</span>
-                                            </div>
-                                            <div className="bg-white p-2.5 rounded-lg border border-red-100 shadow-sm">
-                                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">FUT Exit Price</span>
-                                              <span className="font-mono text-sm font-black text-slate-700">{oppToPass.futExitPrice ? '₹' + oppToPass.futExitPrice : '--'}</span>
-                                            </div>
-                                            <div className="bg-emerald-50 p-2.5 rounded-lg border border-emerald-200 shadow-sm">
-                                              <span className="text-[9px] text-emerald-800 font-bold uppercase block mb-1">Realized P&L</span>
-                                              <span className={`font-mono text-sm font-black ${oppToPass.pnlAmount > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                                {oppToPass.pnlAmount > 0 ? '+' : ''}₹{oppToPass.pnlAmount || oppToPass.pnlAfterCosts || 0}
-                                              </span>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {Array.isArray(oppToPass.legList) && oppToPass.legList.length >= 2 ? (
-                                        <div className="mt-3">
-                                          <span className="font-bold text-slate-800 text-xs uppercase block mb-2">Simulated Payoff Chart</span>
-                                          <ArbitrageSignalPayoffChart opp={oppToPass} />
-                                        </div>
-                                      ) : null}
-                                    </>
-                                  );
-                                })()}
-
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-amber-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⚡ Submit ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                              {(() => {
+                                const existingPos = opp.existingOpenPosition ? livePositionsData?.positions?.find(p => p.opportunityId === opp.id) : null;
+                                return existingPos ? (
+                                  <div className="my-2 p-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl flex items-center justify-between">
+                                    <div>
+                                      <span className="font-bold text-emerald-800 text-[10px] uppercase block mb-1">Current Active Trade P&L</span>
+                                      <span className={`font-mono text-2xl font-black ${existingPos.currentPnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                        {existingPos.currentPnl > 0 ? '+' : ''}₹{existingPos.currentPnl?.toFixed(2)}
+                                      </span>
+                                      <span className="text-xs font-bold text-slate-500 ml-2">({existingPos.lots} lots on {existingPos.broker})</span>
+                                    </div>
+                                    <button onClick={(e) => { e.stopPropagation(); client.post(`/option-arbitrage/positions/${existingPos.id}/exit`).then(()=>alert('Exit orders sent')).catch(e=>alert(e.message)) }} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-black shadow-md">
+                                      EXIT POSITION
+                                    </button>
+                                  </div>
+                                ) : null;
+                              })()}
+                              <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="Bid Parity Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -2703,21 +2626,12 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                       {isExp && (
                         <tr className="bg-purple-50/40 border-b border-purple-100">
                           <td colSpan={11} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-purple-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">4-Leg Box Spread Breakdown:</span>
                               {opp.existingOpenPosition && (
-                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">
                                   📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
                                 </p>
                               )}
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || 'BUY CE1 | SELL PE1 | SELL CE2 | BUY PE2'}</p>
-                              <ArbitrageSignalPayoffChart opp={opp} />
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-purple-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⚡ Submit ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                              <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="4-Leg Box Spread Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -3086,22 +3000,12 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
                       {isExp && (
                         <tr className="bg-teal-50/40 border-b border-teal-100">
                           <td colSpan={9} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-teal-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Vertical Spread Breakdown:</span>
                               {opp.existingOpenPosition && (
-                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">
+                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal.
                                 </p>
                               )}
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
-                              <p className="text-[10px] text-slate-500">{opp.description}</p>
-                              <ArbitrageSignalPayoffChart opp={opp} />
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-teal-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⚡ Submit ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                              <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="Vertical Spread Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -4253,22 +4157,12 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
                       {isExp && (
                         <tr className="bg-fuchsia-50/40 border-b border-fuchsia-100">
                           <td colSpan={9} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-fuchsia-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Butterfly Spread Breakdown:</span>
                               {opp.existingOpenPosition && (
-                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">
+                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal.
                                 </p>
                               )}
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
-                              <p className="text-[10px] text-slate-500">{opp.description}</p>
-                              <ArbitrageSignalPayoffChart opp={opp} />
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-fuchsia-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⚡ Submit ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                              <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="Butterfly Spread Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -5112,22 +5006,12 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
                       {isExp && (
                         <tr className="bg-cyan-50/40 border-b border-cyan-100">
                           <td colSpan={9} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-cyan-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Condor Spread Breakdown:</span>
                               {opp.existingOpenPosition && (
-                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">
+                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal.
                                 </p>
                               )}
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
-                              <p className="text-[10px] text-slate-500">{opp.description}</p>
-                              <ArbitrageSignalPayoffChart opp={opp} />
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-cyan-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⚡ Submit ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                              <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="Condor Spread Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -5866,21 +5750,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
                       {isExp && (
                         <tr className="bg-indigo-50/40 border-b border-indigo-100">
                           <td colSpan={7} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Iron Condor Details</span>
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || opp.action}</p>
-                              <div className="grid grid-cols-3 gap-2 text-[10px]">
-                                <div>Spot: ₹{Number(opp.spotPrice || 0).toLocaleString('en-IN')}</div>
-                                <div>Expiry: {opp.expiryDate}</div>
-                                <div>Confidence: {Number(opp.confidence || 0).toFixed(1)}%</div>
-                              </div>
-                              <ArbitrageSignalPayoffChart opp={opp} />
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  Submit ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                              <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="Iron Condor Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -6190,18 +6060,7 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
                       {isExp && (
                         <tr className="bg-indigo-50/40 border-b border-indigo-100">
                           <td colSpan={8} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Calendar Spread Leg Breakdown:</span>
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
-                                BUY NEAR ({opp.nearSymbol} @ ₹{opp.nearPrice}) | SELL FAR ({opp.farSymbol} @ ₹{opp.farPrice})
-                              </p>
-                              <ArbitrageSignalPayoffChart opp={opp} />
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⏳ Submit ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                              <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="Calendar Spread Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -6842,9 +6701,9 @@ function PaperTradesView() {
                                 <div><span className="text-slate-500">Order IDs:</span> <span className="font-bold text-[9px]">{pos.ceOrderId || '--'}</span></div>
                                 <div><span className="text-slate-500">Mode:</span> <span className="font-bold">{isPaper ? 'PAPER' : 'LIVE'}</span></div>
                               </div>
-                              {Array.isArray(pos.legList) && pos.legList.length >= 2 && (
+                              {Array.isArray(pos.legList) && pos.legList.length >= 1 && (
                                 <div className="mt-4">
-                                  <ArbitrageSignalPayoffChart opp={pos} />
+                                  <DetailedOpportunityExpandedRow item={pos} title="Trade Payoff Breakdown" />
                                 </div>
                               )}
                               {(pos.status === 'FAILED' || pos.status === 'REJECTED') && pos.errorMessage && (
@@ -7521,100 +7380,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                       {isExp && (
                         <tr className="bg-indigo-50/40 border-b border-indigo-100">
                           <td colSpan={12} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block mb-3">Historical Signal Audit Breakdown</span>
-                              
-                              {(() => {
-                                let oppToPass = item;
-                                if ((!Array.isArray(item.legList) || item.legList.length < 2) && typeof item.legs === 'string') {
-                                  const legStrs = item.legs.split('|').map(s => s.trim()).filter(Boolean);
-                                  const legList = legStrs.map(ls => {
-                                    let side = ls.includes('BUY') ? 'BUY' : 'SELL';
-                                    let type = ls.includes('CE') ? 'CE' : ls.includes('PE') ? 'PE' : 'FUT';
-                                    let priceMatch = ls.match(/@\s+([\d.]+)/);
-                                    let price = priceMatch ? Number(priceMatch[1]) : 0;
-                                    let strikeMatch = type !== 'FUT' ? ls.match(/(\d+(?:\.\d+)?)\s+(?:CE|PE)/) : null;
-                                    let strike = strikeMatch ? Number(strikeMatch[1]) : (type === 'FUT' ? 0 : item.strike);
-                                    if (price > 0) return { side, optionType: type, strike, price, qty: 1 };
-                                    return null;
-                                  }).filter(Boolean);
-                                  if (legList.length >= 2) oppToPass = { ...item, legList };
-                                }
-                                
-                                const hasLegs = Array.isArray(oppToPass.legList) && oppToPass.legList.length > 0;
-                                
-                                return (
-                                  <div className="space-y-4">
-                                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                                      {/* Left Column: Execution Legs Table */}
-                                      <div className="bg-white border border-indigo-100 rounded-xl overflow-hidden shadow-sm">
-                                        <div className="bg-slate-50 border-b border-indigo-100 px-3 py-2 flex justify-between items-center">
-                                          <span className="text-xs font-black text-slate-600 uppercase">Execution Legs</span>
-                                          <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">{oppToPass.expiryDate || oppToPass.expiry || '--'}</span>
-                                        </div>
-                                        {hasLegs ? (
-                                          <table className="w-full text-left text-xs">
-                                            <thead className="bg-slate-50/50 text-slate-500 font-bold border-b border-slate-100">
-                                              <tr>
-                                                <th className="py-2 px-3">Action</th>
-                                                <th className="py-2 px-3">Strike</th>
-                                                <th className="py-2 px-3">Type</th>
-                                                <th className="py-2 px-3 text-right">Price</th>
-                                              </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100 font-mono">
-                                              {oppToPass.legList.map((leg, i) => (
-                                                <tr key={i} className={leg.side === 'BUY' ? 'bg-blue-50/30' : 'bg-red-50/30'}>
-                                                  <td className="py-2 px-3 font-bold text-slate-700">
-                                                    <span className={leg.side === 'BUY' ? 'text-blue-600' : 'text-red-600'}>{leg.side}</span>
-                                                  </td>
-                                                  <td className="py-2 px-3 font-bold text-slate-700">{leg.strike || 'FUT'}</td>
-                                                  <td className="py-2 px-3 font-bold text-slate-500">{leg.optionType}</td>
-                                                  <td className="py-2 px-3 font-bold text-slate-800 text-right">₹{leg.price.toFixed(2)}</td>
-                                                </tr>
-                                              ))}
-                                            </tbody>
-                                          </table>
-                                        ) : (
-                                          <div className="p-4 text-center text-xs text-slate-500 font-mono">{item.legs || `${item.action} on ${item.underlying} ${item.strike}`}</div>
-                                        )}
-                                      </div>
-
-                                      {/* Right Column: Risk/Reward Profile */}
-                                      <div className="grid grid-cols-2 gap-3">
-                                        <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex flex-col justify-center">
-                                          <span className="text-[10px] font-black text-emerald-600 uppercase mb-1">Max Profit</span>
-                                          <span className="text-lg font-black text-emerald-700">+{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(oppToPass.maxProfit || oppToPass.edgeAfterCosts || 0)}</span>
-                                        </div>
-                                        <div className="bg-red-50 border border-red-100 p-3 rounded-xl flex flex-col justify-center">
-                                          <span className="text-[10px] font-black text-red-600 uppercase mb-1">Max Loss</span>
-                                          <span className="text-lg font-black text-red-700">{oppToPass.maxLoss ? '-' + new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(oppToPass.maxLoss) : 'Defined'}</span>
-                                        </div>
-                                        <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-col justify-center">
-                                          <span className="text-[10px] font-black text-slate-500 uppercase mb-1">Risk:Reward</span>
-                                          <span className="text-sm font-black text-slate-800">{oppToPass.riskReward ? oppToPass.riskReward + 'x' : '--'}</span>
-                                        </div>
-                                        <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-col justify-center">
-                                          <span className="text-[10px] font-black text-slate-500 uppercase mb-1">POP (Win Rate)</span>
-                                          <span className="text-sm font-black text-slate-800">{oppToPass.confidence ? oppToPass.confidence.toFixed(1) + '%' : '> 90%'}</span>
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {/* Payoff Chart */}
-                                    {hasLegs && (
-                                      <div className="mt-4">
-                                        <ArbitrageSignalPayoffChart opp={oppToPass} />
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(item); }} className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold shadow-md">⚡ Deploy ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                            <DetailedOpportunityExpandedRow item={item} executionBroker={executionBroker} setPendingLiveDeploy={setPendingLiveDeploy} title="Historical Signal Audit Breakdown" />
                           </td>
                         </tr>
                       )}
