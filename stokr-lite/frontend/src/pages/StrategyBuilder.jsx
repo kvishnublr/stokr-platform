@@ -305,24 +305,10 @@ export default function StrategyBuilder() {
         </div>
         
         <div className="flex items-center gap-4 mt-4 md:mt-0">
-          
-          <div className="relative group">
-            <select 
-              value={expiry} 
-              onChange={e => { setExpiry(e.target.value); setLegs([]); }}
-              className="appearance-none bg-slate-50 hover:bg-white border border-slate-200 text-slate-600 font-bold text-xs px-5 py-3 pr-10 rounded-2xl outline-none cursor-pointer transition-all shadow-[0_4px_15px_rgba(0,0,0,0.03)]"
-            >
-              <option value="">Next Expiry</option>
-              {generatedExpiries.map(exp => (
-                  <option key={exp} value={exp}>{exp}</option>
-              ))}
-            </select>
-            <svg className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7"></path></svg>
-          </div>
 
           <div className="relative group">
-            <select 
-              value={underlying} 
+            <select
+              value={underlying}
               onChange={e => { setUnderlying(e.target.value); setExpiry(''); setLegs([]); }}
               className="appearance-none bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-black text-sm px-6 py-3 pr-12 rounded-2xl outline-none cursor-pointer transition-all shadow-[0_4px_15px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.06)]"
             >
@@ -359,24 +345,40 @@ export default function StrategyBuilder() {
         
         {/* LEFT: Option Chain */}
         <div className="w-full lg:w-[55%] flex flex-col bg-white/60 backdrop-blur-xl rounded-3xl border border-white shadow-[0_12px_40px_rgba(0,0,0,0.03)] overflow-hidden h-[600px] lg:h-auto">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100/60 bg-white/40">
-            <h3 className="text-xs md:text-sm font-black text-slate-800 uppercase tracking-[0.2em]">Real-Time Chain</h3>
-            
-            <div className="flex items-center gap-3">
-                <button onClick={scrollToATM} className="text-[10px] font-black tracking-widest text-indigo-500 hover:text-white border border-indigo-200 hover:bg-indigo-500 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm uppercase">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
-                    Go To ATM
-                </button>
-                <select
-                    value={expiry}
-                    onChange={e => { setExpiry(e.target.value); setLegs([]); }}
-                    className="appearance-none text-[10px] text-indigo-600 font-black tracking-widest bg-indigo-50/50 px-3 py-1.5 pr-7 rounded-lg border border-indigo-100 shadow-sm uppercase cursor-pointer outline-none"
-                >
-                    <option value="">EXP: {chainData?.expiry || '...'}</option>
-                    {generatedExpiries.map(exp => (
-                        <option key={exp} value={exp}>{exp}</option>
-                    ))}
-                </select>
+          <div className="px-5 pt-4 pb-2 border-b border-slate-100/60 bg-white/40">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs md:text-sm font-black text-slate-800 uppercase tracking-[0.2em]">Real-Time Chain</h3>
+              <button onClick={scrollToATM} className="text-[10px] font-black tracking-widest text-indigo-500 hover:text-white border border-indigo-200 hover:bg-indigo-500 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm uppercase">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                  Go To ATM
+              </button>
+            </div>
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
+              <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest mr-1 shrink-0">Expiry</span>
+              {generatedExpiries.map((exp, idx) => {
+                const isActive = expiry ? expiry === exp : chainData?.expiry === exp;
+                const d = new Date(exp + 'T00:00:00');
+                const label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                const isWeekly = idx < 6 && underlying === 'NIFTY';
+                const isMonthly = !isWeekly || (d.getMonth() !== new Date(generatedExpiries[Math.min(idx+1, generatedExpiries.length-1)] + 'T00:00:00').getMonth());
+                return (
+                  <button
+                    key={exp}
+                    onClick={() => { setExpiry(exp); setLegs([]); }}
+                    className={`shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-[0_4px_12px_rgba(99,102,241,0.35)] scale-105'
+                        : 'bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300'
+                    }`}
+                  >
+                    {label}
+                    {isMonthly && <span className={`ml-1 text-[8px] font-black uppercase ${isActive ? 'text-indigo-200' : 'text-amber-500'}`}>M</span>}
+                  </button>
+                );
+              })}
+              {generatedExpiries.length === 0 && (
+                <span className="text-[10px] text-slate-400 italic">Loading expiries...</span>
+              )}
             </div>
           </div>
           
