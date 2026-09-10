@@ -2009,6 +2009,57 @@ public class OptionArbitrageController {
             map.put("marketOpen", marketOpen);
             map.put("isMultiLeg", isMultiLeg);
 
+            // Compute max loss from legs
+            double maxLoss = 0;
+            if (isMultiLeg) {
+                var legs = p.getLegs();
+                if (legs != null && legs.size() >= 2) {
+                    // For spreads: max loss = net debit (if debit spread) or (width - net credit) for credit spreads
+                    double netPremium = 0; // positive = credit received, negative = debit paid
+                    java.util.List<Integer> strikes = new java.util.ArrayList<>();
+                    for (var leg : legs) {
+                        double price = leg.get("price") != null ? ((Number) leg.get("price")).doubleValue() : 0;
+                        String side = (String) leg.get("side");
+                        if ("SELL".equals(side)) netPremium += price;
+                        else netPremium -= price;
+                        Object strikeObj = leg.get("strike");
+                        if (strikeObj != null) strikes.add(((Number) strikeObj).intValue());
+                    }
+                    if (strikes.size() >= 2) {
+                        java.util.Collections.sort(strikes);
+                        int width = strikes.get(strikes.size() - 1) - strikes.get(0);
+                        // For butterfly/condor/iron condor: max loss = net debit (premium paid)
+                        // For vertical credit spread: max loss = width - credit
+                        // For vertical debit spread: max loss = debit paid
+                        String strategy = p.getStrategyType() != null ? p.getStrategyType() : "";
+                        if (strategy.contains("BUTTERFLY") || strategy.contains("CONDOR") || strategy.contains("IRON_CONDOR")) {
+                            maxLoss = netPremium < 0 ? Math.abs(netPremium) * lotSize * lots : (width - netPremium) * lotSize * lots;
+                        } else if (strategy.contains("BOX")) {
+                            // Box spread: max loss ≈ transaction costs, risk is minimal
+                            maxLoss = Math.abs(netPremium) * lotSize * lots;
+                        } else {
+                            // Vertical / other: width of strikes - net credit (or net debit if debit spread)
+                            if (netPremium > 0) {
+                                // Credit spread: max loss = width - credit
+                                int minWidth = Integer.MAX_VALUE;
+                                for (int i = 1; i < strikes.size(); i++) {
+                                    minWidth = Math.min(minWidth, strikes.get(i) - strikes.get(i - 1));
+                                }
+                                maxLoss = (minWidth - netPremium) * lotSize * lots;
+                            } else {
+                                // Debit spread: max loss = debit paid
+                                maxLoss = Math.abs(netPremium) * lotSize * lots;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Bid parity (CE+PE+FUT): theoretical max loss depends on pricing divergence
+                // Use target edge as proxy — real max loss is small for true arbitrage
+                maxLoss = target > 0 ? target * 2 * lots : 0;
+            }
+            map.put("maxLoss", Math.round(maxLoss));
+
             return map;
         }).toList();
 

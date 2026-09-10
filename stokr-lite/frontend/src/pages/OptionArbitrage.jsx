@@ -1108,8 +1108,8 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
     else { setSortCol(col); setSortDir(col === 'enteredAt' ? 'desc' : 'asc'); }
   };
   const SortTh = ({ col, children, className = '' }) => (
-    <th className={`px-3 py-2 cursor-pointer select-none hover:bg-slate-100 transition ${className}`} onClick={() => toggleSort(col)}>
-      <span className="inline-flex items-center gap-0.5">{children}{sortCol === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ' ⇅'}</span>
+    <th className={`px-2 py-2.5 cursor-pointer select-none whitespace-nowrap transition-colors ${sortCol === col ? 'bg-indigo-50/80 text-indigo-700' : 'hover:bg-slate-100'} ${className}`} onClick={() => toggleSort(col)}>
+      <span className="inline-flex items-center gap-0.5">{children}<span className={`text-[8px] ${sortCol === col ? 'text-indigo-500' : 'text-slate-300'}`}>{sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span></span>
     </th>
   );
   // Defaults to whatever mode the Execution Broker dropdown is currently in, so switching
@@ -1164,6 +1164,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
         case 'edge': va = a.targetEdge || 0; vb = b.targetEdge || 0; break;
         case 'edgeProgress': va = a.edgeCaptured || 0; vb = b.edgeCaptured || 0; break;
         case 'pnl': va = a.currentPnl != null ? Number(a.currentPnl) : 0; vb = b.currentPnl != null ? Number(b.currentPnl) : 0; break;
+        case 'maxLoss': va = a.maxLoss || 0; vb = b.maxLoss || 0; break;
         case 'lots': va = a.lots || 0; vb = b.lots || 0; break;
         case 'status': va = a.status || ''; vb = b.status || ''; break;
         default: va = a.enteredAt || ''; vb = b.enteredAt || '';
@@ -1293,138 +1294,123 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
 
         {!collapsed && positions.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full text-[11px] text-left">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold text-[10px]">
+            <table className="w-full text-[11px] text-left border-collapse">
+              <thead className="bg-gradient-to-b from-slate-50 to-slate-100/80 border-b-2 border-slate-200 text-[9px] text-slate-500 uppercase tracking-wider font-extrabold">
                 <tr>
                   <SortTh col="enteredAt">Time</SortTh>
                   <SortTh col="broker">Broker</SortTh>
                   <SortTh col="strategy">Strategy</SortTh>
-                  <SortTh col="underlying">Underlying</SortTh>
-                  <SortTh col="strike">Strike</SortTh>
-                  <th className="px-3 py-2">Action</th>
-                  <th className="px-3 py-2 text-right">CE Entry</th>
-                  <th className="px-3 py-2 text-right">PE Entry</th>
-                  <th className="px-3 py-2 text-right">FUT Entry</th>
+                  <SortTh col="underlying">Symbol</SortTh>
+                  <SortTh col="strike" className="text-right">Strike</SortTh>
+                  <th className="px-2 py-2.5 text-center">Legs / Entry</th>
                   <SortTh col="edge" className="text-right">Edge</SortTh>
-                  <SortTh col="edgeProgress" className="text-center">Edge Progress</SortTh>
-                  <SortTh col="pnl" className="text-right">Live P&amp;L</SortTh>
-                  <SortTh col="lots" className="text-right">Lots</SortTh>
+                  <SortTh col="edgeProgress" className="text-center">Progress</SortTh>
+                  <SortTh col="pnl" className="text-right">P&amp;L</SortTh>
+                  <SortTh col="maxLoss" className="text-right">Max Loss</SortTh>
+                  <SortTh col="lots" className="text-center">Lots</SortTh>
                   <SortTh col="status" className="text-center">Status</SortTh>
-                  <th className="px-3 py-2 text-center">Go Live</th>
-                  <th className="px-3 py-2 text-center">Rollover</th>
-                  <th className="px-3 py-2 text-center">Close</th>
-                  <th className="px-3 py-2 text-center">Error</th>
+                  <th className="px-2 py-2.5 text-center">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {sortedPositions.map(p => {
+              <tbody>
+                {sortedPositions.map((p, idx) => {
                   const pnl = p.currentPnl != null ? Number(p.currentPnl) : null;
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
+                  const mxLoss = p.maxLoss || 0;
                   const canShowPayoff = Array.isArray(p.legList) && p.legList.length >= 1;
                   const isExpanded = expandedPosId === p.id;
+                  const rowBg = isExpanded ? 'bg-indigo-50/40' : captured >= 90 ? 'bg-amber-50/50' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40';
                   return (
                     <React.Fragment key={p.id}>
                     <tr onClick={() => canShowPayoff && setExpandedPosId(isExpanded ? null : p.id)}
-                      className={`hover:bg-slate-50 ${captured >= 90 ? 'bg-amber-50' : ''} ${canShowPayoff ? 'cursor-pointer' : ''} ${isExpanded ? 'bg-fuchsia-50/60' : ''}`}>
-                      <td className="px-3 py-2 font-mono text-[10px] text-slate-600">{fmtTime(p.enteredAt)}</td>
-                      <td className="px-3 py-2">
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${p.broker === 'PAPER' || !p.broker ? 'bg-slate-100 text-slate-500 border-slate-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300'}`}>
-                          {p.broker === 'PAPER' || !p.broker ? '📄 PAPER' : `🔴 ${p.broker}`}
-                        </span>
+                      className={`${rowBg} hover:bg-indigo-50/60 transition-colors border-b border-slate-100 ${canShowPayoff ? 'cursor-pointer' : ''}`}>
+                      <td className="px-2 py-2.5 font-mono text-[10px] text-slate-500 whitespace-nowrap">{fmtTime(p.enteredAt)}</td>
+                      <td className="px-2 py-2.5">
+                        {isPaper(p)
+                          ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-bold">📄 Paper</span>
+                          : <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold">🔴 {p.broker}</span>
+                        }
                       </td>
-                      <td className="px-3 py-2">
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">
+                      <td className="px-2 py-2.5">
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap">
                           {STRATEGY_LABELS[p.strategyType] || p.strategyType || '—'}
                         </span>
                       </td>
-                      <td className="px-3 py-2 font-bold text-slate-800">{p.underlying}</td>
-                      <td className="px-3 py-2 font-bold text-slate-700">{p.strike}</td>
-                      <td className="px-3 py-2 text-purple-700 font-bold text-[10px]">{p.action?.substring(0, 18)}</td>
-                      {p.isMultiLeg ? (
-                        <td colSpan={3} className="px-3 py-2 text-[9px] text-slate-600 font-mono">
-                          {Array.isArray(p.legList) && p.legList.length > 0
-                            ? p.legList.map((leg, i) => (
-                                <span key={i} className={`inline-block mr-2 ${leg.side === 'BUY' ? 'text-emerald-700' : 'text-red-600'}`}>
-                                  {leg.strike}{leg.optionType} {leg.side}@{Number(leg.price || 0).toFixed(1)}
-                                </span>
-                              ))
-                            : `${p.legList?.length || 0}-leg spread (no futures)`}
-                        </td>
-                      ) : (
-                        <>
-                          <td className="px-3 py-2 text-right font-mono">₹{p.ceEntryPrice?.toFixed(1) || '--'}</td>
-                          <td className="px-3 py-2 text-right font-mono">₹{p.peEntryPrice?.toFixed(1) || '--'}</td>
-                          <td className="px-3 py-2 text-right font-mono">₹{p.futEntryPrice?.toFixed(1) || '--'}</td>
-                        </>
-                      )}
-                      <td className="px-3 py-2 text-right font-mono font-bold text-indigo-700">₹{target?.toFixed(0) || '--'}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1.5">
-                          <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full transition-all ${captured >= 90 ? 'bg-amber-500' : captured >= 50 ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                      <td className="px-2 py-2.5 font-black text-slate-800 text-xs">{p.underlying}</td>
+                      <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-700">{p.strike}</td>
+                      <td className="px-2 py-2.5">
+                        {p.isMultiLeg ? (
+                          <div className="flex flex-wrap gap-1">
+                            {Array.isArray(p.legList) && p.legList.length > 0
+                              ? p.legList.map((leg, i) => (
+                                  <span key={i} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${leg.side === 'BUY' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
+                                    {leg.side === 'BUY' ? 'B' : 'S'} {leg.strike}{leg.optionType?.charAt(0)} @{Number(leg.price || 0).toFixed(1)}
+                                  </span>
+                                ))
+                              : <span className="text-slate-400 text-[9px]">{p.legList?.length || 0}-leg</span>}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 font-mono text-[10px]">
+                            {p.ceEntryPrice ? <span className="text-blue-600">CE@{p.ceEntryPrice.toFixed(1)}</span> : null}
+                            {p.peEntryPrice ? <span className="text-purple-600">PE@{p.peEntryPrice.toFixed(1)}</span> : null}
+                            {p.futEntryPrice ? <span className="text-slate-600">FUT@{p.futEntryPrice.toFixed(1)}</span> : null}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-2 py-2.5 text-right font-mono font-bold text-indigo-700">₹{target?.toFixed(0) || '--'}</td>
+                      <td className="px-2 py-2.5">
+                        <div className="flex items-center gap-1 min-w-[80px]">
+                          <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all ${captured >= 90 ? 'bg-gradient-to-r from-amber-400 to-amber-500' : captured >= 50 ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : 'bg-gradient-to-r from-blue-400 to-blue-500'}`}
                               style={{ width: `${Math.min(100, captured)}%` }} />
                           </div>
-                          <span className={`text-[10px] font-bold ${captured >= 90 ? 'text-amber-600' : captured >= 50 ? 'text-emerald-600' : 'text-blue-600'}`}>{captured}%</span>
+                          <span className={`text-[9px] font-black min-w-[28px] text-right ${captured >= 90 ? 'text-amber-600' : captured >= 50 ? 'text-emerald-600' : 'text-blue-600'}`}>{captured}%</span>
                         </div>
                       </td>
-                      <td className={`px-3 py-2 text-right font-mono font-bold ${pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {pnl !== 0 ? `₹${Math.round(pnl).toLocaleString('en-IN')}` : '--'}
+                      <td className="px-2 py-2.5 text-right">
+                        <span className={`font-mono font-black text-xs ${pnl > 0 ? 'text-emerald-600' : pnl < 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                          {pnl != null && pnl !== 0 ? `${pnl > 0 ? '+' : ''}₹${Math.round(pnl).toLocaleString('en-IN')}` : '--'}
+                        </span>
                       </td>
-                      <td className="px-3 py-2 text-right font-bold">{p.lots}</td>
-                      <td className="px-3 py-2 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${statusColor(p.status)}`}>{p.status}</span>
+                      <td className="px-2 py-2.5 text-right">
+                        <span className={`font-mono font-bold text-[10px] ${mxLoss > 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                          {mxLoss > 0 ? `₹${Math.round(mxLoss).toLocaleString('en-IN')}` : '--'}
+                        </span>
                       </td>
-                      <td className="px-3 py-2 text-center">
-                        {p.status === 'OPEN' && isPaper(p) && (
-                          <button
-                            disabled={goLiveId === p.id}
-                            onClick={(e) => { e.stopPropagation(); promptGoLive(p); }}
-                            className={`px-2 py-1 rounded-lg text-[9px] font-bold transition border ${
-                              goLiveId === p.id
-                                ? 'bg-slate-200 text-slate-500 border-slate-300 cursor-wait'
-                                : 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400'
-                            }`}
-                          >
-                            {goLiveId === p.id ? '⏳ Entering...' : '🔴 Go Live'}
-                          </button>
-                        )}
+                      <td className="px-2 py-2.5 text-center font-bold text-slate-700">{p.lots}</td>
+                      <td className="px-2 py-2.5 text-center">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-black border ${statusColor(p.status)}`}>{p.status}</span>
                       </td>
-                      <td className="px-3 py-2 text-center">
-                        {p.status === 'OPEN' && !p.isMultiLeg && (
-                          <button
-                            disabled={rollingId === p.id}
-                            onClick={() => handleRollover(p.id, p.underlying, p.strike)}
-                            className={`px-2 py-1 rounded-lg text-[9px] font-bold transition border ${
-                              rollingId === p.id
-                                ? 'bg-slate-200 text-slate-500 border-slate-300 cursor-wait'
-                                : 'bg-indigo-50 text-indigo-700 border-indigo-300 hover:bg-indigo-100 hover:border-indigo-400'
-                            }`}
-                          >
-                            {rollingId === p.id ? '⏳ Rolling...' : '🔄 Roll CE+PE'}
-                          </button>
-                        )}
+                      <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center gap-1 justify-center">
+                          {p.status === 'OPEN' && isPaper(p) && (
+                            <button disabled={goLiveId === p.id} onClick={() => promptGoLive(p)}
+                              className={`px-2 py-1 rounded-md text-[9px] font-bold transition shadow-sm ${goLiveId === p.id ? 'bg-slate-200 text-slate-400 cursor-wait' : 'bg-gradient-to-b from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700 shadow-emerald-200'}`}>
+                              {goLiveId === p.id ? '⏳' : '⚡ Live'}
+                            </button>
+                          )}
+                          {p.status === 'OPEN' && !p.isMultiLeg && (
+                            <button disabled={rollingId === p.id} onClick={() => handleRollover(p.id, p.underlying, p.strike)}
+                              className={`px-2 py-1 rounded-md text-[9px] font-bold transition shadow-sm ${rollingId === p.id ? 'bg-slate-200 text-slate-400 cursor-wait' : 'bg-gradient-to-b from-indigo-500 to-indigo-600 text-white hover:from-indigo-600 hover:to-indigo-700 shadow-indigo-200'}`}>
+                              {rollingId === p.id ? '⏳' : '🔄 Roll'}
+                            </button>
+                          )}
+                          {p.status === 'OPEN' && (
+                            <button disabled={closingId === p.id} onClick={() => handleClosePosition(p.id, p.underlying, p.strike, p.broker)}
+                              className={`px-2 py-1 rounded-md text-[9px] font-bold transition shadow-sm ${closingId === p.id ? 'bg-slate-200 text-slate-400 cursor-wait' : 'bg-gradient-to-b from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700 shadow-red-200'}`}>
+                              {closingId === p.id ? '⏳' : '✕ Close'}
+                            </button>
+                          )}
+                          {p.errorMessage && (
+                            <span className="text-[9px] text-red-500 max-w-[120px] truncate" title={p.errorMessage}>⚠ {p.errorMessage.substring(0, 30)}</span>
+                          )}
+                        </div>
                       </td>
-                      <td className="px-3 py-2 text-center">
-                        {p.status === 'OPEN' && (
-                          <button
-                            disabled={closingId === p.id}
-                            onClick={(e) => { e.stopPropagation(); handleClosePosition(p.id, p.underlying, p.strike, p.broker); }}
-                            className={`px-2 py-1 rounded-lg text-[9px] font-bold transition border ${
-                              closingId === p.id
-                                ? 'bg-slate-200 text-slate-500 border-slate-300 cursor-wait'
-                                : 'bg-red-50 text-red-700 border-red-300 hover:bg-red-100 hover:border-red-400'
-                            }`}
-                          >
-                            {closingId === p.id ? '⏳ Closing...' : '✖ Close'}
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-[9px] text-red-600 max-w-[200px] truncate">{p.errorMessage || '--'}</td>
                     </tr>
                     {isExpanded && canShowPayoff && (
-                      <tr className="bg-fuchsia-50/40 border-b border-fuchsia-100">
-                        <td colSpan={18} className="p-3">
+                      <tr className="bg-indigo-50/30 border-b border-indigo-100">
+                        <td colSpan={13} className="p-3">
                           <DetailedOpportunityExpandedRow item={p} executionBroker={executionBroker} title={`Open Position — ${p.underlying} ${p.action}`} />
                           {p.status === 'OPEN' && p.opportunityId && (
                             <PositionTriggersPanel positionId={p.opportunityId} />
@@ -1434,7 +1420,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                     )}
                     {goLiveResult && goLiveResult.posId === p.id && (
                       <tr className={goLiveResult.type === 'success' ? 'bg-emerald-50' : 'bg-red-50'}>
-                        <td colSpan={18} className="px-4 py-2.5">
+                        <td colSpan={13} className="px-4 py-2.5">
                           <div className="flex items-start gap-2">
                             <span className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-black ${goLiveResult.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`}>
                               {goLiveResult.type === 'success' ? '✓' : '✕'}
