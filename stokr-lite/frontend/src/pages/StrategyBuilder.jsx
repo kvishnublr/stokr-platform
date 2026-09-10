@@ -437,54 +437,67 @@ export default function StrategyBuilder() {
                     const isAtm = Math.abs(row.strike - spot) < step * 0.6;
                     const callItm = row.strike < spot;
                     const putItm = row.strike > spot;
-                    const cBg = callItm ? 'bg-emerald-50/20' : '';
-                    const pBg = putItm ? 'bg-rose-50/20' : '';
-                    const fmtOi = (v) => { if (!v) return '-'; if (v >= 10000000) return (v/10000000).toFixed(1)+'Cr'; if (v >= 100000) return (v/100000).toFixed(1)+'L'; if (v >= 1000) return (v/1000).toFixed(1)+'K'; return v.toLocaleString(); };
-                    const fmtVol = fmtOi;
+                    const fmtOi = (v) => { if (!v) return <span className="text-slate-300">-</span>; if (v >= 10000000) return (v/10000000).toFixed(1)+'Cr'; if (v >= 100000) return (v/100000).toFixed(1)+'L'; if (v >= 1000) return (v/1000).toFixed(1)+'K'; return v.toLocaleString(); };
+
+                    // ITM gradient: deeper ITM = stronger tint
+                    const itmDepth = Math.min(Math.abs(row.strike - spot) / (step * 8), 1);
+                    const callItmStyle = callItm ? { background: `linear-gradient(90deg, rgba(16,185,129,${0.04 + itmDepth * 0.08}) 0%, rgba(16,185,129,0.02) 100%)` } : {};
+                    const putItmStyle = putItm ? { background: `linear-gradient(270deg, rgba(239,68,68,${0.04 + itmDepth * 0.08}) 0%, rgba(239,68,68,0.02) 100%)` } : {};
 
                     return (
-                      <tr key={row.strike} className={`group transition-colors duration-150 ${isAtm ? 'atm-row' : 'hover:bg-slate-50/60'}`}>
+                      <tr key={row.strike} className={`group transition-all duration-150 ${isAtm ? '' : 'hover:bg-slate-50/80'}`}
+                          style={isAtm ? { background: 'linear-gradient(90deg, rgba(99,102,241,0.06) 0%, rgba(99,102,241,0.12) 48%, rgba(99,102,241,0.12) 52%, rgba(99,102,241,0.06) 100%)' } : {}}>
                         {/* CALLS */}
-                        <td className={`px-1.5 py-1.5 text-center font-semibold text-slate-400 border-b border-slate-50 ${cBg}`}>{fmtOi(row.ceOi)}</td>
-                        <td className={`px-1 py-1.5 text-center font-semibold text-slate-400 border-b border-slate-50 ${cBg}`}>{fmtVol(row.ceVol)}</td>
-                        <td className={`px-1 py-1.5 text-center font-bold text-violet-500 border-b border-slate-50 ${cBg}`}>{row.ceIv ? row.ceIv.toFixed(1) : '-'}</td>
-                        <td className={`px-1.5 py-1.5 text-right border-b border-slate-50 ${cBg}`}>
-                          <span className="font-black text-slate-800">{row.ceLtp?.toFixed(2) || '-'}</span>
+                        <td className="px-1.5 py-[7px] text-center font-semibold text-slate-400 border-b border-slate-50/80" style={callItmStyle}>{fmtOi(row.ceOi)}</td>
+                        <td className="px-1 py-[7px] text-center font-semibold text-slate-400 border-b border-slate-50/80" style={callItmStyle}>{fmtOi(row.ceVol)}</td>
+                        <td className="px-1 py-[7px] text-center font-bold border-b border-slate-50/80" style={callItmStyle}>
+                          {row.ceIv ? <span className="text-violet-500 bg-violet-50 px-1.5 py-0.5 rounded text-[10px]">{row.ceIv.toFixed(1)}</span> : <span className="text-slate-300">-</span>}
                         </td>
-                        <td className={`px-1 py-1.5 text-right font-semibold text-emerald-600 border-b border-slate-50 ${cBg}`}>{row.ceBid > 0 ? row.ceBid.toFixed(2) : '-'}</td>
-                        <td className={`px-1 py-1.5 text-right font-semibold text-rose-500 border-b border-slate-50 ${cBg}`}>
+                        <td className="px-1.5 py-[7px] text-right border-b border-slate-50/80" style={callItmStyle}>
+                          <span className="font-black text-slate-800 text-[12px]">{row.ceLtp?.toFixed(2) || '-'}</span>
+                        </td>
+                        <td className="px-1 py-[7px] text-right font-semibold text-emerald-600 border-b border-slate-50/80" style={callItmStyle}>{row.ceBid > 0 ? row.ceBid.toFixed(2) : '-'}</td>
+                        <td className="px-1 py-[7px] text-right border-b border-slate-50/80" style={callItmStyle}>
                           <div className="flex items-center justify-end gap-0.5">
-                            <span>{row.ceAsk > 0 ? row.ceAsk.toFixed(2) : '-'}</span>
-                            <div className="flex gap-px opacity-0 group-hover:opacity-100 transition-opacity ml-1">
-                              <button onClick={() => addLeg(row.strike, 'CE', 'BUY', row.ceAsk || row.ceLtp)} title="Buy CE" className="w-5 h-5 rounded bg-emerald-500 text-white text-[8px] font-black hover:bg-emerald-600 transition-colors flex items-center justify-center">B</button>
-                              <button onClick={() => addLeg(row.strike, 'CE', 'SELL', row.ceBid || row.ceLtp)} title="Sell CE" className="w-5 h-5 rounded bg-rose-500 text-white text-[8px] font-black hover:bg-rose-600 transition-colors flex items-center justify-center">S</button>
+                            <span className="font-semibold text-rose-500">{row.ceAsk > 0 ? row.ceAsk.toFixed(2) : '-'}</span>
+                            <div className="flex gap-px opacity-0 group-hover:opacity-100 transition-all duration-200 scale-90 group-hover:scale-100 ml-0.5">
+                              <button onClick={() => addLeg(row.strike, 'CE', 'BUY', row.ceAsk || row.ceLtp)} title="Buy CE" className="w-[22px] h-[22px] rounded-md bg-emerald-500 text-white text-[9px] font-black hover:bg-emerald-600 hover:shadow-lg transition-all flex items-center justify-center shadow-sm">B</button>
+                              <button onClick={() => addLeg(row.strike, 'CE', 'SELL', row.ceBid || row.ceLtp)} title="Sell CE" className="w-[22px] h-[22px] rounded-md bg-rose-500 text-white text-[9px] font-black hover:bg-rose-600 hover:shadow-lg transition-all flex items-center justify-center shadow-sm">S</button>
                             </div>
                           </div>
                         </td>
 
                         {/* STRIKE */}
-                        <td className={`px-2 py-1.5 text-center relative border-b border-slate-100 ${isAtm ? 'bg-indigo-500' : 'bg-slate-50/50'}`}>
-                          {isAtm && <div className="absolute inset-0 bg-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.3)]"></div>}
-                          <span className={`relative z-10 text-[12px] font-black ${isAtm ? 'text-white' : 'text-slate-700'}`}>{row.strike}</span>
+                        <td className="px-2 py-[7px] text-center relative border-b border-slate-100">
+                          {isAtm ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></div>
+                              <span className="text-[12px] font-black text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-md">{row.strike}</span>
+                            </div>
+                          ) : (
+                            <span className={`text-[12px] font-bold ${callItm ? 'text-emerald-700' : putItm ? 'text-rose-700' : 'text-slate-700'}`}>{row.strike}</span>
+                          )}
                         </td>
 
                         {/* PUTS */}
-                        <td className={`px-1 py-1.5 text-left font-semibold text-emerald-600 border-b border-slate-50 ${pBg}`}>
+                        <td className="px-1 py-[7px] text-left border-b border-slate-50/80" style={putItmStyle}>
                           <div className="flex items-center gap-0.5">
-                            <div className="flex gap-px opacity-0 group-hover:opacity-100 transition-opacity mr-1">
-                              <button onClick={() => addLeg(row.strike, 'PE', 'BUY', row.peAsk || row.peLtp)} title="Buy PE" className="w-5 h-5 rounded bg-emerald-500 text-white text-[8px] font-black hover:bg-emerald-600 transition-colors flex items-center justify-center">B</button>
-                              <button onClick={() => addLeg(row.strike, 'PE', 'SELL', row.peBid || row.peLtp)} title="Sell PE" className="w-5 h-5 rounded bg-rose-500 text-white text-[8px] font-black hover:bg-rose-600 transition-colors flex items-center justify-center">S</button>
+                            <div className="flex gap-px opacity-0 group-hover:opacity-100 transition-all duration-200 scale-90 group-hover:scale-100 mr-0.5">
+                              <button onClick={() => addLeg(row.strike, 'PE', 'BUY', row.peAsk || row.peLtp)} title="Buy PE" className="w-[22px] h-[22px] rounded-md bg-emerald-500 text-white text-[9px] font-black hover:bg-emerald-600 hover:shadow-lg transition-all flex items-center justify-center shadow-sm">B</button>
+                              <button onClick={() => addLeg(row.strike, 'PE', 'SELL', row.peBid || row.peLtp)} title="Sell PE" className="w-[22px] h-[22px] rounded-md bg-rose-500 text-white text-[9px] font-black hover:bg-rose-600 hover:shadow-lg transition-all flex items-center justify-center shadow-sm">S</button>
                             </div>
-                            <span>{row.peBid > 0 ? row.peBid.toFixed(2) : '-'}</span>
+                            <span className="font-semibold text-emerald-600">{row.peBid > 0 ? row.peBid.toFixed(2) : '-'}</span>
                           </div>
                         </td>
-                        <td className={`px-1 py-1.5 text-left font-semibold text-rose-500 border-b border-slate-50 ${pBg}`}>{row.peAsk > 0 ? row.peAsk.toFixed(2) : '-'}</td>
-                        <td className={`px-1.5 py-1.5 text-left border-b border-slate-50 ${pBg}`}>
-                          <span className="font-black text-slate-800">{row.peLtp?.toFixed(2) || '-'}</span>
+                        <td className="px-1 py-[7px] text-left font-semibold text-rose-500 border-b border-slate-50/80" style={putItmStyle}>{row.peAsk > 0 ? row.peAsk.toFixed(2) : '-'}</td>
+                        <td className="px-1.5 py-[7px] text-left border-b border-slate-50/80" style={putItmStyle}>
+                          <span className="font-black text-slate-800 text-[12px]">{row.peLtp?.toFixed(2) || '-'}</span>
                         </td>
-                        <td className={`px-1 py-1.5 text-center font-bold text-violet-500 border-b border-slate-50 ${pBg}`}>{row.peIv ? row.peIv.toFixed(1) : '-'}</td>
-                        <td className={`px-1 py-1.5 text-center font-semibold text-slate-400 border-b border-slate-50 ${pBg}`}>{fmtVol(row.peVol)}</td>
-                        <td className={`px-1.5 py-1.5 text-center font-semibold text-slate-400 border-b border-slate-50 ${pBg}`}>{fmtOi(row.peOi)}</td>
+                        <td className="px-1 py-[7px] text-center font-bold border-b border-slate-50/80" style={putItmStyle}>
+                          {row.peIv ? <span className="text-violet-500 bg-violet-50 px-1.5 py-0.5 rounded text-[10px]">{row.peIv.toFixed(1)}</span> : <span className="text-slate-300">-</span>}
+                        </td>
+                        <td className="px-1 py-[7px] text-center font-semibold text-slate-400 border-b border-slate-50/80" style={putItmStyle}>{fmtOi(row.peVol)}</td>
+                        <td className="px-1.5 py-[7px] text-center font-semibold text-slate-400 border-b border-slate-50/80" style={putItmStyle}>{fmtOi(row.peOi)}</td>
                       </tr>
                     );
                   })
