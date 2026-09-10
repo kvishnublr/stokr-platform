@@ -417,19 +417,24 @@ public class OptionArbHistoryService {
 
         log.info("Found {} OPEN opportunities to resolve", openOpps.size());
 
-        // Collect all instruments to quote
-        Set<String> instruments = new HashSet<>();
+        // Collect all instruments to quote (CE, PE, and FUT)
+        Map<String, LocalDate> instrumentExpiries = new HashMap<>();
+        Set<String> futInstruments = new HashSet<>();
         Map<Long, OptionArbOpportunity> oppMap = new HashMap<>();
         for (OptionArbOpportunity opp : openOpps) {
             String ceKey = opp.getUnderlying() + "_" + opp.getStrike() + "_CE";
             String peKey = opp.getUnderlying() + "_" + opp.getStrike() + "_PE";
-            instruments.add(ceKey);
-            instruments.add(peKey);
+            String futKey = opp.getUnderlying() + "_FUT";
+            LocalDate expiry = opp.getExpiryDate() != null ? opp.getExpiryDate() : LocalDate.now();
+            instrumentExpiries.put(ceKey, expiry);
+            instrumentExpiries.put(peKey, expiry);
+            futInstruments.add(futKey);
             oppMap.put(opp.getId(), opp);
         }
 
-        // Fetch closing quotes from Zerodha
-        Map<String, Double> closingPrices = fetchClosingPrices(instruments);
+        // Fetch closing quotes from Zerodha (options + futures)
+        Map<String, Double> closingPrices = fetchClosingPrices(instrumentExpiries);
+        Map<String, Double> futClosingPrices = fetchFutClosingPrices(futInstruments, openOpps);
 
         // Resolve each opportunity
         int resolved = 0;
@@ -437,9 +442,11 @@ public class OptionArbHistoryService {
             try {
                 String ceKey = opp.getUnderlying() + "_" + opp.getStrike() + "_CE";
                 String peKey = opp.getUnderlying() + "_" + opp.getStrike() + "_PE";
+                String futKey = opp.getUnderlying() + "_FUT";
 
                 Double ceClose = closingPrices.get(ceKey);
                 Double peClose = closingPrices.get(peKey);
+                Double futClose = futClosingPrices.get(futKey);
 
                 if (ceClose == null && peClose == null) {
                     opp.setStatus("EXPIRED");
@@ -449,20 +456,28 @@ public class OptionArbHistoryService {
                     continue;
                 }
 
-                // Calculate P&L based on action type
+                double futEntry = opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() : 0;
+                double futCloseVal = futClose != null ? futClose : 0;
+
+                // Calculate P&L based on action type (including futures leg)
+                // Actions are stored as "SELL CE + BUY PE + BUY FUT" (reversal) or "BUY CE + SELL PE + SELL FUT" (conversion)
                 BigDecimal pnl = BigDecimal.ZERO;
-                if ("REVERSAL".equals(opp.getAction())) {
+                String action = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
+                boolean isReversal = action.contains("SELL CE") || "REVERSAL".equals(action);
+                boolean isConversion = action.contains("BUY CE") || "CONVERSION".equals(action);
+
+                if (isReversal) {
                     // SELL CE + BUY PE + BUY FUT
-                    // P&L = (CE_entry - CE_close) + (PE_close - PE_entry) + (FUT_close - FUT_entry)
                     BigDecimal cePnl = opp.getCeEntryPrice().subtract(BigDecimal.valueOf(ceClose != null ? ceClose : 0));
                     BigDecimal pePnl = BigDecimal.valueOf(peClose != null ? peClose : 0).subtract(opp.getPeEntryPrice());
-                    pnl = cePnl.add(pePnl);
-                } else if ("CONVERSION".equals(opp.getAction())) {
+                    BigDecimal futPnl = (futEntry > 0 && futCloseVal > 0) ? BigDecimal.valueOf(futCloseVal - futEntry) : BigDecimal.ZERO;
+                    pnl = cePnl.add(pePnl).add(futPnl);
+                } else if (isConversion) {
                     // BUY CE + SELL PE + SELL FUT
-                    // P&L = (CE_close - CE_entry) + (PE_entry - PE_close) + (FUT_entry - FUT_close)
                     BigDecimal cePnl = BigDecimal.valueOf(ceClose != null ? ceClose : 0).subtract(opp.getCeEntryPrice());
                     BigDecimal pePnl = opp.getPeEntryPrice().subtract(BigDecimal.valueOf(peClose != null ? peClose : 0));
-                    pnl = cePnl.add(pePnl);
+                    BigDecimal futPnl = (futEntry > 0 && futCloseVal > 0) ? BigDecimal.valueOf(futEntry - futCloseVal) : BigDecimal.ZERO;
+                    pnl = cePnl.add(pePnl).add(futPnl);
                 } else {
                     // For other actions (IV_SPIKE, SKEW), use simple exit
                     if (ceClose != null && opp.getCeEntryPrice() != null) {
@@ -501,7 +516,7 @@ public class OptionArbHistoryService {
         log.info("Resolved {}/{} opportunities for {}", resolved, openOpps.size(), today);
     }
 
-    private Map<String, Double> fetchClosingPrices(Set<String> instruments) {
+    private Map<String, Double> fetchClosingPrices(Map<String, LocalDate> instrumentExpiries) {
         Map<String, Double> prices = new HashMap<>();
         String token = spotFetcher.getAuthToken();
         if (token == null) {
@@ -509,16 +524,15 @@ public class OptionArbHistoryService {
             return prices;
         }
 
-        // Build NFO instrument symbols from our keys
+        // Build NFO instrument symbols from our keys using each opp's actual expiry
         List<String> nfoSymbols = new ArrayList<>();
-        for (String key : instruments) {
-            String[] parts = key.split("_");
+        for (Map.Entry<String, LocalDate> entry : instrumentExpiries.entrySet()) {
+            String[] parts = entry.getKey().split("_");
             if (parts.length == 3) {
                 String underlying = parts[0];
                 String strike = parts[1];
                 String type = parts[2];
-                // Use today's expiry
-                LocalDate expiry = LocalDate.now();
+                LocalDate expiry = entry.getValue();
                 String nfoSymbol = buildNfoSymbol(underlying, expiry, Integer.parseInt(strike), type);
                 nfoSymbols.add(nfoSymbol);
             }
@@ -567,6 +581,66 @@ public class OptionArbHistoryService {
             } catch (Exception e) {
                 log.warn("Failed to fetch closing prices batch {}: {}", i, e.getMessage());
             }
+        }
+
+        return prices;
+    }
+
+    private Map<String, Double> fetchFutClosingPrices(Set<String> futInstruments, List<OptionArbOpportunity> opps) {
+        Map<String, Double> prices = new HashMap<>();
+        String token = spotFetcher.getAuthToken();
+        if (token == null) return prices;
+
+        // Build NFO futures symbols — need expiry from any opp with that underlying
+        Map<String, String> keyToNfo = new HashMap<>();
+        for (String key : futInstruments) {
+            String underlying = key.replace("_FUT", "");
+            for (OptionArbOpportunity opp : opps) {
+                if (underlying.equals(opp.getUnderlying()) && opp.getExpiryDate() != null) {
+                    String nfoSymbol = buildNfoFutSymbol(underlying, opp.getExpiryDate());
+                    keyToNfo.put(key, nfoSymbol);
+                    break;
+                }
+            }
+        }
+
+        if (keyToNfo.isEmpty()) return prices;
+
+        List<String> nfoSymbols = new ArrayList<>(keyToNfo.values());
+        StringBuilder url = new StringBuilder("https://api.kite.trade/quote?");
+        for (int j = 0; j < nfoSymbols.size(); j++) {
+            if (j > 0) url.append("&");
+            url.append("i=NFO:").append(nfoSymbols.get(j));
+        }
+
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL(url.toString()).openConnection();
+            conn.setRequestProperty("Authorization", "token " + apiKey + ":" + token);
+            conn.setRequestProperty("X-Kite-Version", "3");
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(10000);
+
+            int status = conn.getResponseCode();
+            if (status >= 200 && status < 300) {
+                InputStream is = conn.getInputStream();
+                String body = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                JsonNode root = mapper.readTree(body);
+                JsonNode data = root.path("data");
+
+                if (data.isObject()) {
+                    // Map NFO symbols back to our keys
+                    for (Map.Entry<String, String> entry : keyToNfo.entrySet()) {
+                        String nfoKey = "NFO:" + entry.getValue();
+                        JsonNode quoteNode = data.get(nfoKey);
+                        if (quoteNode != null && quoteNode.has("last_price")) {
+                            prices.put(entry.getKey(), quoteNode.get("last_price").asDouble());
+                        }
+                    }
+                }
+            }
+            conn.disconnect();
+        } catch (Exception e) {
+            log.warn("Failed to fetch futures closing prices: {}", e.getMessage());
         }
 
         return prices;

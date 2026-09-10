@@ -58,6 +58,12 @@ public class BrokerAccount {
     @Column(name = "mofsl_totp_secret", columnDefinition = "TEXT")
     private String mofslTotpSecret;
 
+    @Column(name = "mofsl_api_key", columnDefinition = "TEXT")
+    private String mofslApiKey;
+
+    @Column(name = "mofsl_api_secret", columnDefinition = "TEXT")
+    private String mofslApiSecret;
+
     @Column(name = "auto_reconnect")
     @Builder.Default
     private Boolean autoReconnect = false;
@@ -76,4 +82,8 @@ public class BrokerAccount {
     public boolean isTokenExpired() {
         return tokenExpiry != null && Instant.now().isAfter(tokenExpiry);
     }
+
+    // MOFSL DOB stored in refresh_token (unused for TOTP-based brokers)
+    public String getMofslDob() { return "MOTILALOSWAL".equals(brokerName) ? refreshToken : null; }
+    public void setMofslDob(String dob) { if ("MOTILALOSWAL".equals(brokerName)) this.refreshToken = dob; }
 }

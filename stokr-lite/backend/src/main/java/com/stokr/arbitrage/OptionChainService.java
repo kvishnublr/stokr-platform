@@ -82,10 +82,19 @@ public class OptionChainService {
 
                 validStrikes++;
 
-                double ceExec = ceQuote.ask > 0 ? ceQuote.ask : ceQuote.lastPrice;
-                double peExec = peQuote.bid > 0 ? peQuote.bid : peQuote.lastPrice;
-                double parityDev = BlackScholesCalculator.parityDeviation(
-                    ceExec, peExec, strike, RISK_FREE_RATE, yearsToExpiry, futuresPrice);
+                // Compute parity deviation for both directions and pick the profitable one
+                double ceAskExec = ceQuote.ask > 0 ? ceQuote.ask : ceQuote.lastPrice;
+                double ceBidExec = ceQuote.bid > 0 ? ceQuote.bid : ceQuote.lastPrice;
+                double peAskExec = peQuote.ask > 0 ? peQuote.ask : peQuote.lastPrice;
+                double peBidExec = peQuote.bid > 0 ? peQuote.bid : peQuote.lastPrice;
+                // Reversal (SELL CE + BUY PE): use CE bid, PE ask
+                double revDev = BlackScholesCalculator.parityDeviation(
+                    ceBidExec, peAskExec, strike, RISK_FREE_RATE, yearsToExpiry, futuresPrice);
+                // Conversion (BUY CE + SELL PE): use CE ask, PE bid
+                double convDev = BlackScholesCalculator.parityDeviation(
+                    ceAskExec, peBidExec, strike, RISK_FREE_RATE, yearsToExpiry, futuresPrice);
+                // Pick the direction with profitable edge
+                double parityDev = Math.abs(revDev) >= Math.abs(convDev) ? revDev : convDev;
 
                 if (Math.abs(parityDev) >= MIN_PARITY_DEVIATION) {
                     double grossEdge = Math.abs(parityDev) * getLotSize(underlying);
@@ -122,11 +131,11 @@ public class OptionChainService {
         List<String> toFetch = new ArrayList<>();
         
         for (String inst : instruments) {
-            String key = inst.startsWith("NFO:") ? inst : "NFO:" + inst;
+            String key = addExchangePrefix(inst);
             CachedQuote cq = globalQuoteCache.get(key);
             if (cq != null && (now - cq.timestamp) < 12000) { // 12 seconds cache
                 quotes.put(key, cq.quote);
-                quotes.put(key.replace("NFO:", ""), cq.quote);
+                quotes.put(stripExchangePrefix(key), cq.quote);
             } else {
                 toFetch.add(inst);
             }
@@ -154,7 +163,7 @@ public class OptionChainService {
                 StringBuilder sb = new StringBuilder();
                 for (int j = 0; j < batch.size(); j++) {
                     if (j > 0) sb.append("&i=");
-                    String item = batch.get(j); sb.append(item.startsWith("NFO:") ? item : "NFO:" + item);
+                    String item = batch.get(j); sb.append(addExchangePrefix(item));
                 }
 
                 String url = "https://api.kite.trade/quote?i=" + sb.toString();
@@ -171,7 +180,7 @@ public class OptionChainService {
                     if (data != null) {
                         for (Map.Entry<String, Object> entry : data.entrySet()) {
                             String rawKey = entry.getKey();
-                            String cleanKey = rawKey.replace("NFO:", "");
+                            String cleanKey = stripExchangePrefix(rawKey);
                             Map<String, Object> qData = (Map<String, Object>) entry.getValue();
 
                             OptionQuote q = new OptionQuote();
@@ -216,7 +225,11 @@ public class OptionChainService {
             case "BANKNIFTY" -> 100;
             case "MIDCPNIFTY" -> 25;
             case "FINNIFTY" -> 50;
-            default -> 100; // NIFTY
+            case "SENSEX" -> 100;
+            case "BANKEX" -> 100;
+            case "NIFTY" -> 50;
+            case "NIFTY NEXT 50", "NIFTYNXT50" -> 100;
+            default -> 100;
         };
     }
 
@@ -238,10 +251,12 @@ public class OptionChainService {
         Integer dynamic = DYNAMIC_LOT_SIZES.get(key);
         if (dynamic != null && dynamic > 0) return dynamic;
         return switch (key) {
-            case "NIFTY" -> 25;
-            case "BANKNIFTY" -> 15;
+            case "NIFTY" -> 75;
+            case "BANKNIFTY" -> 30;
             case "MIDCPNIFTY" -> 50;
-            case "FINNIFTY" -> 25;
+            case "FINNIFTY" -> 40;
+            case "SENSEX" -> 20;
+            case "BANKEX" -> 30;
             default -> 25;
         };
     }
@@ -261,7 +276,9 @@ public class OptionChainService {
             case "BANKNIFTY" -> DayOfWeek.WEDNESDAY;
             case "FINNIFTY" -> DayOfWeek.TUESDAY;
             case "MIDCPNIFTY" -> DayOfWeek.MONDAY;
-            default -> DayOfWeek.TUESDAY; // NIFTY — SEBI changed from Thursday to Tuesday
+            case "SENSEX" -> DayOfWeek.FRIDAY;
+            case "BANKEX" -> DayOfWeek.MONDAY;
+            default -> DayOfWeek.THURSDAY; // NIFTY weekly expiry
         };
     }
 
@@ -373,6 +390,17 @@ public class OptionChainService {
         return String.format("%s%02d%sFUT", clean, yy, mon);
     }
 
+    static String addExchangePrefix(String instrument) {
+        if (instrument.contains(":")) return instrument;
+        if (instrument.startsWith("SENSEX") || instrument.startsWith("BANKEX")) return "BFO:" + instrument;
+        return "NFO:" + instrument;
+    }
+
+    static String stripExchangePrefix(String key) {
+        int idx = key.indexOf(':');
+        return idx >= 0 ? key.substring(idx + 1) : key;
+    }
+
     private double calculateParityEdge(double cePrice, double pePrice, double futPrice, int lotSize, double grossEdge) {
         return ArbitrageCosts.netEdge(cePrice, pePrice, futPrice, lotSize, grossEdge);
     }
@@ -388,8 +416,6 @@ public class OptionChainService {
         opp.detectedAt = LocalDateTime.now();
         opp.spotPrice = spotPrice;
         opp.futuresPrice = futuresPrice;
-        opp.cePrice = ceQuote.lastPrice;
-        opp.pePrice = peQuote.lastPrice;
         opp.ceBid = ceQuote.bid;
         opp.ceAsk = ceQuote.ask;
         opp.peBid = peQuote.bid;
@@ -401,10 +427,14 @@ public class OptionChainService {
 
         if (parityDev > 0) {
             opp.action = "BUY FUT + SELL CE + BUY PE";
+            opp.cePrice = ceQuote.bid > 0 ? ceQuote.bid : ceQuote.lastPrice;
+            opp.pePrice = peQuote.ask > 0 ? peQuote.ask : peQuote.lastPrice;
             opp.legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s FUT @ %.1f",
                 strike, ceQuote.bid, strike, peQuote.ask, underlying, futuresPrice);
         } else {
             opp.action = "BUY CE + SELL PE + SELL FUT";
+            opp.cePrice = ceQuote.ask > 0 ? ceQuote.ask : ceQuote.lastPrice;
+            opp.pePrice = peQuote.bid > 0 ? peQuote.bid : peQuote.lastPrice;
             opp.legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %s FUT @ %.1f",
                 strike, ceQuote.ask, strike, peQuote.bid, underlying, futuresPrice);
         }

@@ -1,6 +1,9 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useEffect, useState, useRef } from 'react';
 import client from '../api/client';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import GlobalExecutionBar from './GlobalExecutionBar';
 
 const traderLinks = [
   { to: '/', label: 'Dashboard', icon: '📊', end: true },
@@ -14,6 +17,7 @@ const traderLinks = [
   { to: '/positions', label: 'Positions', icon: '📈' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
   { to: '/option-arbitrage', label: 'Option Arb', icon: '🔀' },
+  { to: '/strategy-builder', label: 'Builder', icon: '🛠️' },
 ];
 
 const adminLinks = [
@@ -199,7 +203,21 @@ export default function Layout() {
       {/* Global broker health alert — outside grid so it doesn't shift columns */}
       <BrokerAlert />
 
-    <div className="app-wrapper" style={{ display: 'grid', gridTemplateColumns: '280px 1fr', minHeight: '100vh' }}>
+    
+    {/* Hamburger menu for mobile */}
+    <div className="md:hidden flex items-center justify-between p-4 bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-gray-100 shadow-sm">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 text-white flex items-center justify-center font-bold">S</div>
+        <div className="font-bold text-lg bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">Stokr</div>
+      </div>
+      <button onClick={() => document.getElementById('mobile-sidebar').classList.toggle('-translate-x-full')} className="p-2 bg-gray-100 rounded-lg text-gray-600">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+      </button>
+    </div>
+
+    <ToastContainer position="bottom-right" theme="colored" />
+    <div className="app-wrapper flex flex-col md:grid md:grid-cols-[280px_1fr] min-h-screen relative">
+
 
       {/* Animated blob background */}
       <div className="blob-bg" style={{ position: 'fixed', inset: 0, zIndex: 0, overflow: 'hidden', pointerEvents: 'none' }}>
@@ -209,7 +227,10 @@ export default function Layout() {
       </div>
 
       {/* Sidebar - Aurora Pro */}
-      <aside className="sidebar-aurora" style={{ padding: '32px 24px', display: 'flex', flexDirection: 'column', gap: '8px', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', zIndex: 10 }}>
+      <aside id="mobile-sidebar" className="sidebar-aurora fixed inset-y-0 left-0 w-[280px] bg-white md:bg-transparent md:static transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out z-40 border-r border-gray-200 md:border-none shadow-2xl md:shadow-none" style={{ padding: '32px 24px', display: 'flex', flexDirection: 'column', gap: '8px', height: '100vh', overflowY: 'auto' }}>
+        <button onClick={() => document.getElementById('mobile-sidebar').classList.add('-translate-x-full')} className="md:hidden absolute top-4 right-4 p-2 text-gray-500 hover:bg-gray-100 rounded-lg">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
         {/* Brand */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px 28px', marginBottom: '12px', background: isAdmin ? 'linear-gradient(135deg, rgba(239,68,68,0.08), rgba(220,38,38,0.05))' : 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(167,139,250,0.05))', borderRadius: '16px' }}>
           <div className="animate-brand-pop" style={{ width: '48px', height: '48px', borderRadius: '14px', background: isAdmin ? 'linear-gradient(135deg, #dc2626 0%, #ef4444 50%, #f97316 100%)' : 'linear-gradient(135deg, #6366f1 0%, #a78bfa 50%, #60a5fa 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 900, color: 'white', boxShadow: isAdmin ? '0 8px 32px rgba(239,68,68,0.4)' : '0 8px 32px rgba(99,102,241,0.4)' }}>
@@ -278,10 +299,13 @@ export default function Layout() {
       </aside>
 
       {/* Main content - Aurora Pro */}
-      <main className="bg-aurora" style={{ overflowY: 'auto', padding: '32px 40px', position: 'relative', zIndex: 1 }}>
-        <div key={pageKey} className="animate-fade-in-up" style={{ maxWidth: '1400px' }}>
+      <main className="bg-aurora flex-1 w-full" style={{ overflowX: 'hidden', overflowY: 'auto', position: 'relative', zIndex: 1 }}>
+        <div className="p-4 md:p-8">
+        <div key={pageKey} className="animate-fade-in-up" style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <GlobalExecutionBar showToast={(msg, type) => toast(msg, { type: type || 'info' })} title="Global Execution Control" subtitle="Universal API Routing & Mode Selector" />
           <Outlet />
         </div>
+      </div>
       </main>
     </div>
     </>

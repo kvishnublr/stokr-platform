@@ -230,9 +230,17 @@ public class OptionArbAutoExecService {
                 requiredMargin = realMargin != null ? realMargin.doubleValue() : estimateHedgedMargin(opp.getUnderlying(), lots);
             }
             if (requiredMargin > availableMargin * 0.9) {
-                addLog("MARGIN", "MANUAL_LOW", opp.getUnderlying() + " " + opp.getStrike()
-                    + " needs ~₹" + String.format("%.0f", requiredMargin) + " but only ₹" + String.format("%.0f", availableMargin)
-                    + " available -- attempting anyway, broker will be the final word");
+                if ("MANUAL_EXIT".equals(opp.getStrategyType())) {
+                    addLog("MARGIN", "MANUAL_LOW", "Exit order for " + opp.getUnderlying() + " bypassing margin check");
+                } else {
+                    String errMsg = opp.getUnderlying() + " " + opp.getStrike()
+                        + " needs ~₹" + String.format("%.0f", requiredMargin) + " but only ₹" + String.format("%.0f", availableMargin)
+                        + " available. Trade aborted due to insufficient margin.";
+                    addLog("MARGIN", "ERROR", errMsg);
+                    result.put("status", "ERROR");
+                    result.put("message", errMsg);
+                    return result;
+                }
             }
         } catch (Exception e) {
             log.warn("Manual live-trade margin check failed for {}: {}", opp.getUnderlying(), e.getMessage());
@@ -311,9 +319,15 @@ public class OptionArbAutoExecService {
 
         double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
         if (!isMultiLeg) {
-            if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
-            if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) peCurrent = quotes.get(pos.getPeSymbol()).lastPrice;
-            if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) futCurrent = quotes.get(pos.getFutSymbol()).lastPrice;
+            String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
+            boolean ceLong = action.contains("BUY CE");
+            var ceQ = pos.getCeSymbol() != null ? quotes.get(pos.getCeSymbol()) : null;
+            var peQ = pos.getPeSymbol() != null ? quotes.get(pos.getPeSymbol()) : null;
+            var futQ = pos.getFutSymbol() != null ? quotes.get(pos.getFutSymbol()) : null;
+            // Exit prices: closing a BUY uses bid, closing a SELL uses ask
+            ceCurrent = ceQ != null ? (ceLong ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice)) : 0;
+            peCurrent = peQ != null ? (ceLong ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice)) : 0;
+            futCurrent = futQ != null ? (ceLong ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice)) : 0;
         }
 
         boolean squaredOff;
@@ -366,7 +380,11 @@ public class OptionArbAutoExecService {
             for (Map<String, Object> leg : legs) {
                 String symbol = (String) leg.get("symbol");
                 if (symbol != null && quotes.containsKey(symbol)) {
-                    leg.put("exitPrice", quotes.get(symbol).lastPrice);
+                    var q = quotes.get(symbol);
+                    boolean isBuy = "BUY".equals(leg.get("side"));
+                    // Exit: closing a BUY uses bid, closing a SELL uses ask
+                    double exitPrice = isBuy ? (q.bid > 0 ? q.bid : q.lastPrice) : (q.ask > 0 ? q.ask : q.lastPrice);
+                    leg.put("exitPrice", exitPrice);
                 }
             }
             pos.setLegs(legs);
@@ -515,12 +533,16 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 double entryCost = 0;
                 for (Map<String, Object> leg : resolvedLegs) {
                     String sym = (String) leg.get("symbol");
-                    double live = (sym != null && legQuotes.containsKey(sym) && legQuotes.get(sym).lastPrice > 0)
-                        ? legQuotes.get(sym).lastPrice
-                        : (leg.get("price") instanceof Number n ? n.doubleValue() : 0);
+                    boolean isBuy = "BUY".equals(leg.get("side"));
+                    var q = (sym != null && legQuotes.containsKey(sym)) ? legQuotes.get(sym) : null;
+                    // Entry: BUY uses ask, SELL uses bid
+                    double live = 0;
+                    if (q != null) {
+                        live = isBuy ? (q.ask > 0 ? q.ask : q.lastPrice) : (q.bid > 0 ? q.bid : q.lastPrice);
+                    }
+                    if (live <= 0) live = (leg.get("price") instanceof Number n ? n.doubleValue() : 0);
                     leg.put("price", live);
                     int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
-                    boolean isBuy = "BUY".equals(leg.get("side"));
                     entryCost += (isBuy ? live : -live) * qtyMult;
                 }
                 entryCost = Math.abs(entryCost) * lotSize * lots;
@@ -539,8 +561,12 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
                 String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
                 Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(List.of(ceSymbol, peSymbol));
-                if (quotes.containsKey(ceSymbol) && quotes.get(ceSymbol).lastPrice > 0) ceLive = quotes.get(ceSymbol).lastPrice;
-                if (quotes.containsKey(peSymbol) && quotes.get(peSymbol).lastPrice > 0) peLive = quotes.get(peSymbol).lastPrice;
+                boolean isReversal = "REVERSAL".equalsIgnoreCase(opp.getAction());
+                // Entry: REVERSAL = SELL CE + BUY PE, CONVERSION = BUY CE + SELL PE
+                var ceQ = quotes.containsKey(ceSymbol) ? quotes.get(ceSymbol) : null;
+                var peQ = quotes.containsKey(peSymbol) ? quotes.get(peSymbol) : null;
+                if (ceQ != null) ceLive = isReversal ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice);
+                if (peQ != null) peLive = isReversal ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice);
                 if (ceLive > 0) opp.setCeEntryPrice(BigDecimal.valueOf(ceLive));
                 if (peLive > 0) opp.setPeEntryPrice(BigDecimal.valueOf(peLive));
 
@@ -549,7 +575,11 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 if (futSymbol != null) {
                     try {
                         var futQuotes = optionChainService.fetchQuotes(List.of(futSymbol));
-                        if (futQuotes.containsKey(futSymbol) && futQuotes.get(futSymbol).lastPrice > 0) futLive = futQuotes.get(futSymbol).lastPrice;
+                        if (futQuotes.containsKey(futSymbol)) {
+                            var futQ = futQuotes.get(futSymbol);
+                            // REVERSAL buys FUT, CONVERSION sells FUT
+                            futLive = isReversal ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice);
+                        }
                     } catch (Exception ignored) {}
                 }
                 
@@ -771,9 +801,15 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             if (isMultiLeg) {
                 pnl = computeMultiLegPnl(pos, quotes);
             } else {
-                if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
-                if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) peCurrent = quotes.get(pos.getPeSymbol()).lastPrice;
-                if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) futCurrent = quotes.get(pos.getFutSymbol()).lastPrice;
+                String actionStr = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
+                boolean ceLong = actionStr.contains("BUY CE");
+                var ceQ = pos.getCeSymbol() != null ? quotes.get(pos.getCeSymbol()) : null;
+                var peQ = pos.getPeSymbol() != null ? quotes.get(pos.getPeSymbol()) : null;
+                var futQ = pos.getFutSymbol() != null ? quotes.get(pos.getFutSymbol()) : null;
+                // Exit/mark-to-market: closing a BUY uses bid, closing a SELL uses ask
+                ceCurrent = ceQ != null ? (ceLong ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice)) : 0;
+                peCurrent = peQ != null ? (ceLong ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice)) : 0;
+                futCurrent = futQ != null ? (ceLong ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice)) : 0;
 
                 double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
                 double peEntry = pos.getPeEntryPrice() != null ? pos.getPeEntryPrice().doubleValue() : 0;
@@ -803,6 +839,58 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
 
             int lots = pos.getLots() != null ? pos.getLots() : 1;
             double targetEdge = pos.getTargetEdge() != null ? pos.getTargetEdge().doubleValue() : 0;
+
+            OptionArbOpportunity opp = null;
+            if (pos.getOpportunityId() != null) {
+                opp = oppRepo.findById(pos.getOpportunityId()).orElse(null);
+            }
+
+            // PER-POSITION TRIGGER EVALUATION
+            if (opp != null) {
+                if (opp.getProfitExitTrigger() != null && pnl >= opp.getProfitExitTrigger().doubleValue()) {
+                    boolean squaredOff = false;
+                    if (isPaper) {
+                        squaredOff = true;
+                    } else if (userId != null && adapter != null) {
+                        squaredOff = isMultiLeg ? squareOffMultiLegPosition(account, adapter, pos) : squareOffPosition(account, adapter, pos);
+                    }
+                    if (squaredOff) {
+                        pos.setStatus("EXITED");
+                        positionRepo.save(pos);
+                        opp.setStatus("EXITED");
+                        opp.setExitTime(LocalDateTime.now());
+                        oppRepo.save(opp);
+                        addLog("AUTO_PROFIT_EXIT", "SUCCESS", pos.getUnderlying() + " P&L " + pnl + " >= trigger " + opp.getProfitExitTrigger());
+                        continue;
+                    }
+                }
+
+                if (opp.getLossReentryTrigger() != null && pnl <= opp.getLossReentryTrigger().doubleValue()) {
+                    int maxR = opp.getMaxReentries() != null ? opp.getMaxReentries() : 1;
+                    int curR = opp.getReentryCount() != null ? opp.getReentryCount() : 0;
+                    if (curR < maxR) {
+                        boolean reentered = false;
+                        if (isPaper) {
+                            reentered = true;
+                        } else if (userId != null && adapter != null) {
+                            // To actually respect the product type during execution, we would need to pass it.
+                            // But executeTrade/executeMultiLegTrade uses default logic.
+                            // For now, we execute the trade (averaging down).
+                            reentered = isMultiLeg ? executeMultiLegTrade(account, adapter, opp, lots, userId, pos.getLegs())
+                                                   : executeTrade(account, adapter, opp, lots, userId);
+                        }
+                        if (reentered) {
+                            opp.setReentryCount(curR + 1);
+                            // We need to double the lots on the LivePosition to reflect the average down
+                            pos.setLots(lots * 2);
+                            positionRepo.save(pos);
+                            oppRepo.save(opp);
+                            addLog("AUTO_LOSS_REENTRY", "SUCCESS", pos.getUnderlying() + " P&L " + pnl + " <= trigger " + opp.getLossReentryTrigger() + ". Averaged down.");
+                            continue;
+                        }
+                    }
+                }
+            }
 
             if (targetEdge <= 0) continue;
 
@@ -864,7 +952,10 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 for (Map<String, Object> leg : legs) {
                     String symbol = (String) leg.get("symbol");
                     if (symbol != null && quotes.containsKey(symbol)) {
-                        leg.put("exitPrice", quotes.get(symbol).lastPrice);
+                        var q = quotes.get(symbol);
+                        boolean isBuy = "BUY".equals(leg.get("side"));
+                        double exitPrice = isBuy ? (q.bid > 0 ? q.bid : q.lastPrice) : (q.ask > 0 ? q.ask : q.lastPrice);
+                        leg.put("exitPrice", exitPrice);
                     }
                 }
                 pos.setLegs(legs);
@@ -964,9 +1055,14 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         }
 
         double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
-        if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
-        if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) peCurrent = quotes.get(pos.getPeSymbol()).lastPrice;
-        if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) futCurrent = quotes.get(pos.getFutSymbol()).lastPrice;
+        String rollAction = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
+        boolean rollCeLong = rollAction.contains("BUY CE");
+        var ceQ2 = pos.getCeSymbol() != null ? quotes.get(pos.getCeSymbol()) : null;
+        var peQ2 = pos.getPeSymbol() != null ? quotes.get(pos.getPeSymbol()) : null;
+        var futQ2 = pos.getFutSymbol() != null ? quotes.get(pos.getFutSymbol()) : null;
+        ceCurrent = ceQ2 != null ? (rollCeLong ? (ceQ2.bid > 0 ? ceQ2.bid : ceQ2.lastPrice) : (ceQ2.ask > 0 ? ceQ2.ask : ceQ2.lastPrice)) : 0;
+        peCurrent = peQ2 != null ? (rollCeLong ? (peQ2.ask > 0 ? peQ2.ask : peQ2.lastPrice) : (peQ2.bid > 0 ? peQ2.bid : peQ2.lastPrice)) : 0;
+        futCurrent = futQ2 != null ? (rollCeLong ? (futQ2.ask > 0 ? futQ2.ask : futQ2.lastPrice) : (futQ2.bid > 0 ? futQ2.bid : futQ2.lastPrice)) : 0;
 
         double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
         double peEntry = pos.getPeEntryPrice() != null ? pos.getPeEntryPrice().doubleValue() : 0;
@@ -1205,7 +1301,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         .side(side)
                         .quantity(qty).price(price)
                         .orderType(price > 0 ? BrokerOrderRequest.OrderType.LIMIT : BrokerOrderRequest.OrderType.MARKET)
-                        .productType("MIS").build();
+                        .productType(opp.getReentryProductType() != null ? opp.getReentryProductType() : "MIS").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
 
                 if (!resp.isSuccess() || resp.orderId() == null || resp.orderId().isBlank()) {
@@ -1302,9 +1398,14 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 int strike = ((Number) spec.get("strike")).intValue();
                 String optionType = (String) spec.get("optionType");
                 String side = (String) spec.get("side");
-                int qtyMult = spec.get("qty") instanceof Number n ? n.intValue() : 1;
                 String symbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), strike, optionType);
-                int qty = lots * lotSize * qtyMult;
+                int qty;
+                if (spec.containsKey("rawQty")) {
+                    qty = ((Number) spec.get("rawQty")).intValue();
+                } else {
+                    int qtyMult = spec.get("qty") instanceof Number n ? n.intValue() : 1;
+                    qty = lots * lotSize * qtyMult;
+                }
                 double specPrice = spec.get("price") instanceof Number n ? n.doubleValue() : 0.0;
                 // Apply 5% buffer: BUY +5%, SELL -5%. Converts MARKET to guaranteed-fill LIMIT.
                 double bufferedPrice = specPrice > 0
@@ -1336,7 +1437,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         .side(leg.side())
                         .quantity(leg.quantity()).price(leg.price())
                         .orderType(orderType)
-                        .productType("MIS").build();
+                        .productType(opp.getReentryProductType() != null ? opp.getReentryProductType() : "MIS").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
 
                 if (!resp.isSuccess() || resp.orderId() == null || resp.orderId().isBlank()) {
@@ -1764,24 +1865,22 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
 
         if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
             if (action.contains("BUY CE +")) {
+                // BUY CE + SELL PE + SELL FUT (Conversion)
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceBid - ceEntry;
                 if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peAsk;
-                if (futCurrent > 0 && futEntry > 0) pnl += futBid > 0 ? (futEntry > futCurrent ? (futEntry - futAsk) : (futBid - futEntry)) : (futCurrent - futEntry);
-                // Actually, if it's BUY CE + SELL PE + SELL FUT, we sold fut. Exit = buy fut at ask
                 if (action.contains("SELL FUT")) {
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futAsk;
                 } else if (action.contains("BUY FUT")) {
                     if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
                 }
             } else if (action.contains("SELL CE +")) {
+                // SELL CE + BUY PE + BUY FUT (Reversal)
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceAsk;
                 if (peCurrent > 0 && peEntry > 0) pnl += peBid - peEntry;
                 if (action.contains("SELL FUT")) {
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futAsk;
                 } else if (action.contains("BUY FUT")) {
                     if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
-                } else {
-                    if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry; // Fallback
                 }
             } else {
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceBid - ceEntry;
@@ -1826,13 +1925,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             return result;
         }
         
-        long openCount = positionRepo.countOpenLive();
-        int maxOpen = ((Number) getSettings(broker).getOrDefault("maxOpenPositions", 1)).intValue();
-        if (openCount >= maxOpen) {
-            result.put("status", "ERROR");
-            result.put("message", "Already have " + openCount + "/" + maxOpen + " open positions.");
-            return result;
-        }
+        // Bypassing maxOpenPositions check for manual trades
 
         com.stokr.broker.BrokerAccount account;
         com.stokr.broker.BrokerAdapter adapter;

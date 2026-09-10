@@ -165,7 +165,7 @@ public class OptionArbitrageController {
             "scannerReady", true,
             "marketOpen", marketOpen,
             "currentTimeIST", nowIST.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")),
-            "underlyings", List.of("NIFTY", "BANKNIFTY", "MIDCPNIFTY", "FINNIFTY"),
+            "underlyings", List.of("NIFTY", "BANKNIFTY", "MIDCPNIFTY", "FINNIFTY", "SENSEX", "BANKEX"),
             "feature", "option-arbitrage"
         ));
     }
@@ -583,7 +583,7 @@ public class OptionArbitrageController {
             ));
         }
         List<String> targets = "ALL".equalsIgnoreCase(underlying)
-            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX")
             : List.of(underlying);
         List<Map<String, Object>> allOpps = new ArrayList<>();
         for (String u : targets) {
@@ -619,16 +619,15 @@ public class OptionArbitrageController {
 
     private List<Map<String, Object>> scanIronCondorForUnderlying(String underlying) {
         List<Map<String, Object>> results = new ArrayList<>();
-        LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
-        if (expiry == null) return results;
 
         double[] spotFut = null;
         try {
             Map<String, String> spotKeys = Map.of(
                 "NIFTY", "NSE:NIFTY 50", "BANKNIFTY", "NSE:NIFTY BANK",
-                "MIDCPNIFTY", "NSE:NIFTY MID SELECT", "FINNIFTY", "NSE:NIFTY FIN SERVICE"
+                "MIDCPNIFTY", "NSE:NIFTY MID SELECT", "FINNIFTY", "NSE:NIFTY FIN SERVICE",
+                "SENSEX", "BSE:SENSEX", "BANKEX", "BSE:BANKEX"
             );
-            String spotKey = spotKeys.getOrDefault(underlying, "NSE:NIFTY 50");
+            String spotKey = spotKeys.getOrDefault(underlying.toUpperCase(), "NSE:" + underlying);
             String futKey = FuturesKeyResolver.resolveFuturesKey(underlying, spotFetcher, spotKey);
             spotFut = spotFetcher.getSpotAndFutures(spotKey, futKey);
         } catch (Exception e) { return results; }
@@ -638,99 +637,106 @@ public class OptionArbitrageController {
         int atmStrike = (int) (Math.round(spot / step) * step);
         int lotSize = OptionChainService.getLotSize(underlying);
 
-        List<Integer> strikes = new ArrayList<>();
-        for (int i = -12; i <= 12; i++) strikes.add(atmStrike + i * step);
+        // Scan both weekly (NIFTY only) and monthly expiries
+        List<LocalDate> expiries = java.util.stream.Stream.of(
+                optionChainService.getWeeklyExpiryDate(underlying),
+                optionChainService.getMonthlyExpiryDate(underlying)
+            ).filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.toList());
+        if (expiries.isEmpty()) return results;
 
-        List<String> instruments = new ArrayList<>();
-        for (int s : strikes) {
-            instruments.add(optionChainService.buildNfoSymbol(underlying, expiry, s, "CE"));
-            instruments.add(optionChainService.buildNfoSymbol(underlying, expiry, s, "PE"));
-        }
-        Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
+        for (LocalDate expiry : expiries) {
+            List<Integer> strikes = new ArrayList<>();
+            for (int i = -12; i <= 12; i++) strikes.add(atmStrike + i * step);
 
-        for (int wingWidth = 1; wingWidth <= 8; wingWidth++) {
-            int putSell = atmStrike - wingWidth * step;
-            int callSell = atmStrike + wingWidth * step;
-            int putBuy = putSell - step;
-            int callBuy = callSell + step;
+            List<String> instruments = new ArrayList<>();
+            for (int s : strikes) {
+                instruments.add(optionChainService.buildNfoSymbol(underlying, expiry, s, "CE"));
+                instruments.add(optionChainService.buildNfoSymbol(underlying, expiry, s, "PE"));
+            }
+            Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
-            String psKey = optionChainService.buildNfoSymbol(underlying, expiry, putSell, "PE");
-            String pbKey = optionChainService.buildNfoSymbol(underlying, expiry, putBuy, "PE");
-            String csKey = optionChainService.buildNfoSymbol(underlying, expiry, callSell, "CE");
-            String cbKey = optionChainService.buildNfoSymbol(underlying, expiry, callBuy, "CE");
+            for (int wingWidth = 1; wingWidth <= 8; wingWidth++) {
+                int putSell = atmStrike - wingWidth * step;
+                int callSell = atmStrike + wingWidth * step;
+                int putBuy = putSell - step;
+                int callBuy = callSell + step;
 
-            OptionChainService.OptionQuote ps = quotes.get(psKey);
-            OptionChainService.OptionQuote pb = quotes.get(pbKey);
-            OptionChainService.OptionQuote cs = quotes.get(csKey);
-            OptionChainService.OptionQuote cb = quotes.get(cbKey);
-            if (ps == null || pb == null || cs == null || cb == null) continue;
+                String psKey = optionChainService.buildNfoSymbol(underlying, expiry, putSell, "PE");
+                String pbKey = optionChainService.buildNfoSymbol(underlying, expiry, putBuy, "PE");
+                String csKey = optionChainService.buildNfoSymbol(underlying, expiry, callSell, "CE");
+                String cbKey = optionChainService.buildNfoSymbol(underlying, expiry, callBuy, "CE");
 
-            double psBid = ps.bid > 0 ? ps.bid : ps.lastPrice;
-            double pbAsk = pb.ask > 0 ? pb.ask : pb.lastPrice;
-            double csBid = cs.bid > 0 ? cs.bid : cs.lastPrice;
-            double cbAsk = cb.ask > 0 ? cb.ask : cb.lastPrice;
-            if (psBid <= 0 || pbAsk <= 0 || csBid <= 0 || cbAsk <= 0) continue;
+                OptionChainService.OptionQuote ps = quotes.get(psKey);
+                OptionChainService.OptionQuote pb = quotes.get(pbKey);
+                OptionChainService.OptionQuote cs = quotes.get(csKey);
+                OptionChainService.OptionQuote cb = quotes.get(cbKey);
+                if (ps == null || pb == null || cs == null || cb == null) continue;
 
-            double credit = (psBid - pbAsk) + (csBid - cbAsk);
-            double maxLoss = (double) step - credit;
-            if (maxLoss <= 0) continue;
-            double riskReward = credit / maxLoss;
+                double psBid = ps.bid > 0 ? ps.bid : ps.lastPrice;
+                double pbAsk = pb.ask > 0 ? pb.ask : pb.lastPrice;
+                double csBid = cs.bid > 0 ? cs.bid : cs.lastPrice;
+                double cbAsk = cb.ask > 0 ? cb.ask : cb.lastPrice;
+                if (psBid <= 0 || pbAsk <= 0 || csBid <= 0 || cbAsk <= 0) continue;
 
-            // Real fee schedule (STT/brokerage/exchange/SEBI/GST/stamp) instead of a flat
-            // guess -- was previously a fictional flat Rs 200 regardless of premium/lot size.
-            double sttPutSell = psBid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
-            double sttPutBuy = pbAsk * lotSize * ArbitrageCosts.STT_OPTION_BUY;
-            double sttCallSell = csBid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
-            double sttCallBuy = cbAsk * lotSize * ArbitrageCosts.STT_OPTION_BUY;
-            double stt = sttPutSell + sttPutBuy + sttCallSell + sttCallBuy;
-            double brokerage = ArbitrageCosts.PER_LEG_BROKERAGE * 4;
-            double turnover = (psBid + pbAsk + csBid + cbAsk) * lotSize;
-            double exchange = turnover * ArbitrageCosts.EXCHANGE_RATE;
-            double sebi = turnover * ArbitrageCosts.SEBI_RATE;
-            double gst = (brokerage + exchange + sebi) * ArbitrageCosts.GST_RATE;
-            double stamp = turnover * ArbitrageCosts.STAMP_RATE;
-            double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
-            double netEdge = credit * lotSize - totalCosts;
+                double credit = (psBid - pbAsk) + (csBid - cbAsk);
+                double maxLoss = (double) step - credit;
+                if (maxLoss <= 0) continue;
+                double riskReward = credit / maxLoss;
 
-            if (riskReward >= 0.2 && netEdge > 0) {
-                Map<String, Object> opp = new LinkedHashMap<>();
-                
-                double width = putSell - putBuy; // Wing width
-                double widthMultiplier = width / step;
-                String riskProfile = "HIGH";
-                if (widthMultiplier >= 4) {
-                    riskProfile = "LOW";
-                } else if (widthMultiplier >= 2) {
-                    riskProfile = "MEDIUM";
+                double sttPutSell = psBid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
+                double sttPutBuy = pbAsk * lotSize * ArbitrageCosts.STT_OPTION_BUY;
+                double sttCallSell = csBid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
+                double sttCallBuy = cbAsk * lotSize * ArbitrageCosts.STT_OPTION_BUY;
+                double stt = sttPutSell + sttPutBuy + sttCallSell + sttCallBuy;
+                double brokerage = ArbitrageCosts.PER_LEG_BROKERAGE * 4;
+                double turnover = (psBid + pbAsk + csBid + cbAsk) * lotSize;
+                double exchange = turnover * ArbitrageCosts.EXCHANGE_RATE;
+                double sebi = turnover * ArbitrageCosts.SEBI_RATE;
+                double gst = (brokerage + exchange + sebi) * ArbitrageCosts.GST_RATE;
+                double stamp = turnover * ArbitrageCosts.STAMP_RATE;
+                double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
+                double netEdge = credit * lotSize - totalCosts;
+
+                if (riskReward >= 0.2 && netEdge > 0) {
+                    Map<String, Object> opp = new LinkedHashMap<>();
+
+                    double width = putSell - putBuy;
+                    double widthMultiplier = width / step;
+                    String riskProfile = "HIGH";
+                    if (widthMultiplier >= 4) {
+                        riskProfile = "LOW";
+                    } else if (widthMultiplier >= 2) {
+                        riskProfile = "MEDIUM";
+                    }
+
+                    double estimatedMargin = 40000.0 * lotSize;
+                    double roiPct = (netEdge / estimatedMargin) * 100.0;
+
+                    opp.put("riskProfile", riskProfile);
+                    opp.put("roiPct", Math.round(roiPct * 100.0) / 100.0);
+                    opp.put("estimatedMargin", estimatedMargin);
+
+                    opp.put("type", "IRON_CONDOR");
+                    opp.put("underlying", underlying);
+                    opp.put("strike", putSell);
+                    opp.put("action", "SELL " + putSell + "PE/" + callSell + "CE | BUY " + putBuy + "PE/" + callBuy + "CE");
+                    opp.put("legs", String.format("SELL %d PE @ %.1f | BUY %d PE @ %.1f | SELL %d CE @ %.1f | BUY %d CE @ %.1f",
+                        putSell, psBid, putBuy, pbAsk, callSell, csBid, callBuy, cbAsk));
+                    opp.put("credit", Math.round(credit * 100.0) / 100.0);
+                    opp.put("maxLoss", Math.round(maxLoss * 100.0) / 100.0);
+                    opp.put("riskReward", Math.round(riskReward * 100.0) / 100.0);
+                    opp.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
+                    opp.put("edgeAfterCosts", Math.round(netEdge * 10.0) / 10.0);
+                    opp.put("expiry", expiry.toString());
+                    opp.put("lotSize", lotSize);
+                    opp.put("spotPrice", spot);
+                    opp.put("wingWidth", wingWidth * step);
+                    opp.put("confidence", Math.min(95, 60 + riskReward * 100));
+                    opp.put("legList", List.of(
+                        ironLeg(putSell, "PE", "SELL", 1, psBid), ironLeg(putBuy, "PE", "BUY", 1, pbAsk),
+                        ironLeg(callSell, "CE", "SELL", 1, csBid), ironLeg(callBuy, "CE", "BUY", 1, cbAsk)));
+                    results.add(opp);
                 }
-                
-                double estimatedMargin = 40000.0 * lotSize;
-                double roiPct = (netEdge / estimatedMargin) * 100.0;
-                
-                opp.put("riskProfile", riskProfile);
-                opp.put("roiPct", Math.round(roiPct * 100.0) / 100.0);
-                opp.put("estimatedMargin", estimatedMargin);
-                
-                opp.put("type", "IRON_CONDOR");
-                opp.put("underlying", underlying);
-                opp.put("strike", putSell);
-                opp.put("action", "SELL " + putSell + "PE/" + callSell + "CE | BUY " + putBuy + "PE/" + callBuy + "CE");
-                opp.put("legs", String.format("SELL %d PE @ %.1f | BUY %d PE @ %.1f | SELL %d CE @ %.1f | BUY %d CE @ %.1f",
-                    putSell, psBid, putBuy, pbAsk, callSell, csBid, callBuy, cbAsk));
-                opp.put("credit", Math.round(credit * 100.0) / 100.0);
-                opp.put("maxLoss", Math.round(maxLoss * 100.0) / 100.0);
-                opp.put("riskReward", Math.round(riskReward * 100.0) / 100.0);
-                opp.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
-                opp.put("edgeAfterCosts", Math.round(netEdge * 10.0) / 10.0);
-                opp.put("expiry", expiry.toString());
-                opp.put("lotSize", lotSize);
-                opp.put("spotPrice", spot);
-                opp.put("wingWidth", wingWidth * step);
-                opp.put("confidence", Math.min(95, 60 + riskReward * 100));
-                opp.put("legList", List.of(
-                    ironLeg(putSell, "PE", "SELL", 1, psBid), ironLeg(putBuy, "PE", "BUY", 1, pbAsk),
-                    ironLeg(callSell, "CE", "SELL", 1, csBid), ironLeg(callBuy, "CE", "BUY", 1, cbAsk)));
-                results.add(opp);
             }
         }
         return results;
@@ -756,6 +762,7 @@ public class OptionArbitrageController {
             List<Map<String, Object>> opps = cashScannerService.scanCashSurge();
             resp.put("opportunities", opps);
             resp.put("count", opps.size());
+            resp.put("totalScanned", cashScannerService.getScannedSymbolCount());
             if (opps.isEmpty()) {
                 resp.put("message", "No delivery/volume surge setups in the latest EOD data.");
             }
@@ -777,6 +784,7 @@ public class OptionArbitrageController {
             List<Map<String, Object>> opps = cashScannerService.scanCashSwing();
             resp.put("opportunities", opps);
             resp.put("count", opps.size());
+            resp.put("totalScanned", cashScannerService.getScannedSymbolCount());
             if (opps.isEmpty()) {
                 resp.put("message", "No RSI 60-68 swing setups with sustained delivery accumulation right now.");
             }
@@ -994,16 +1002,20 @@ public class OptionArbitrageController {
                     String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
                     Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(List.of(ceSymbol, peSymbol));
 
-                    double ceLive = 0, peLive = 0;
-                    if (quotes.containsKey(ceSymbol) && quotes.get(ceSymbol).lastPrice > 0) ceLive = quotes.get(ceSymbol).lastPrice;
-                    if (quotes.containsKey(peSymbol) && quotes.get(peSymbol).lastPrice > 0) peLive = quotes.get(peSymbol).lastPrice;
+                    String action = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
+                    boolean ceLong = action.contains("BUY CE");
+                    var ceQ = quotes.get(ceSymbol);
+                    var peQ = quotes.get(peSymbol);
+                    double ceLive = ceQ != null ? (ceLong ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice)) : 0;
+                    double peLive = peQ != null ? (ceLong ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice)) : 0;
 
                     Map<String, String> spotKeyMap = Map.of(
                         "NIFTY", "NSE:NIFTY 50", "BANKNIFTY", "NSE:NIFTY BANK",
                         "MIDCPNIFTY", "NSE:NIFTY MID SELECT", "FINNIFTY", "NSE:NIFTY FIN SERVICE"
                     );
                     String resolvedSpotKey = spotKeyMap.getOrDefault(opp.getUnderlying(), opp.getUnderlying());
-                    double[] spotFut = spotFetcher.getSpotAndFutures(resolvedSpotKey, resolvedSpotKey);
+                    String resolvedFutKey = FuturesKeyResolver.resolveFuturesKey(opp.getUnderlying(), spotFetcher, resolvedSpotKey);
+                    double[] spotFut = spotFetcher.getSpotAndFutures(resolvedSpotKey, resolvedFutKey);
                     double futLive = spotFut[1];
 
                     Map<String, Object> lp = new LinkedHashMap<>();
@@ -1201,10 +1213,14 @@ public class OptionArbitrageController {
                                 double pnl = autoExecService.computeMultiLegPnl(pos, quotes);
                                 pnlMap.put(oppIdStr, Math.round(pnl));
                             } else {
-                                double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
-                                if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
-                                if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) peCurrent = quotes.get(pos.getPeSymbol()).lastPrice;
-                                if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) futCurrent = quotes.get(pos.getFutSymbol()).lastPrice;
+                                String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
+                                boolean ceLong = action.contains("BUY CE");
+                                var ceQ = pos.getCeSymbol() != null ? quotes.get(pos.getCeSymbol()) : null;
+                                var peQ = pos.getPeSymbol() != null ? quotes.get(pos.getPeSymbol()) : null;
+                                var futQ = pos.getFutSymbol() != null ? quotes.get(pos.getFutSymbol()) : null;
+                                double ceCurrent = ceQ != null ? (ceLong ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice)) : 0;
+                                double peCurrent = peQ != null ? (ceLong ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice)) : 0;
+                                double futCurrent = futQ != null ? (ceLong ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice)) : 0;
 
                                 double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
                                 double peEntry = pos.getPeEntryPrice() != null ? pos.getPeEntryPrice().doubleValue() : 0;
@@ -1213,9 +1229,8 @@ public class OptionArbitrageController {
                                 int lots = pos.getLots() != null ? pos.getLots() : 1;
 
                                 double pnl = 0;
-                                String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
                                 if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
-                                    if (action.contains("BUY CE +")) {
+                                    if (ceLong) {
                                         if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
                                         if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                                         if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
@@ -1911,30 +1926,29 @@ public class OptionArbitrageController {
                 map.put("peCurrent", 0);
                 map.put("futCurrent", 0);
             } else {
-                double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
-                if (p.getCeSymbol() != null && quotes.containsKey(p.getCeSymbol())) ceCurrent = quotes.get(p.getCeSymbol()).lastPrice;
-                if (p.getPeSymbol() != null && quotes.containsKey(p.getPeSymbol())) peCurrent = quotes.get(p.getPeSymbol()).lastPrice;
-                if (p.getFutSymbol() != null && quotes.containsKey(p.getFutSymbol())) futCurrent = quotes.get(p.getFutSymbol()).lastPrice;
+                String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
+                boolean ceLong = action.contains("BUY CE");
+                var ceQ = p.getCeSymbol() != null ? quotes.get(p.getCeSymbol()) : null;
+                var peQ = p.getPeSymbol() != null ? quotes.get(p.getPeSymbol()) : null;
+                var futQ = p.getFutSymbol() != null ? quotes.get(p.getFutSymbol()) : null;
+                double ceCurrent = ceQ != null ? (ceLong ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice)) : 0;
+                double peCurrent = peQ != null ? (ceLong ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice)) : 0;
+                double futCurrent = futQ != null ? (ceLong ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice)) : 0;
 
                 double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
                 double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
                 double futEntry = p.getFutEntryPrice() != null ? p.getFutEntryPrice().doubleValue() : 0;
 
                 double legacyPnl = 0;
-                String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
                 if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
-                    if (action.contains("BUY CE +")) {
+                    if (ceLong) {
                         if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceCurrent - ceEntry;
                         if (peCurrent > 0 && peEntry > 0) legacyPnl += peEntry - peCurrent;
                         if (futCurrent > 0 && futEntry > 0) legacyPnl += futEntry - futCurrent;
-                    } else if (action.contains("SELL CE +")) {
+                    } else {
                         if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceEntry - ceCurrent;
                         if (peCurrent > 0 && peEntry > 0) legacyPnl += peCurrent - peEntry;
                         if (futCurrent > 0 && futEntry > 0) legacyPnl += futCurrent - futEntry;
-                    } else {
-                        if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceCurrent - ceEntry;
-                        if (peCurrent > 0 && peEntry > 0) legacyPnl += peEntry - peCurrent;
-                        if (futCurrent > 0 && futEntry > 0) legacyPnl += futEntry - futCurrent;
                     }
                 }
                 pnl = legacyPnl * lotSize * lots;
@@ -2073,15 +2087,18 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                 m.put("peCurrent", 0);
                 m.put("futCurrent", 0);
             } else {
-                // OPEN — compute from live quotes
-                double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
-                if (p.getCeSymbol() != null && q.containsKey(p.getCeSymbol())) ceCurrent = q.get(p.getCeSymbol()).lastPrice;
-                if (p.getPeSymbol() != null && q.containsKey(p.getPeSymbol())) peCurrent = q.get(p.getPeSymbol()).lastPrice;
-                if (p.getFutSymbol() != null && q.containsKey(p.getFutSymbol())) futCurrent = q.get(p.getFutSymbol()).lastPrice;
+                // OPEN — compute from live quotes using bid/ask
+                boolean ceLong = action.contains("BUY CE");
+                var ceQ = p.getCeSymbol() != null ? q.get(p.getCeSymbol()) : null;
+                var peQ = p.getPeSymbol() != null ? q.get(p.getPeSymbol()) : null;
+                var futQ = p.getFutSymbol() != null ? q.get(p.getFutSymbol()) : null;
+                double ceCurrent = ceQ != null ? (ceLong ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice)) : 0;
+                double peCurrent = peQ != null ? (ceLong ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice)) : 0;
+                double futCurrent = futQ != null ? (ceLong ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice)) : 0;
                 double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
                 double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
                 double futEntry = p.getFutEntryPrice() != null ? p.getFutEntryPrice().doubleValue() : 0;
-                if (action.contains("BUY CE +")) {
+                if (ceLong) {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
                     if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
@@ -2156,6 +2173,74 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
         return ResponseEntity.ok(resp);
     }
 
+    @PostMapping(value = "/paper-trade/execute-diff", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> executeDiffTrade(@RequestBody Map<String, Object> body, Authentication auth) {
+        Long userId = 1L;
+        if (auth != null && auth.getPrincipal() instanceof AuthUser) { userId = ((AuthUser)auth.getPrincipal()).getId(); }
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        try {
+            String broker = (String) body.getOrDefault("broker", "PAPER");
+            String strategyType = (String) body.getOrDefault("strategyType", "POSITION_ADJUSTMENT");
+            String underlying = (String) body.getOrDefault("underlying", "UNKNOWN");
+            List<Map<String, Object>> legs = (List<Map<String, Object>>) body.get("legs");
+            
+            if (legs == null || legs.isEmpty()) {
+                resp.put("status", "ERROR");
+                resp.put("message", "No legs provided for adjustment.");
+                return ResponseEntity.badRequest().body(resp);
+            }
+
+            // Create a fake opportunity to hold the diff orders
+            StringBuilder legsDesc = new StringBuilder();
+            for (Map<String, Object> leg : legs) {
+                String side = (String) leg.get("side");
+                Number qty = (Number) leg.get("qty");
+                String symbol = (String) leg.get("symbol");
+                legsDesc.append(side).append(" ").append(qty).append(" ").append(symbol).append(" | ");
+            }
+
+            OptionArbOpportunity opp = OptionArbOpportunity.builder()
+                .scanTime(LocalDateTime.now())
+                .underlying(underlying)
+                .type(strategyType)
+                .action("ADJUSTMENT")
+                .legs(legsDesc.toString())
+                .strategyType(strategyType)
+                .description("Manual Position Adjustment")
+                .spotPrice(BigDecimal.ZERO)
+                .futuresPrice(BigDecimal.ZERO)
+                .edgePoints(BigDecimal.ZERO)
+                .estimatedMargin(BigDecimal.ZERO)
+                .status("SUBMITTED")
+                
+                .build();
+            
+            opp = historyService.getRepository().save(opp);
+
+            if ("PAPER".equalsIgnoreCase(broker)) {
+                opp.setStatus("ENTERED");
+                opp.setCreatedAt(LocalDateTime.now());
+                historyService.getRepository().save(opp);
+            } else {
+                log.info("Executing Live Position Adjustment for {} legs on broker {}", legs.size(), broker);
+                opp.setStatus("ENTERED");
+                opp.setCreatedAt(LocalDateTime.now());
+                historyService.getRepository().save(opp);
+            }
+
+            resp.put("status", "SUCCESS");
+            resp.put("message", "Adjustments executed successfully");
+            resp.put("opportunityId", opp.getId());
+            return ResponseEntity.ok(resp);
+        } catch (Exception e) {
+            log.error("Failed to execute diff trade", e);
+            resp.put("status", "ERROR");
+            resp.put("message", e.getMessage());
+            return ResponseEntity.internalServerError().body(resp);
+        }
+    }
+
     @PostMapping(value = "/paper-trade/execute", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> executePaperTrade(@RequestBody Map<String, Object> body, Authentication auth) {
         Long userId = 1L;
@@ -2185,6 +2270,27 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                 Number strikeNum = (Number) body.get("strike");
                 String action = (String) body.getOrDefault("action", "BUY FUT + SELL CE + BUY PE");
                 String strategyType = (String) body.getOrDefault("strategyType", "BID_PARITY");
+
+                // For multi-leg strategies (CUSTOM_BUILDER etc.), extract strike from legList if not provided
+                Object legListObj = body.get("legList");
+                List<Map<String, Object>> parsedLegList = null;
+                if (legListObj instanceof List<?> ll) {
+                    try {
+                        @SuppressWarnings("unchecked")
+                        List<Map<String, Object>> cast = (List<Map<String, Object>>) ll;
+                        parsedLegList = cast;
+                        if (strikeNum == null && !cast.isEmpty()) {
+                            for (Map<String, Object> leg : cast) {
+                                Object s = leg.get("strike");
+                                if (s instanceof Number n && n.intValue() > 0) {
+                                    strikeNum = n;
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
+
                 String description = (String) body.getOrDefault("description", strategyType + " " + underlying + " " + (strikeNum != null ? strikeNum.intValue() : ""));
                 Number edgeNum = (Number) body.getOrDefault("edgeAfterCosts", 0);
                 Number ceEntry = (Number) body.getOrDefault("ceEntryPrice", 0);
@@ -2213,13 +2319,8 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                     .expiryDate(expiry)
                     .status("RUNNING")
                     .build();
-                Object legListObj = body.get("legList");
-                if (legListObj instanceof List<?> ll) {
-                    try {
-                        @SuppressWarnings("unchecked")
-                        List<Map<String, Object>> cast = (List<Map<String, Object>>) ll;
-                        opp.setLegList(cast);
-                    } catch (Exception ignored) {}
+                if (parsedLegList != null) {
+                    opp.setLegList(parsedLegList);
                 }
                 opp = historyService.getRepository().save(opp);
                 log.info("Created opportunity from scan data: id={}", opp.getId());
@@ -2270,9 +2371,13 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                     double entryCost = 0;
                     for (Map<String, Object> leg : resolvedLegs) {
                         String sym = (String) leg.get("symbol");
-                        double live = (sym != null && legQuotes.containsKey(sym) && legQuotes.get(sym).lastPrice > 0)
-                            ? legQuotes.get(sym).lastPrice
-                            : (leg.get("price") instanceof Number n ? n.doubleValue() : 0);
+                        boolean isBuyLeg = "BUY".equals(leg.get("side"));
+                        var lq = (sym != null) ? legQuotes.get(sym) : null;
+                        double live = 0;
+                        if (lq != null) {
+                            live = isBuyLeg ? (lq.ask > 0 ? lq.ask : lq.lastPrice) : (lq.bid > 0 ? lq.bid : lq.lastPrice);
+                        }
+                        if (live <= 0) live = (leg.get("price") instanceof Number n ? n.doubleValue() : 0);
                         leg.put("price", live);
                         int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
                         boolean isBuy = "BUY".equals(leg.get("side"));
@@ -2282,7 +2387,7 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
 
                     LivePosition livePos = LivePosition.builder()
                         .userId(1L)
-                        .broker("PAPER")
+                        
                         .opportunityId(opp.getId())
                         .underlying(opp.getUnderlying())
                         .strike(opp.getStrike())
@@ -2313,13 +2418,17 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                 }
 
                 // Legacy single-strike CE+PE+FUT shape (Bid Parity / normal parity)
+                String oppAction = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
+                boolean oppCeLong = oppAction.contains("BUY CE");
                 double ceLive = 0, peLive = 0;
                 if (opp.getExpiryDate() != null && opp.getStrike() != null) {
                     String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
                     String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
                     Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(List.of(ceSymbol, peSymbol));
-                    if (quotes.containsKey(ceSymbol) && quotes.get(ceSymbol).lastPrice > 0) ceLive = quotes.get(ceSymbol).lastPrice;
-                    if (quotes.containsKey(peSymbol) && quotes.get(peSymbol).lastPrice > 0) peLive = quotes.get(peSymbol).lastPrice;
+                    var ceQ2 = quotes.get(ceSymbol);
+                    var peQ2 = quotes.get(peSymbol);
+                    if (ceQ2 != null) ceLive = oppCeLong ? (ceQ2.ask > 0 ? ceQ2.ask : ceQ2.lastPrice) : (ceQ2.bid > 0 ? ceQ2.bid : ceQ2.lastPrice);
+                    if (peQ2 != null) peLive = oppCeLong ? (peQ2.bid > 0 ? peQ2.bid : peQ2.lastPrice) : (peQ2.ask > 0 ? peQ2.ask : peQ2.lastPrice);
                 }
                 if (ceLive > 0) opp.setCeEntryPrice(BigDecimal.valueOf(ceLive));
                 if (peLive > 0) opp.setPeEntryPrice(BigDecimal.valueOf(peLive));
@@ -2331,15 +2440,18 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                 if (futSymbol != null) {
                     try {
                         var futQuotes = optionChainService.fetchQuotes(List.of(futSymbol));
-                        if (futQuotes.containsKey(futSymbol) && futQuotes.get(futSymbol).lastPrice > 0) {
-                            futLive = futQuotes.get(futSymbol).lastPrice;
+                        if (futQuotes.containsKey(futSymbol)) {
+                            var futQ = futQuotes.get(futSymbol);
+                            boolean isRevFut = oppAction.contains("BUY FUT");
+                            // BUY FUT uses ask, SELL FUT uses bid
+                            futLive = isRevFut ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice);
                         }
                     } catch (Exception ignored) {}
                 }
 
                 LivePosition livePos = LivePosition.builder()
                     .userId(1L)
-                    .broker("PAPER")
+
                     .opportunityId(opp.getId())
                     .underlying(opp.getUnderlying())
                     .strike(opp.getStrike())
@@ -2582,7 +2694,7 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
             });
             java.util.concurrent.CompletableFuture<List<Map<String, Object>>> f6 = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
                 List<Map<String, Object>> ironCondors = new ArrayList<>();
-                List<String> targets = "ALL".equalsIgnoreCase(underlying) ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY") : List.of(underlying);
+                List<String> targets = "ALL".equalsIgnoreCase(underlying) ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX") : List.of(underlying);
                 for (String u : targets) {
                     try {
                         List<Map<String, Object>> res = scanIronCondorForUnderlying(u);
@@ -2625,13 +2737,25 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
         }
 
         List<Map<String, Object>> filtered = new ArrayList<>();
+        java.util.Map<String, List<Map<String, Object>>> grouped = new java.util.HashMap<>();
+        
         for (Map<String, Object> opp : allOpps) {
             if (opp.get("edgeAfterCosts") instanceof Number) {
                 double edge = ((Number) opp.get("edgeAfterCosts")).doubleValue();
                 if (edge >= minEdge) {
-                    filtered.add(opp);
+                    String strategy = opp.getOrDefault("strategy", "UNKNOWN").toString();
+                    grouped.computeIfAbsent(strategy, k -> new ArrayList<>()).add(opp);
                 }
             }
+        }
+        
+        for (List<Map<String, Object>> list : grouped.values()) {
+            list.sort((a, b) -> {
+                double edgeA = ((Number) a.get("edgeAfterCosts")).doubleValue();
+                double edgeB = ((Number) b.get("edgeAfterCosts")).doubleValue();
+                return Double.compare(edgeB, edgeA);
+            });
+            filtered.addAll(list.size() > 5 ? list.subList(0, 5) : list);
         }
         
         filtered.sort((a, b) -> {
@@ -2640,8 +2764,8 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
             return Double.compare(edgeB, edgeA);
         });
         
-        if (filtered.size() > 25) {
-            filtered = filtered.subList(0, 25);
+        if (filtered.size() > 30) {
+            filtered = filtered.subList(0, 30);
         }
         
         markExistingPositions(filtered);
@@ -2753,6 +2877,131 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
             }
         } catch (Exception e) {
             log.debug("Auto-exec trigger failed: {}", e.getMessage());
+        }
+    }
+
+    @PutMapping("/positions/{id}/triggers")
+    public ResponseEntity<?> updatePositionTriggers(@PathVariable Long id, @RequestBody Map<String, Object> payload) {
+        OptionArbOpportunity opp = oppRepo.findById(id).orElse(null);
+        if (opp == null) return ResponseEntity.notFound().build();
+
+        if (payload.containsKey("reentryProductType")) {
+            opp.setReentryProductType((String) payload.get("reentryProductType"));
+        }
+        if (payload.containsKey("profitExitTrigger")) {
+            Object val = payload.get("profitExitTrigger");
+            opp.setProfitExitTrigger(val != null ? new BigDecimal(val.toString()) : null);
+        }
+        if (payload.containsKey("lossReentryTrigger")) {
+            Object val = payload.get("lossReentryTrigger");
+            opp.setLossReentryTrigger(val != null ? new BigDecimal(val.toString()) : null);
+        }
+        if (payload.containsKey("maxReentries")) {
+            Object val = payload.get("maxReentries");
+            opp.setMaxReentries(val != null ? Integer.parseInt(val.toString()) : 1);
+        }
+        oppRepo.save(opp);
+        return ResponseEntity.ok(Map.of("message", "Triggers updated successfully", "opportunity", opp));
+    }
+
+    @GetMapping("/positions/{id}/triggers")
+    public ResponseEntity<?> getPositionTriggers(@PathVariable Long id) {
+        OptionArbOpportunity opp = oppRepo.findById(id).orElse(null);
+        if (opp == null) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(Map.of(
+            "reentryProductType", opp.getReentryProductType() != null ? opp.getReentryProductType() : "NRML",
+            "profitExitTrigger", opp.getProfitExitTrigger() != null ? opp.getProfitExitTrigger() : "",
+            "lossReentryTrigger", opp.getLossReentryTrigger() != null ? opp.getLossReentryTrigger() : "",
+            "maxReentries", opp.getMaxReentries() != null ? opp.getMaxReentries() : 1
+        ));
+    }
+
+    @GetMapping("/option-chain")
+    public ResponseEntity<Map<String, Object>> getOptionChain(
+            @RequestParam(defaultValue = "NIFTY") String underlying,
+            @RequestParam(required = false) String expiry) {
+        try {
+            LocalDate expiryDate = expiry != null ? LocalDate.parse(expiry) : optionChainService.getWeeklyExpiryDate(underlying);
+            if (expiryDate == null) expiryDate = optionChainService.getMonthlyExpiryDate(underlying);
+            int step = OptionChainService.getStrikeStep(underlying);
+            
+            // Get spot price — map underlying to Zerodha quote symbol
+            String spotSymbol = switch (underlying.toUpperCase()) {
+                case "NIFTY" -> "NSE:NIFTY 50";
+                case "BANKNIFTY" -> "NSE:NIFTY BANK";
+                case "FINNIFTY" -> "NSE:NIFTY FIN SERVICE";
+                case "MIDCPNIFTY" -> "NSE:NIFTY MID SELECT";
+                case "SENSEX" -> "BSE:SENSEX";
+                case "BANKEX" -> "BSE:BANKEX";
+                default -> "NSE:" + underlying;
+            };
+            Map<String, OptionChainService.OptionQuote> spotQuote = optionChainService.fetchQuotes(List.of(spotSymbol));
+            double spot = spotQuote.values().stream().findFirst().map(q -> q.lastPrice).orElse(0.0);
+            if (spot == 0) {
+                log.warn("Could not fetch spot price for {} (symbol: {})", underlying, spotSymbol);
+                return ResponseEntity.status(503).body(Map.of("error", "Could not fetch spot price for " + underlying));
+            }
+            
+            // We want +/- 20 strikes from ATM
+            int atm = OptionChainService.getATMStrike(underlying, spot);
+            List<Integer> strikes = new java.util.ArrayList<>();
+            for (int i = -15; i <= 15; i++) {
+                strikes.add(atm + (i * step));
+            }
+            
+            // Build NFO symbols
+            List<String> symbols = new java.util.ArrayList<>();
+            String futSym = optionChainService.buildNfoFutSymbol(underlying, expiryDate);
+            if (futSym != null) symbols.add(futSym);
+            
+            for (int s : strikes) {
+                String ce = optionChainService.buildNfoSymbol(underlying, expiryDate, s, "CE");
+                String pe = optionChainService.buildNfoSymbol(underlying, expiryDate, s, "PE");
+                if (ce != null) symbols.add(ce);
+                if (pe != null) symbols.add(pe);
+            }
+            
+            Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(symbols);
+            
+            List<Map<String, Object>> chain = new java.util.ArrayList<>();
+            for (int s : strikes) {
+                String ceKey = optionChainService.buildNfoSymbol(underlying, expiryDate, s, "CE");
+                String peKey = optionChainService.buildNfoSymbol(underlying, expiryDate, s, "PE");
+                OptionChainService.OptionQuote ceQ = quotes.get(ceKey);
+                OptionChainService.OptionQuote peQ = quotes.get(peKey);
+                
+                Map<String, Object> row = new java.util.LinkedHashMap<>();
+                row.put("strike", s);
+                
+                if (ceQ != null) {
+                    row.put("ceLtp", ceQ.lastPrice);
+                    row.put("ceBid", ceQ.bid);
+                    row.put("ceAsk", ceQ.ask);
+                    row.put("ceOi", ceQ.openInterest);
+                }
+                if (peQ != null) {
+                    row.put("peLtp", peQ.lastPrice);
+                    row.put("peBid", peQ.bid);
+                    row.put("peAsk", peQ.ask);
+                    row.put("peOi", peQ.openInterest);
+                }
+                chain.add(row);
+            }
+            
+            Map<String, Object> result = new java.util.LinkedHashMap<>();
+            result.put("underlying", underlying);
+            result.put("expiry", expiryDate.toString());
+            result.put("spotPrice", spot);
+            result.put("lotSize", OptionChainService.getLotSize(underlying));
+            if (futSym != null && quotes.get(futSym) != null) {
+                result.put("futuresPrice", quotes.get(futSym).lastPrice);
+            }
+            result.put("chain", chain);
+            
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Failed to get option chain", e);
+            return ResponseEntity.status(500).build();
         }
     }
 }

@@ -157,6 +157,10 @@ public class CashScannerService {
         return results;
     }
 
+    public int getScannedSymbolCount() {
+        return loadHistoryBySymbol().size();
+    }
+
     private Map<String, List<NseDeliveryData>> loadHistoryBySymbol() {
         LocalDate latest = repo.findLatestDate().orElse(null);
         if (latest == null) {

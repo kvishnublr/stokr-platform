@@ -75,10 +75,9 @@ echo ">>> Step 7: Restarting stokr-lite service..."
 $SSH_CMD "systemctl restart stokr-lite && sleep 3 && systemctl is-active stokr-lite"
 echo ""
 
-# Step 8: Health check
-echo ">>> Step 8: Health check..."
-sleep 5
-$SSH_CMD "curl -s -o /dev/null -w 'HTTP %{http_code}' http://localhost:8081/api/option-arbitrage/health --max-time 10 || curl -s -o /dev/null -w 'HTTP %{http_code}' http://localhost:8081/api/deployments --max-time 10"
+# Step 8: Health check (Spring Boot + Flyway needs ~45s to start)
+echo ">>> Step 8: Health check (waiting up to 60s for app startup)..."
+$SSH_CMD "for i in \$(seq 1 12); do sleep 5; CODE=\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/api/brokers/supported --max-time 5 2>/dev/null); echo \"  attempt \$i: HTTP \$CODE\"; if [ \"\$CODE\" = '401' ] || [ \"\$CODE\" = '200' ]; then echo 'Health check PASSED'; exit 0; fi; done; echo 'Health check FAILED after 60s'; exit 1"
 echo ""
 
 # Step 9: Verify frontend

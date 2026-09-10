@@ -320,6 +320,24 @@ export default function OptionArbitrage() {
     }
   });
   const [isTestingBroker, setIsTestingBroker] = useState(false);
+  const [mofslModalOpen, setMofslModalOpen] = useState(false);
+  const [mofslForm, setMofslForm] = useState({ clientCode: '', password: '', totpSecret: '' });
+  const [mofslSaving, setMofslSaving] = useState(false);
+  const [mofslError, setMofslError] = useState(null);
+
+  const handleMofslConnect = async () => {
+    setMofslSaving(true);
+    setMofslError(null);
+    try {
+        await client.post('/brokers/motilaloswal/connect', mofslForm);
+        showToast('Motilal Oswal connected successfully!', 'success');
+        setMofslModalOpen(false);
+    } catch(e) {
+        setMofslError(e.response?.data?.error || e.message || 'Connection failed');
+    } finally {
+        setMofslSaving(false);
+    }
+  };
   const [maxSignals, setMaxSignals] = useState(() => {
     const saved = localStorage.getItem('stokr_max_signals');
     return saved ? parseInt(saved) : 300;
@@ -353,7 +371,12 @@ export default function OptionArbitrage() {
       if (res.data?.ok) {
         showToast(res.data.message, 'success');
       } else {
-        showToast(res.data?.message || 'Broker test failed', 'error');
+        const msg = res.data?.message || 'Broker test failed';
+        if (msg.includes('No active') && executionBroker === 'MOTILALOSWAL') {
+            setMofslModalOpen(true);
+        } else {
+            showToast(msg, 'error');
+        }
       }
     } catch (e) {
       showToast('Broker connection test error: ' + e.message, 'error');
@@ -563,55 +586,7 @@ export default function OptionArbitrage() {
           </div>
         </div>
 
-        {/* Live Router & Execution Control */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-slate-300 font-medium">Data Feed:</span>
-            <span className="font-bold text-white">Zerodha Kite Connect</span>
-          </div>
-
-          {/* Trade Mode Toggle */}
-<div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs">
-  <span className="text-slate-300 font-medium">Trade Mode:</span>
-  <select
-    value={executionBroker}
-    onChange={(e) => handleTradeModeChange(e.target.value)}
-    className="bg-slate-900 text-amber-300 font-bold border border-slate-700 rounded-lg px-2 py-1 outline-none text-xs"
-  >
-    <option value="PAPER">📝 Paper Trading</option>
-    <option value="LIVE">🔴 Live Execution</option>
-  </select>
-</div>
-
-{/* Live Broker Selection */}
-{executionBroker !== 'PAPER' && (
-<div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs transition-all">
-  <span className="text-red-300 font-medium">Live Broker:</span>
-  <select
-    value={executionBroker}
-    onChange={(e) => handleLiveBrokerChange(e.target.value)}
-    className="bg-red-900/30 text-red-300 font-bold border border-red-700/50 rounded-lg px-2 py-1 outline-none text-xs"
-  >
-    <option value="ZERODHA">Zerodha Kite Connect</option>
-    <option value="NAVIA">Navia Markets</option>
-    <option value="MOTILALOSWAL">Motilal Oswal</option>
-    <option value="ICICIDIRECT">ICICI Direct Breeze</option>
-    <option value="DHAN">DhanHQ</option>
-    <option value="FYERS">Fyers API</option>
-  </select>
-</div>
-)}
-
-          <button
-            onClick={testBrokerConnection}
-            disabled={isTestingBroker}
-            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition shadow-lg disabled:opacity-50"
-          >
-            {isTestingBroker ? 'Testing...' : '⚡ Test Connection'}
-          </button>
-        </div>
-      </div>
+              </div>
 
       {/* Tab Navigation Bar */}
       <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-2">
@@ -1118,6 +1093,75 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo', executionBro
   );
 }
 
+/* Per-position trigger controls: Re-entry, Exit, MIS/NRML product type */
+function PositionTriggersPanel({ positionId }) {
+  const [triggers, setTriggers] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    client.get(`/option-arbitrage/positions/${positionId}/triggers`).then(r => setTriggers(r.data)).catch(() => {});
+  }, [positionId]);
+
+  if (!triggers) return <div className="text-[10px] text-slate-400 py-2">Loading triggers...</div>;
+
+  const update = (field, value) => { setTriggers(prev => ({ ...prev, [field]: value })); setDirty(true); };
+  const save = async () => {
+    setSaving(true);
+    try {
+      await client.put(`/option-arbitrage/positions/${positionId}/triggers`, triggers);
+      setDirty(false);
+    } catch (e) { alert('Failed to save: ' + (e.response?.data?.message || e.message)); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3 mt-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-black text-amber-800 uppercase">Position Triggers</span>
+        {dirty && (
+          <button onClick={save} disabled={saving}
+            className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold rounded-lg shadow-sm transition">
+            {saving ? 'Saving...' : 'Save Triggers'}
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-4 items-end">
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-600 uppercase">Product Type</label>
+          <select value={triggers.reentryProductType || 'NRML'} onChange={e => update('reentryProductType', e.target.value)}
+            className="w-24 px-2 py-1.5 text-xs font-bold border border-slate-300 rounded-lg bg-white outline-none">
+            <option value="NRML">NRML</option>
+            <option value="MIS">MIS</option>
+          </select>
+          <p className="text-[8px] text-slate-400">MIS = Intraday, NRML = Carry</p>
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-600 uppercase">Profit Exit (₹)</label>
+          <input type="number" value={triggers.profitExitTrigger || ''} placeholder="Auto-exit at profit"
+            onChange={e => update('profitExitTrigger', e.target.value ? Number(e.target.value) : null)}
+            className="w-28 px-2 py-1.5 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
+          <p className="text-[8px] text-slate-400">Exit when P&L ≥ this</p>
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-600 uppercase">Loss Re-entry (₹)</label>
+          <input type="number" value={triggers.lossReentryTrigger || ''} placeholder="Re-enter at loss"
+            onChange={e => update('lossReentryTrigger', e.target.value ? Number(e.target.value) : null)}
+            className="w-28 px-2 py-1.5 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
+          <p className="text-[8px] text-slate-400">Average down when loss ≤ this</p>
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-600 uppercase">Max Re-entries</label>
+          <input type="number" value={triggers.maxReentries || 1} min={0} max={10}
+            onChange={e => update('maxReentries', Number(e.target.value))}
+            className="w-16 px-2 py-1.5 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
+          <p className="text-[8px] text-slate-400">Times to re-enter</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* Live Positions Section — standalone, always visible, 2s tick-by-tick refresh */
 function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   const [collapsed, setCollapsed] = useState(!defaultExpanded);
@@ -1277,8 +1321,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                   const pnl = p.currentPnl != null ? Number(p.currentPnl) : null;
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
-                  const PAYOFF_CHART_TYPES = ['BUTTERFLY_SPREAD', 'BOX_SPREAD', 'VERTICAL_SPREAD', 'CONDOR_SPREAD', 'IRON_CONDOR', 'CALENDAR_SPREAD'];
-                  const canShowPayoff = PAYOFF_CHART_TYPES.includes(p.strategyType) && Array.isArray(p.legList) && p.legList.length >= 2;
+                  const canShowPayoff = Array.isArray(p.legList) && p.legList.length >= 1;
                   const isExpanded = expandedPosId === p.id;
                   return (
                     <React.Fragment key={p.id}>
@@ -1367,10 +1410,10 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                     {isExpanded && canShowPayoff && (
                       <tr className="bg-fuchsia-50/40 border-b border-fuchsia-100">
                         <td colSpan={17} className="p-3">
-                          <div className="bg-white rounded-xl p-3 border border-fuchsia-200 shadow-md space-y-2">
-                            <span className="font-bold text-slate-800 text-xs uppercase block">Open Position Payoff -- {p.underlying} {p.action}:</span>
-                            <ArbitrageSignalPayoffChart opp={p} />
-                          </div>
+                          <DetailedOpportunityExpandedRow item={p} executionBroker={executionBroker} title={`Open Position — ${p.underlying} ${p.action}`} />
+                          {p.status === 'OPEN' && p.opportunityId && (
+                            <PositionTriggersPanel positionId={p.opportunityId} />
+                          )}
                         </td>
                       </tr>
                     )}
@@ -2110,7 +2153,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
-  const allUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+  const allUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'];
 
   const sortedOpps = [...filteredByUnderlying].sort((a, b) => {
     let va, vb;
@@ -2217,7 +2260,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
           ))}
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -2330,108 +2373,34 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                       {isExp && (
                         <tr className="bg-amber-50/40 border-b border-amber-100">
                           <td colSpan={12} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-amber-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Bid Parity Leg Breakdown:</span>
                               {opp.existingOpenPosition && (
-                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">
+                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal.
                                 </p>
                               )}
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || `BUY ${opp.strike} CE @ ${ceVal} | SELL ${opp.strike} PE @ ${peVal} | ${opp.action}`}</p>
                               {opp.costBreakdown && (
-                                <div className="text-[10px] font-mono text-slate-600 grid grid-cols-4 gap-1">
+                                <div className="text-[10px] font-mono text-slate-600 grid grid-cols-4 gap-1 mb-2 bg-slate-50 p-2 rounded-lg border border-slate-200">
                                   {Object.entries(opp.costBreakdown).map(([k,v]) => <span key={k}>{k}: ₹{v}</span>)}
                                 </div>
                               )}
-                              
-                                {(() => {
-                                  let oppToPass = opp;
-                                  if ((!Array.isArray(opp.legList) || opp.legList.length < 2) && typeof opp.legs === 'string') {
-                                    const legStrs = opp.legs.split('|').map(s => s.trim()).filter(Boolean);
-                                    const legList = legStrs.map(ls => {
-                                      let side = ls.includes('BUY') ? 'BUY' : 'SELL';
-                                      let type = ls.includes('CE') ? 'CE' : ls.includes('PE') ? 'PE' : 'FUT';
-                                      let priceMatch = ls.match(/@\s+([\d.]+)/);
-                                      let price = priceMatch ? Number(priceMatch[1]) : 0;
-                                      let strikeMatch = type !== 'FUT' ? ls.match(/(\d+(?:\.\d+)?)\s+(?:CE|PE)/) : null;
-                                      let strike = strikeMatch ? Number(strikeMatch[1]) : (type === 'FUT' ? 0 : opp.strike);
-                                      if (price > 0) { return { side, optionType: type, strike, price, qty: 1 }; }
-                                      return null;
-                                    }).filter(Boolean);
-                                    if (legList.length >= 2) {
-                                      oppToPass = { ...opp, legList, strategyType: 'CONVERSION' }; // Use CONVERSION to force it to render properly if needed
-                                    }
-                                  }
-                                  
-                                  const existingPos = oppToPass.existingOpenPosition ? livePositionsData?.positions?.find(p => p.opportunityId === oppToPass.id) : null;
-                                  
-                                  return (
-                                    <>
-                                      {existingPos && (
-                                        <div className="my-3 p-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl flex items-center justify-between">
-                                          <div>
-                                            <span className="font-bold text-emerald-800 text-[10px] uppercase block mb-1">Current Active Trade P&L</span>
-                                            <span className={`font-mono text-2xl font-black ${existingPos.currentPnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                              {existingPos.currentPnl > 0 ? '+' : ''}₹{existingPos.currentPnl?.toFixed(2)}
-                                            </span>
-                                            <span className="text-xs font-bold text-slate-500 ml-2">({existingPos.lots} lots on {existingPos.broker})</span>
-                                          </div>
-                                          <div>
-                                             <button onClick={(e) => { e.stopPropagation(); client.post(`/option-arbitrage/positions/${existingPos.id}/exit`).then(()=>alert('Exit orders sent')).catch(e=>alert(e.message)) }} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-black shadow-md">
-                                                EXIT POSITION
-                                             </button>
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {oppToPass.status === 'EXITED' && (
-                                        <div className="my-3 p-3 bg-red-50/50 border border-red-200 rounded-xl">
-                                          <div className="flex items-center justify-between mb-3 border-b border-red-100 pb-2">
-                                            <span className="font-bold text-red-800 text-[10px] uppercase block tracking-wider">Trade Exited</span>
-                                            <span className="text-[10px] text-slate-500 font-mono bg-white px-2 py-0.5 rounded border border-slate-200">
-                                              {oppToPass.exitTime ? new Date(oppToPass.exitTime).toLocaleString() : 'Time Unknown'}
-                                            </span>
-                                          </div>
-                                          
-                                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                                            <div className="bg-white p-2.5 rounded-lg border border-red-100 shadow-sm">
-                                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">CE Exit Price</span>
-                                              <span className="font-mono text-sm font-black text-slate-700">{oppToPass.ceExitPrice ? '₹' + oppToPass.ceExitPrice : '--'}</span>
-                                            </div>
-                                            <div className="bg-white p-2.5 rounded-lg border border-red-100 shadow-sm">
-                                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">PE Exit Price</span>
-                                              <span className="font-mono text-sm font-black text-slate-700">{oppToPass.peExitPrice ? '₹' + oppToPass.peExitPrice : '--'}</span>
-                                            </div>
-                                            <div className="bg-white p-2.5 rounded-lg border border-red-100 shadow-sm">
-                                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">FUT Exit Price</span>
-                                              <span className="font-mono text-sm font-black text-slate-700">{oppToPass.futExitPrice ? '₹' + oppToPass.futExitPrice : '--'}</span>
-                                            </div>
-                                            <div className="bg-emerald-50 p-2.5 rounded-lg border border-emerald-200 shadow-sm">
-                                              <span className="text-[9px] text-emerald-800 font-bold uppercase block mb-1">Realized P&L</span>
-                                              <span className={`font-mono text-sm font-black ${oppToPass.pnlAmount > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                                {oppToPass.pnlAmount > 0 ? '+' : ''}₹{oppToPass.pnlAmount || oppToPass.pnlAfterCosts || 0}
-                                              </span>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {Array.isArray(oppToPass.legList) && oppToPass.legList.length >= 2 ? (
-                                        <div className="mt-3">
-                                          <span className="font-bold text-slate-800 text-xs uppercase block mb-2">Simulated Payoff Chart</span>
-                                          <ArbitrageSignalPayoffChart opp={oppToPass} />
-                                        </div>
-                                      ) : null}
-                                    </>
-                                  );
-                                })()}
-
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-amber-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⚡ Submit ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                              {(() => {
+                                const existingPos = opp.existingOpenPosition ? livePositionsData?.positions?.find(p => p.opportunityId === opp.id) : null;
+                                return existingPos ? (
+                                  <div className="my-2 p-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl flex items-center justify-between">
+                                    <div>
+                                      <span className="font-bold text-emerald-800 text-[10px] uppercase block mb-1">Current Active Trade P&L</span>
+                                      <span className={`font-mono text-2xl font-black ${existingPos.currentPnl > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                        {existingPos.currentPnl > 0 ? '+' : ''}₹{existingPos.currentPnl?.toFixed(2)}
+                                      </span>
+                                      <span className="text-xs font-bold text-slate-500 ml-2">({existingPos.lots} lots on {existingPos.broker})</span>
+                                    </div>
+                                    <button onClick={(e) => { e.stopPropagation(); client.post(`/option-arbitrage/positions/${existingPos.id}/exit`).then(()=>alert('Exit orders sent')).catch(e=>alert(e.message)) }} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-black shadow-md">
+                                      EXIT POSITION
+                                    </button>
+                                  </div>
+                                ) : null;
+                              })()}
+                              <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="Bid Parity Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -2527,7 +2496,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const boxPnlMap = boxLivePnlRes?.pnlMap || {};
   const boxStatusMap = boxLivePnlRes?.statusMap || {};
 
-  const boxUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+  const boxUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'];
   const boxStats = useMemo(() => {
     return boxUnds.map(u => {
       const items = allOpps.filter(o => o.underlying === u);
@@ -2623,7 +2592,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
         </div>
 
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -2729,21 +2698,12 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                       {isExp && (
                         <tr className="bg-purple-50/40 border-b border-purple-100">
                           <td colSpan={11} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-purple-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">4-Leg Box Spread Breakdown:</span>
                               {opp.existingOpenPosition && (
-                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">
                                   📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
                                 </p>
                               )}
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || 'BUY CE1 | SELL PE1 | SELL CE2 | BUY PE2'}</p>
-                              <ArbitrageSignalPayoffChart opp={opp} />
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-purple-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⚡ Submit ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                              <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="4-Leg Box Spread Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -2820,7 +2780,7 @@ function BoxNearMissPanel() {
           <p className="text-xs text-slate-500">{nearMisses.length} combos within {Math.round(maxGapPct * 100)}% of width of becoming real arbitrage, sorted by closest gap first</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => setUnderlying(u)}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -3012,7 +2972,7 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
           <p className="text-xs text-slate-500">{sortedOpps.length} signals shown{totalHistory > 0 ? ` of ${totalHistory.toLocaleString('en-IN')} total today` : ''} — model-free convexity bound (spread price vs strike width), no interest-rate or futures assumption</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -3112,22 +3072,12 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
                       {isExp && (
                         <tr className="bg-teal-50/40 border-b border-teal-100">
                           <td colSpan={9} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-teal-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Vertical Spread Breakdown:</span>
                               {opp.existingOpenPosition && (
-                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">
+                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal.
                                 </p>
                               )}
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
-                              <p className="text-[10px] text-slate-500">{opp.description}</p>
-                              <ArbitrageSignalPayoffChart opp={opp} />
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-teal-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⚡ Submit ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                              <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="Vertical Spread Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -3305,7 +3255,7 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
           <p className="text-xs text-slate-500">{candidates.length} candidates — cost ≤ {Math.round(maxCostRatio * 100)}% of width, sorted by model POP (highest first)</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setAutoSelected(false); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -3854,7 +3804,7 @@ function ArbitrageSignalPayoffChart({ opp }) {
   const chartRef = useRef(null);
   const [hover, setHover] = useState(null);
 
-  const hasLegs = Array.isArray(opp.legList) && opp.legList.length >= 2;
+  const hasLegs = Array.isArray(opp.legList) && opp.legList.length >= 1;
 
   const lotSize = Number(opp.lotSize) > 0 ? Number(opp.lotSize) : 1;
 
@@ -4177,7 +4127,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
           <p className="text-xs text-slate-500">{sortedOpps.length} signals shown{totalHistory > 0 ? ` of ${totalHistory.toLocaleString('en-IN')} total today` : ''} — model-free convexity bound (0 ≤ price ≤ width), no interest-rate or futures assumption</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-fuchsia-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -4279,22 +4229,12 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
                       {isExp && (
                         <tr className="bg-fuchsia-50/40 border-b border-fuchsia-100">
                           <td colSpan={9} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-fuchsia-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Butterfly Spread Breakdown:</span>
                               {opp.existingOpenPosition && (
-                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">
+                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal.
                                 </p>
                               )}
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
-                              <p className="text-[10px] text-slate-500">{opp.description}</p>
-                              <ArbitrageSignalPayoffChart opp={opp} />
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-fuchsia-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⚡ Submit ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                              <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="Butterfly Spread Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -4477,9 +4417,8 @@ function MarketClosedCandidates({ strategyType, reason }) {
 function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
   const [underlying, setUnderlying] = useState('ALL');
   const [maxCostRatio, setMaxCostRatio] = useState(0.35);
-  const [selected, setSelected] = useState({});
+  const [expandedKey, setExpandedKey] = useState(null);
   const [hover, setHover] = useState(null);
-  const [autoSelected, setAutoSelected] = useState(false);
   const [sortCol, setSortCol] = useState('pop');
   const [sortAsc, setSortAsc] = useState(false);
   const chartRef = useRef(null);
@@ -4493,29 +4432,15 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
     refetchInterval: 30000
   });
 
-  // Real exit rules that would apply if this were traded -- surfaced here so "what happens
-  // if it moves against me" has an honest answer instead of a guess.
   const { data: execSettings } = useQuery({
     queryKey: ['autoExecSettingsForCandidates'],
     queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings', { params: { mode: executionBroker } })).data,
     refetchInterval: 60000
   });
 
-  // Backend already sorts by model POP descending -- the safest-by-this-metric candidate
-  // is always first. Auto-select it once per dataset load so the payoff/POP panel is
-  // populated immediately instead of requiring a manual click.
   const candidates = data?.candidates || [];
   const rowKey = (c) => `${c.underlying}-${c.optionType}-${c.k1}-${c.k2}-${c.k3}`;
 
-  useEffect(() => {
-    if (!autoSelected && candidates.length > 0) {
-      setSelected({ [rowKey(candidates[0])]: true });
-      setAutoSelected(true);
-    }
-  }, [candidates, autoSelected]);
-
-  const selectedCandidates = candidates.filter((c) => selected[rowKey(c)]);
-  const toggle = (key) => setSelected(prev => ({ ...prev, [key]: !prev[key] }));
   const toggleSort = (col) => { if (sortCol === col) setSortAsc(!sortAsc); else { setSortCol(col); setSortAsc(col === 'strikes' || col === 'underlying'); } };
   const sortIcon = (col) => sortCol === col ? (sortAsc ? ' ▲' : ' ▼') : ' ↕';
   const sortedCandidates = [...candidates].sort((a, b) => {
@@ -4528,96 +4453,200 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
     return sortAsc ? va - vb : vb - va;
   });
 
-  // Combined payoff across a settlement-price range spanning all selected candidates --
-  // both the "At Expiry" curve (final payoff) and a "Today" curve (Black-Scholes
-  // theoretical value if spot moved there right now, same remaining time/IV -- not a
-  // decay simulation), matching the two-curve view standard options tools show.
-  const payoffChart = useMemo(() => {
-    if (selectedCandidates.length === 0) return null;
-    const spot = selectedCandidates[0].spotPrice || selectedCandidates.reduce((s, c) => s + c.spotPrice, 0) / selectedCandidates.length;
-    const lo = Math.min(...selectedCandidates.map(c => c.k1)) - 300;
-    const hi = Math.max(...selectedCandidates.map(c => c.k3)) + 300;
+  const breakevenGap = (c) => {
+    if (c.breakevenLower == null || c.breakevenUpper == null || c.spotPrice == null) return null;
+    return Math.min(c.spotPrice - c.breakevenLower, c.breakevenUpper - c.spotPrice);
+  };
+
+  const buildPayoffChart = (c) => {
+    const spot = c.spotPrice;
+    const lo = c.k1 - 300;
+    const hi = c.k3 + 300;
     const steps = 200;
     const stepSize = (hi - lo) / steps;
     const points = [];
     const todayPoints = [];
     let minY = 0, maxY = 0;
+    const lotSize = c.lotSize || (c.maxLoss > 0 && c.costPerLot > 0 ? Math.round(c.maxLoss / c.costPerLot) : 25);
+    const T = Math.max(c.daysToExpiry, 0.5) / 365;
+    const r = c.riskFreeRate || 0.065;
+    const sigma = (c.impliedVol || 20) / 100;
+    const priceFn = c.optionType === 'CE' ? bsCallPrice : bsPutPrice;
     for (let i = 0; i <= steps; i++) {
       const x = lo + i * stepSize;
-      let expiryTotal = 0, todayTotal = 0;
-      for (const c of selectedCandidates) {
-        const lotSize = c.lotSize || (c.maxLoss > 0 && c.costPerLot > 0 ? Math.round(c.maxLoss / c.costPerLot) : 25);
-        const T = Math.max(c.daysToExpiry, 0.5) / 365;
-        const r = c.riskFreeRate || 0.065;
-        const sigma = (c.impliedVol || 20) / 100;
-        const priceFn = c.optionType === 'CE' ? bsCallPrice : bsPutPrice;
-
-        let expiryPayoff;
-        if (c.optionType === 'CE') {
-          expiryPayoff = Math.max(x - c.k1, 0) - 2 * Math.max(x - c.k2, 0) + Math.max(x - c.k3, 0);
-        } else {
-          expiryPayoff = Math.max(c.k1 - x, 0) - 2 * Math.max(c.k2 - x, 0) + Math.max(c.k3 - x, 0);
-        }
-        expiryTotal += (expiryPayoff - c.costPerLot) * lotSize;
-
-        const todayValue = priceFn(x, c.k1, T, r, sigma) - 2 * priceFn(x, c.k2, T, r, sigma) + priceFn(x, c.k3, T, r, sigma);
-        todayTotal += (todayValue - c.costPerLot) * lotSize;
+      let expiryPayoff;
+      if (c.optionType === 'CE') {
+        expiryPayoff = Math.max(x - c.k1, 0) - 2 * Math.max(x - c.k2, 0) + Math.max(x - c.k3, 0);
+      } else {
+        expiryPayoff = Math.max(c.k1 - x, 0) - 2 * Math.max(c.k2 - x, 0) + Math.max(c.k3 - x, 0);
       }
+      const expiryTotal = (expiryPayoff - c.costPerLot) * lotSize;
+      const todayValue = priceFn(x, c.k1, T, r, sigma) - 2 * priceFn(x, c.k2, T, r, sigma) + priceFn(x, c.k3, T, r, sigma);
+      const todayTotal = (todayValue - c.costPerLot) * lotSize;
       points.push({ x, y: expiryTotal });
       todayPoints.push({ x, y: todayTotal });
       minY = Math.min(minY, expiryTotal, todayTotal);
       maxY = Math.max(maxY, expiryTotal, todayTotal);
     }
     return { points, todayPoints, spot, lo, hi, minY: Math.min(minY, 0), maxY: Math.max(maxY, 0) };
-  }, [selectedCandidates]);
-
-  const totalMaxLoss = selectedCandidates.reduce((s, c) => s + c.maxLoss, 0);
-  const totalMaxProfit = selectedCandidates.reduce((s, c) => s + c.maxProfit, 0);
-  const totalMargin = selectedCandidates.reduce((s, c) => s + (c.marginEstimate || c.maxLoss), 0);
-  const totalCharges = selectedCandidates.reduce((s, c) => s + (c.entryCosts || 0), 0);
-  const avgPop = selectedCandidates.length > 0
-    ? selectedCandidates.reduce((s, c) => s + c.pop, 0) / selectedCandidates.length : null;
-  const breakevenGap = (c) => {
-    if (c.breakevenLower == null || c.breakevenUpper == null || c.spotPrice == null) return null;
-    return Math.min(c.spotPrice - c.breakevenLower, c.breakevenUpper - c.spotPrice);
   };
-  const soloBreakevenGap = selectedCandidates.length === 1 ? breakevenGap(selectedCandidates[0]) : null;
 
-  const CHART_W = 700, CHART_H = 260, PAD_TOP = 24, PAD_BOTTOM = 34;
+  const CHART_W = 700, CHART_H = 220, PAD_TOP = 24, PAD_BOTTOM = 34;
   const plotH = CHART_H - PAD_TOP - PAD_BOTTOM;
-  const xToPx = (x) => payoffChart ? ((x - payoffChart.lo) / (payoffChart.hi - payoffChart.lo)) * CHART_W : 0;
-  const yToPx = (y) => payoffChart
-    ? PAD_TOP + plotH - ((y - payoffChart.minY) / (payoffChart.maxY - payoffChart.minY || 1)) * plotH
-    : 0;
-  const pxToX = (px) => payoffChart ? payoffChart.lo + (px / CHART_W) * (payoffChart.hi - payoffChart.lo) : 0;
+  const xToPx = (chart, x) => ((x - chart.lo) / (chart.hi - chart.lo)) * CHART_W;
+  const yToPx = (chart, y) => PAD_TOP + plotH - ((y - chart.minY) / (chart.maxY - chart.minY || 1)) * plotH;
 
-  const handleChartMove = (e) => {
-    if (!payoffChart || !chartRef.current) return;
+  const handleChartMove = (chart, e) => {
+    if (!chart || !chartRef.current) return;
     const rect = chartRef.current.getBoundingClientRect();
     const relX = (e.clientX - rect.left) / rect.width;
     const px = relX * CHART_W;
-    const priceAtCursor = pxToX(px);
+    const priceAtCursor = chart.lo + (px / CHART_W) * (chart.hi - chart.lo);
     let nearestIdx = 0, bestDist = Infinity;
-    payoffChart.points.forEach((p, i) => {
-      const d = Math.abs(p.x - priceAtCursor);
-      if (d < bestDist) { bestDist = d; nearestIdx = i; }
-    });
-    const expiry = payoffChart.points[nearestIdx];
-    const today = payoffChart.todayPoints[nearestIdx];
-    setHover({ px: xToPx(expiry.x), pyExpiry: yToPx(expiry.y), pyToday: yToPx(today.y), price: expiry.x, pnlExpiry: expiry.y, pnlToday: today.y });
+    chart.points.forEach((p, i) => { const d = Math.abs(p.x - priceAtCursor); if (d < bestDist) { bestDist = d; nearestIdx = i; } });
+    const expiry = chart.points[nearestIdx];
+    const today = chart.todayPoints[nearestIdx];
+    setHover({ px: xToPx(chart, expiry.x), pyExpiry: yToPx(chart, expiry.y), pyToday: yToPx(chart, today.y), price: expiry.x, pnlExpiry: expiry.y, pnlToday: today.y });
   };
 
-  const zeroPx = payoffChart ? yToPx(0) : 0;
-  const areaPath = payoffChart ? (() => {
-    const pts = payoffChart.points.map(p => `${xToPx(p.x)},${yToPx(p.y)}`).join(' L ');
-    return `M ${xToPx(payoffChart.points[0].x)},${zeroPx} L ${pts} L ${xToPx(payoffChart.points[payoffChart.points.length - 1].x)},${zeroPx} Z`;
-  })() : '';
+  const renderExpandedRow = (c) => {
+    const chart = buildPayoffChart(c);
+    const zeroPx = yToPx(chart, 0);
+    const pts = chart.points.map(p => `${xToPx(chart, p.x)},${yToPx(chart, p.y)}`).join(' L ');
+    const areaPath = `M ${xToPx(chart, chart.points[0].x)},${zeroPx} L ${pts} L ${xToPx(chart, chart.points[chart.points.length - 1].x)},${zeroPx} Z`;
+    const gap = breakevenGap(c);
+
+    return (
+      <tr>
+        <td colSpan={16} className="p-0">
+          <div className="bg-gradient-to-br from-white via-amber-50/30 to-indigo-50/30 border-t-2 border-amber-200 p-4 space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+              <div className="bg-white rounded-xl border border-slate-200 p-2 text-center">
+                <div className="text-[9px] font-bold text-slate-400 uppercase">POP</div>
+                <div className={`text-base font-black ${c.pop >= 60 ? 'text-emerald-600' : c.pop >= 40 ? 'text-amber-600' : 'text-slate-500'}`}>{c.pop}%</div>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 p-2 text-center">
+                <div className="text-[9px] font-bold text-slate-400 uppercase">Max Loss</div>
+                <div className="text-base font-black text-red-600">₹{Math.round(c.maxLoss).toLocaleString('en-IN')}</div>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 p-2 text-center">
+                <div className="text-[9px] font-bold text-slate-400 uppercase">Max Profit</div>
+                <div className="text-base font-black text-emerald-600">₹{Math.round(c.maxProfit).toLocaleString('en-IN')}</div>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 p-2 text-center">
+                <div className="text-[9px] font-bold text-slate-400 uppercase">Risk:Reward</div>
+                <div className="text-base font-black text-indigo-600">{c.riskReward}x</div>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 p-2 text-center">
+                <div className="text-[9px] font-bold text-slate-400 uppercase">Capital Req.*</div>
+                <div className="text-base font-black text-slate-700">₹{Math.round(c.marginEstimate || c.maxLoss).toLocaleString('en-IN')}</div>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 p-2 text-center">
+                <div className="text-[9px] font-bold text-slate-400 uppercase">Charges</div>
+                <div className="text-base font-black text-slate-700">₹{Math.round(c.entryCosts || 0).toLocaleString('en-IN')}</div>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 p-2 text-center">
+                <div className="text-[9px] font-bold text-slate-400 uppercase">Breakeven Gap</div>
+                <div className={`text-base font-black ${gap == null ? 'text-slate-300' : gap < 0 ? 'text-red-600' : gap < 50 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {gap == null ? '—' : gap < 0 ? `⚠️ -${Math.round(Math.abs(gap))}` : `±${Math.round(gap)}`}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <div className="flex items-center gap-4 mb-1 px-1">
+                  <span className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700"><span className="w-3 h-0.5 bg-amber-600 inline-block rounded" /> At Expiry</span>
+                  <span className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600"><span className="w-3 h-0.5 bg-blue-500 inline-block rounded" /> Today (Black-Scholes est.)</span>
+                </div>
+                <div className="relative overflow-x-auto bg-white rounded-xl border border-slate-100 p-2">
+                  <svg ref={chartRef} viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full h-[220px] cursor-crosshair"
+                    onMouseMove={(e) => handleChartMove(chart, e)} onMouseLeave={() => setHover(null)}>
+                    <defs>
+                      <linearGradient id="bfProfitGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity="0.35" /><stop offset="100%" stopColor="#10b981" stopOpacity="0.02" /></linearGradient>
+                      <linearGradient id="bfLossGrad" x1="0" y1="1" x2="0" y2="0"><stop offset="0%" stopColor="#ef4444" stopOpacity="0.3" /><stop offset="100%" stopColor="#ef4444" stopOpacity="0.02" /></linearGradient>
+                    </defs>
+                    <clipPath id="bfAbove"><rect x="0" y="0" width={CHART_W} height={zeroPx} /></clipPath>
+                    <clipPath id="bfBelow"><rect x="0" y={zeroPx} width={CHART_W} height={CHART_H - zeroPx} /></clipPath>
+                    <path d={areaPath} fill="url(#bfProfitGrad)" clipPath="url(#bfAbove)" />
+                    <path d={areaPath} fill="url(#bfLossGrad)" clipPath="url(#bfBelow)" />
+                    <line x1="0" y1={zeroPx} x2={CHART_W} y2={zeroPx} stroke="#94a3b8" strokeWidth="1" strokeDasharray="4,4" />
+                    <line x1={xToPx(chart, chart.spot)} y1={PAD_TOP} x2={xToPx(chart, chart.spot)} y2={CHART_H - PAD_BOTTOM} stroke="#6366f1" strokeWidth="1.5" strokeDasharray="3,3" />
+                    <text x={xToPx(chart, chart.spot)} y={PAD_TOP - 8} textAnchor="middle" fontSize="10" fontWeight="700" fill="#6366f1">Spot {Math.round(chart.spot).toLocaleString('en-IN')}</text>
+                    <line x1={xToPx(chart, c.breakevenLower)} y1={PAD_TOP} x2={xToPx(chart, c.breakevenLower)} y2={CHART_H - PAD_BOTTOM} stroke="#94a3b8" strokeWidth="1" strokeDasharray="2,3" opacity="0.6" />
+                    <line x1={xToPx(chart, c.breakevenUpper)} y1={PAD_TOP} x2={xToPx(chart, c.breakevenUpper)} y2={CHART_H - PAD_BOTTOM} stroke="#94a3b8" strokeWidth="1" strokeDasharray="2,3" opacity="0.6" />
+                    <polyline fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" opacity="0.85"
+                      points={chart.todayPoints.map(p => `${xToPx(chart, p.x)},${yToPx(chart, p.y)}`).join(' ')} />
+                    <polyline fill="none" stroke="#d97706" strokeWidth="2.5" strokeLinejoin="round"
+                      points={chart.points.map(p => `${xToPx(chart, p.x)},${yToPx(chart, p.y)}`).join(' ')} />
+                    {hover && (
+                      <g>
+                        <line x1={hover.px} y1={PAD_TOP} x2={hover.px} y2={CHART_H - PAD_BOTTOM} stroke="#0f172a" strokeWidth="1" strokeDasharray="2,2" opacity="0.4" />
+                        <circle cx={hover.px} cy={hover.pyToday} r="4" fill="#3b82f6" stroke="white" strokeWidth="1.5" />
+                        <circle cx={hover.px} cy={hover.pyExpiry} r="4.5" fill={hover.pnlExpiry >= 0 ? '#10b981' : '#ef4444'} stroke="white" strokeWidth="1.5" />
+                        {(() => {
+                          const boxW = 150, boxH = 62;
+                          const bx = Math.min(Math.max(hover.px - boxW / 2, 2), CHART_W - boxW - 2);
+                          const anchorY = Math.min(hover.pyExpiry, hover.pyToday);
+                          const by = anchorY > 90 ? anchorY - boxH - 10 : Math.max(hover.pyExpiry, hover.pyToday) + 14;
+                          return (
+                            <g>
+                              <rect x={bx} y={by} width={boxW} height={boxH} rx="6" fill="#0f172a" opacity="0.94" />
+                              <text x={bx + 8} y={by + 15} fontSize="10" fill="#cbd5e1">@ {Math.round(hover.price).toLocaleString('en-IN')}</text>
+                              <text x={bx + 8} y={by + 32} fontSize="11" fontWeight="700" fill="#93c5fd">Today: {hover.pnlToday >= 0 ? '+' : ''}₹{Math.round(hover.pnlToday).toLocaleString('en-IN')}</text>
+                              <text x={bx + 8} y={by + 49} fontSize="11" fontWeight="800" fill={hover.pnlExpiry >= 0 ? '#34d399' : '#f87171'}>Expiry: {hover.pnlExpiry >= 0 ? '+' : ''}₹{Math.round(hover.pnlExpiry).toLocaleString('en-IN')}</text>
+                            </g>
+                          );
+                        })()}
+                      </g>
+                    )}
+                  </svg>
+                </div>
+                <div className="flex justify-between text-[10px] text-slate-500 px-1 mt-1">
+                  <span>{Math.round(chart.lo).toLocaleString('en-IN')}</span>
+                  <span>{Math.round(chart.hi).toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-600 uppercase">Positions to be taken</div>
+                  <table className="w-full text-[11px]">
+                    <thead className="text-slate-400 text-[9px] uppercase"><tr><th className="px-3 py-1 text-left">Symbol</th><th className="px-3 py-1 text-left">Side</th><th className="px-3 py-1 text-right">Strike</th><th className="px-3 py-1 text-right">Qty</th><th className="px-3 py-1 text-right">Price</th></tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(c.legList || []).map((leg, li) => (
+                        <tr key={li}>
+                          <td className="px-3 py-1 font-bold text-slate-700">{c.underlying} {leg.optionType}</td>
+                          <td className="px-3 py-1"><span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${leg.side === 'BUY' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{leg.side}</span></td>
+                          <td className="px-3 py-1 text-right font-mono">{leg.strike}</td>
+                          <td className="px-3 py-1 text-right font-mono">{leg.qty}</td>
+                          <td className="px-3 py-1 text-right font-mono">₹{leg.price?.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="bg-indigo-50 rounded-xl border border-indigo-200 p-2.5 text-[10px] text-indigo-900 space-y-0.5">
+                  <p className="font-black uppercase text-[9px] text-indigo-600">If you trade this</p>
+                  {execSettings ? (
+                    <>
+                      <p><strong>Auto-exit:</strong> {execSettings.autoExitEnabled ? `ON — ${execSettings.autoExitThresholdPct ?? 90}% of max profit` : 'OFF'}</p>
+                      <p><strong>Stop-loss:</strong> {execSettings.stopLossEnabled ? `ON — ${execSettings.stopLossPct ?? 50}% of max loss` : 'OFF'}</p>
+                    </>
+                  ) : <p className="text-indigo-400">Loading…</p>}
+                </div>
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>
+    );
+  };
 
   return (
     <div className="space-y-4 w-full">
       <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-xs text-amber-900">
-        <p className="font-bold mb-1">⚠️ Not arbitrage — evaluation tool only</p>
-        <p>These are butterflies priced cheap relative to their width (small debit vs. potential payoff if NIFTY pins near the center strike) — a directional bet on low movement, not a guaranteed-profit position. POP (probability of profit) is a Black-Scholes model estimate from current implied volatility, not a backtested or historical win rate. Move your mouse over the chart to see P&amp;L at any settlement price.</p>
+        <p className="font-bold mb-1">Not arbitrage — evaluation tool only</p>
+        <p>Butterflies priced cheap relative to width. POP is a Black-Scholes model estimate, not a backtested win rate. Click any row to see payoff and positions.</p>
       </div>
 
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -4626,8 +4655,8 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
           <p className="text-xs text-slate-500">{candidates.length} candidates — cost ≤ {Math.round(maxCostRatio * 100)}% of width, sorted by model POP (highest first)</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
-            <button key={u} onClick={() => { setUnderlying(u); setAutoSelected(false); }}
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
+            <button key={u} onClick={() => { setUnderlying(u); setExpandedKey(null); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
             </button>
@@ -4636,197 +4665,13 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
           <span className="text-[10px] font-bold text-slate-500 px-1">MAX COST/WIDTH</span>
           {[0.2, 0.35, 0.5].map(r => (
-            <button key={r} onClick={() => { setMaxCostRatio(r); setAutoSelected(false); }}
+            <button key={r} onClick={() => { setMaxCostRatio(r); setExpandedKey(null); }}
               className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${maxCostRatio === r ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {Math.round(r * 100)}%
             </button>
           ))}
         </div>
-        {selectedCandidates.length > 0 && (
-          <button onClick={() => setSelected({})}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition">
-            ✕ Clear Selection ({selectedCandidates.length})
-          </button>
-        )}
       </div>
-
-      {selectedCandidates.length > 0 && (
-        <div className="bg-gradient-to-br from-white via-amber-50/30 to-indigo-50/30 rounded-2xl border-2 border-amber-200 shadow-lg p-5 space-y-5">
-          {/* Stat strip */}
-          <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
-            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
-              <div className="text-[9px] font-bold text-slate-400 uppercase">POP</div>
-              <div className={`text-lg font-black ${avgPop >= 60 ? 'text-emerald-600' : avgPop >= 40 ? 'text-amber-600' : 'text-slate-500'}`}>{avgPop?.toFixed(1)}%</div>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
-              <div className="text-[9px] font-bold text-slate-400 uppercase">Max Loss</div>
-              <div className="text-lg font-black text-red-600">₹{Math.round(totalMaxLoss).toLocaleString('en-IN')}</div>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
-              <div className="text-[9px] font-bold text-slate-400 uppercase">Max Profit</div>
-              <div className="text-lg font-black text-emerald-600">₹{Math.round(totalMaxProfit).toLocaleString('en-IN')}</div>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
-              <div className="text-[9px] font-bold text-slate-400 uppercase">Risk:Reward</div>
-              <div className="text-lg font-black text-indigo-600">{totalMaxLoss > 0 ? (totalMaxProfit / totalMaxLoss).toFixed(1) : '0'}x</div>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
-              <div className="text-[9px] font-bold text-slate-400 uppercase">Capital Required*</div>
-              <div className="text-lg font-black text-slate-700">₹{Math.round(totalMargin).toLocaleString('en-IN')}</div>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
-              <div className="text-[9px] font-bold text-slate-400 uppercase">Charges</div>
-              <div className="text-lg font-black text-slate-700">₹{Math.round(totalCharges).toLocaleString('en-IN')}</div>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
-              <div className="text-[9px] font-bold text-slate-400 uppercase">Breakeven Gap</div>
-              <div className={`text-lg font-black ${soloBreakevenGap == null ? 'text-slate-300' : soloBreakevenGap < 0 ? 'text-red-600' : soloBreakevenGap < 50 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                {soloBreakevenGap == null ? '—' : soloBreakevenGap < 0 ? `⚠️ -${Math.round(Math.abs(soloBreakevenGap))}` : `±${Math.round(soloBreakevenGap)}`}
-              </div>
-            </div>
-          </div>
-          <p className="text-[9px] text-slate-400 -mt-3">*Margin is a conservative estimate (worst-case cash outflow) — actual broker SPAN+exposure margin may differ; verify with your broker before trading.</p>
-          {soloBreakevenGap != null && soloBreakevenGap < 0 && (
-            <p className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5 -mt-1">⚠️ Spot has already moved outside this candidate's profit zone by {Math.round(Math.abs(soloBreakevenGap))} points — this is now a probable loss unless price reverses before expiry.</p>
-          )}
-
-          {payoffChart && (
-            <div>
-              <div className="flex items-center gap-4 mb-1 px-1">
-                <span className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700"><span className="w-3 h-0.5 bg-amber-600 inline-block rounded" /> At Expiry</span>
-                <span className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600"><span className="w-3 h-0.5 bg-blue-500 inline-block rounded" /> Today (Black-Scholes est.)</span>
-              </div>
-              <div className="relative overflow-x-auto bg-white rounded-xl border border-slate-100 p-2">
-                <svg ref={chartRef} viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full h-[260px] cursor-crosshair"
-                  onMouseMove={handleChartMove} onMouseLeave={() => setHover(null)}>
-                  <defs>
-                    <linearGradient id="profitGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
-                      <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
-                    </linearGradient>
-                    <linearGradient id="lossGrad" x1="0" y1="1" x2="0" y2="0">
-                      <stop offset="0%" stopColor="#ef4444" stopOpacity="0.3" />
-                      <stop offset="100%" stopColor="#ef4444" stopOpacity="0.02" />
-                    </linearGradient>
-                  </defs>
-                  <clipPath id="aboveZero"><rect x="0" y="0" width={CHART_W} height={zeroPx} /></clipPath>
-                  <clipPath id="belowZero"><rect x="0" y={zeroPx} width={CHART_W} height={CHART_H - zeroPx} /></clipPath>
-                  <path d={areaPath} fill="url(#profitGrad)" clipPath="url(#aboveZero)" />
-                  <path d={areaPath} fill="url(#lossGrad)" clipPath="url(#belowZero)" />
-
-                  <line x1="0" y1={zeroPx} x2={CHART_W} y2={zeroPx} stroke="#94a3b8" strokeWidth="1" strokeDasharray="4,4" />
-                  <line x1={xToPx(payoffChart.spot)} y1={PAD_TOP} x2={xToPx(payoffChart.spot)} y2={CHART_H - PAD_BOTTOM}
-                    stroke="#6366f1" strokeWidth="1.5" strokeDasharray="3,3" />
-                  <text x={xToPx(payoffChart.spot)} y={PAD_TOP - 8} textAnchor="middle" fontSize="10" fontWeight="700" fill="#6366f1">
-                    Spot {Math.round(payoffChart.spot).toLocaleString('en-IN')}
-                  </text>
-
-                  {/* Today curve (blue), behind the expiry curve */}
-                  <polyline
-                    fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" opacity="0.85"
-                    points={payoffChart.todayPoints.map(p => `${xToPx(p.x)},${yToPx(p.y)}`).join(' ')}
-                  />
-                  {/* Expiry curve (amber) */}
-                  <polyline
-                    fill="none" stroke="#d97706" strokeWidth="2.5" strokeLinejoin="round"
-                    points={payoffChart.points.map(p => `${xToPx(p.x)},${yToPx(p.y)}`).join(' ')}
-                  />
-
-                  {hover && (
-                    <g>
-                      <line x1={hover.px} y1={PAD_TOP} x2={hover.px} y2={CHART_H - PAD_BOTTOM} stroke="#0f172a" strokeWidth="1" strokeDasharray="2,2" opacity="0.4" />
-                      <circle cx={hover.px} cy={hover.pyToday} r="4" fill="#3b82f6" stroke="white" strokeWidth="1.5" />
-                      <circle cx={hover.px} cy={hover.pyExpiry} r="4.5" fill={hover.pnlExpiry >= 0 ? '#10b981' : '#ef4444'} stroke="white" strokeWidth="1.5" />
-                      {(() => {
-                        const boxW = 150, boxH = 62;
-                        const bx = Math.min(Math.max(hover.px - boxW / 2, 2), CHART_W - boxW - 2);
-                        const anchorY = Math.min(hover.pyExpiry, hover.pyToday);
-                        const by = anchorY > 90 ? anchorY - boxH - 10 : Math.max(hover.pyExpiry, hover.pyToday) + 14;
-                        return (
-                          <g>
-                            <rect x={bx} y={by} width={boxW} height={boxH} rx="6" fill="#0f172a" opacity="0.94" />
-                            <text x={bx + 8} y={by + 15} fontSize="10" fill="#cbd5e1">
-                              @ {Math.round(hover.price).toLocaleString('en-IN')}
-                            </text>
-                            <text x={bx + 8} y={by + 32} fontSize="11" fontWeight="700" fill="#93c5fd">
-                              Today: {hover.pnlToday >= 0 ? '+' : ''}₹{Math.round(hover.pnlToday).toLocaleString('en-IN')}
-                            </text>
-                            <text x={bx + 8} y={by + 49} fontSize="11" fontWeight="800" fill={hover.pnlExpiry >= 0 ? '#34d399' : '#f87171'}>
-                              Expiry: {hover.pnlExpiry >= 0 ? '+' : ''}₹{Math.round(hover.pnlExpiry).toLocaleString('en-IN')}
-                            </text>
-                          </g>
-                        );
-                      })()}
-                    </g>
-                  )}
-
-                  {selectedCandidates.length === 1 && (
-                    <>
-                      <line x1={xToPx(selectedCandidates[0].breakevenLower)} y1={PAD_TOP} x2={xToPx(selectedCandidates[0].breakevenLower)} y2={CHART_H - PAD_BOTTOM} stroke="#94a3b8" strokeWidth="1" strokeDasharray="2,3" opacity="0.6" />
-                      <line x1={xToPx(selectedCandidates[0].breakevenUpper)} y1={PAD_TOP} x2={xToPx(selectedCandidates[0].breakevenUpper)} y2={CHART_H - PAD_BOTTOM} stroke="#94a3b8" strokeWidth="1" strokeDasharray="2,3" opacity="0.6" />
-                    </>
-                  )}
-                </svg>
-              </div>
-              <div className="flex justify-between text-[10px] text-slate-500 px-1 mt-1">
-                <span>{Math.round(payoffChart.lo).toLocaleString('en-IN')}</span>
-                <span>{Math.round(payoffChart.hi).toLocaleString('en-IN')}</span>
-              </div>
-              <p className="text-[10px] text-slate-400 text-center mt-1">P&amp;L (₹) vs. NIFTY settlement price — hover to inspect any price point</p>
-            </div>
-          )}
-
-          {/* Positions that will actually be taken */}
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-600 uppercase">
-              📋 Positions to be taken
-            </div>
-            <table className="w-full text-[11px]">
-              <thead className="text-slate-400 text-[9px] uppercase">
-                <tr>
-                  <th className="px-3 py-1.5 text-left">Symbol</th>
-                  <th className="px-3 py-1.5 text-left">Side</th>
-                  <th className="px-3 py-1.5 text-right">Strike</th>
-                  <th className="px-3 py-1.5 text-right">Qty (lots)</th>
-                  <th className="px-3 py-1.5 text-right">Price</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {selectedCandidates.flatMap((c, ci) => (c.legList || []).map((leg, li) => (
-                  <tr key={`${ci}-${li}`}>
-                    <td className="px-3 py-1.5 font-bold text-slate-700">{c.underlying} {leg.optionType}</td>
-                    <td className="px-3 py-1.5">
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${leg.side === 'BUY' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{leg.side}</span>
-                    </td>
-                    <td className="px-3 py-1.5 text-right font-mono">{leg.strike}</td>
-                    <td className="px-3 py-1.5 text-right font-mono">{leg.qty}</td>
-                    <td className="px-3 py-1.5 text-right font-mono">₹{leg.price?.toFixed(2)}</td>
-                  </tr>
-                )))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Honest exit-rules panel */}
-          <div className="bg-indigo-50 rounded-xl border border-indigo-200 p-3 text-[11px] text-indigo-900 space-y-1">
-            <p className="font-black uppercase text-[10px] text-indigo-600">🛡️ If you trade this — what happens automatically</p>
-            {execSettings ? (
-              <>
-                <p>
-                  <strong>Auto-exit on target:</strong> {execSettings.autoExitEnabled ? `ON — squares off at ${execSettings.autoExitThresholdPct ?? 90}% of max profit` : 'OFF'}
-                </p>
-                <p>
-                  <strong>Stop-loss:</strong> {execSettings.stopLossEnabled ? `ON — squares off at ${execSettings.stopLossPct ?? 50}% of max loss` : 'OFF'}
-                </p>
-                <p className="text-indigo-500">Change these in the Auto-Trade tab. Only applies if you actually execute the trade (paper or live) — this panel is not a live position.</p>
-              </>
-            ) : (
-              <p className="text-indigo-400">Loading current settings…</p>
-            )}
-            <p className="text-red-600 font-bold pt-1">⚠️ No automatic strike-adjustment or rolling exists for these spreads. If price moves against the position, it holds until it hits the stop-loss, hits the target, or expires — nothing rebalances it for you.</p>
-          </div>
-        </div>
-      )}
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
         {isLoading ? (
@@ -4840,7 +4685,6 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
             <table className="w-full text-[11px] text-left border-collapse">
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                 <tr>
-                  <th className="px-2 py-2"></th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('expiryDate')}>Expiry{sortIcon('expiryDate')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strikes')}>Strikes{sortIcon('strikes')}</th>
@@ -4849,9 +4693,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
                   <th className="px-2 py-2 text-right text-indigo-600 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('pop')}>POP{sortIcon('pop')}</th>
                   <th className="px-2 py-2 text-right text-red-600 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('maxLoss')}>Max Loss{sortIcon('maxLoss')}</th>
                   <th className="px-2 py-2 text-right text-emerald-600 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('maxProfit')}>Max Profit{sortIcon('maxProfit')}</th>
-                  <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('marginEstimate')}>Capital Req.*{sortIcon('marginEstimate')}</th>
                   <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('riskReward')}>R:R{sortIcon('riskReward')}</th>
-                  <th className="px-2 py-2 text-right">Breakevens</th>
                   <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('impliedVol')}>IV{sortIcon('impliedVol')}</th>
                   <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('daysToExpiry')}>DTE{sortIcon('daysToExpiry')}</th>
                   <th className="px-2 py-2 text-right">To BE</th>
@@ -4861,39 +4703,38 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
               <tbody className="divide-y divide-slate-100">
                 {sortedCandidates.map((c) => {
                   const key = rowKey(c);
-                  const isSel = !!selected[key];
+                  const isExpanded = expandedKey === key;
                   return (
-                    <tr key={key} className={`transition ${isSel ? 'bg-amber-50' : 'hover:bg-slate-50'}`}>
-                      <td className="px-2 py-1.5 text-center">
-                        <input type="checkbox" checked={isSel} onChange={() => toggle(key)} className="w-3.5 h-3.5" />
-                      </td>
-                      <td className="px-2 py-1.5 font-bold text-slate-800">{c.underlying}</td>
-                      <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{c.expiryDate ? c.expiryDate.substring(5) : '--'}</td>
-                      <td className="px-2 py-1.5 font-bold text-slate-700">{c.strikes}</td>
-                      <td className="px-2 py-1.5 text-slate-600">{c.optionType}</td>
-                      <td className="px-2 py-1.5 text-right font-mono">{Math.round(c.costRatio * 100)}%</td>
-                      <td className="px-2 py-1.5 text-right">
-                        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${c.pop >= 60 ? 'bg-emerald-100 text-emerald-700' : c.pop >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {c.pop}%
-                        </span>
-                      </td>
-                      <td className="px-2 py-1.5 text-right font-mono text-red-600">₹{Math.round(c.maxLoss).toLocaleString('en-IN')}</td>
-                      <td className="px-2 py-1.5 text-right font-mono text-emerald-600">₹{Math.round(c.maxProfit).toLocaleString('en-IN')}</td>
-                      <td className="px-2 py-1.5 text-right font-mono text-slate-500">₹{Math.round(c.marginEstimate || c.maxLoss).toLocaleString('en-IN')}</td>
-                      <td className="px-2 py-1.5 text-right font-mono font-bold">{c.riskReward}x</td>
-                      <td className="px-2 py-1.5 text-right font-mono text-[10px] text-slate-500">{c.breakevenLower}/{c.breakevenUpper}</td>
-                      <td className="px-2 py-1.5 text-right font-mono text-slate-500">{c.impliedVol}%</td>
-                      <td className="px-2 py-1.5 text-right font-mono text-slate-500">{c.daysToExpiry}d</td>
-                      <td className="px-2 py-1.5 text-right font-mono text-[10px]">
-                        {(() => { const g = breakevenGap(c); return g == null ? '—' : g < 0 ? <span className="text-red-600 font-bold">⚠️{Math.round(Math.abs(g))}</span> : <span className={g < 50 ? 'text-amber-600 font-bold' : 'text-slate-500'}>±{Math.round(g)}</span>; })()}
-                      </td>
-                      <td className="px-2 py-1.5 text-center">
-                        <button onClick={() => handleExecuteInline(c)}
-                          className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm">
-                          ⚡ Trade
-                        </button>
-                      </td>
-                    </tr>
+                    <React.Fragment key={key}>
+                      <tr className={`transition cursor-pointer ${isExpanded ? 'bg-amber-50 font-semibold' : 'hover:bg-slate-50'}`}
+                        onClick={() => setExpandedKey(isExpanded ? null : key)}>
+                        <td className="px-2 py-1.5 font-bold text-slate-800">{c.underlying}</td>
+                        <td className="px-2 py-1.5 text-slate-600 font-mono text-[10px]">{c.expiryDate ? c.expiryDate.substring(5) : '--'}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-700">{c.strikes}</td>
+                        <td className="px-2 py-1.5 text-slate-600">{c.optionType}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{Math.round(c.costRatio * 100)}%</td>
+                        <td className="px-2 py-1.5 text-right">
+                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${c.pop >= 60 ? 'bg-emerald-100 text-emerald-700' : c.pop >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {c.pop}%
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono text-red-600">₹{Math.round(c.maxLoss).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-emerald-600">₹{Math.round(c.maxProfit).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold">{c.riskReward}x</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-500">{c.impliedVol}%</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-500">{c.daysToExpiry}d</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-[10px]">
+                          {(() => { const g = breakevenGap(c); return g == null ? '—' : g < 0 ? <span className="text-red-600 font-bold">⚠️{Math.round(Math.abs(g))}</span> : <span className={g < 50 ? 'text-amber-600 font-bold' : 'text-slate-500'}>±{Math.round(g)}</span>; })()}
+                        </td>
+                        <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          <button onClick={() => handleExecuteInline(c)}
+                            className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm">
+                            Trade
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded && renderExpandedRow(c)}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
@@ -5035,7 +4876,7 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
           <p className="text-xs text-slate-500">{sortedOpps.length} signals shown{totalHistory > 0 ? ` of ${totalHistory.toLocaleString('en-IN')} total today` : ''} — model-free convexity bound (0 ≤ price ≤ width), same family as Box/Vertical/Butterfly. Not the same as Iron Condor (a real-risk premium-selling strategy).</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -5138,22 +4979,12 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
                       {isExp && (
                         <tr className="bg-cyan-50/40 border-b border-cyan-100">
                           <td colSpan={9} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-cyan-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Condor Spread Breakdown:</span>
                               {opp.existingOpenPosition && (
-                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">
+                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal.
                                 </p>
                               )}
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
-                              <p className="text-[10px] text-slate-500">{opp.description}</p>
-                              <ArbitrageSignalPayoffChart opp={opp} />
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-cyan-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⚡ Submit ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                              <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="Condor Spread Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -5334,7 +5165,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
           <p className="text-xs text-slate-500">{candidates.length} candidates — cost ≤ {Math.round(maxCostRatio * 100)}% of width, sorted by model POP (highest first)</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setAutoSelected(false); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -5668,7 +5499,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
   const icPnlMap = icLivePnlRes?.pnlMap || {};
   const icStatusMap = icLivePnlRes?.statusMap || {};
 
-  const icUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+  const icUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'];
   const icStats = useMemo(() => {
     return icUnds.map(u => {
       const items = allOpps.filter(o => o.underlying === u);
@@ -5781,7 +5612,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
         </div>
 
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -5892,21 +5723,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
                       {isExp && (
                         <tr className="bg-indigo-50/40 border-b border-indigo-100">
                           <td colSpan={7} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Iron Condor Details</span>
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || opp.action}</p>
-                              <div className="grid grid-cols-3 gap-2 text-[10px]">
-                                <div>Spot: ₹{Number(opp.spotPrice || 0).toLocaleString('en-IN')}</div>
-                                <div>Expiry: {opp.expiryDate}</div>
-                                <div>Confidence: {Number(opp.confidence || 0).toFixed(1)}%</div>
-                              </div>
-                              <ArbitrageSignalPayoffChart opp={opp} />
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  Submit ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                              <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="Iron Condor Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -6153,7 +5970,7 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
         </div>
 
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button
               key={u}
               onClick={() => setUnderlying(u)}
@@ -6216,18 +6033,7 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
                       {isExp && (
                         <tr className="bg-indigo-50/40 border-b border-indigo-100">
                           <td colSpan={8} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Calendar Spread Leg Breakdown:</span>
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
-                                BUY NEAR ({opp.nearSymbol} @ ₹{opp.nearPrice}) | SELL FAR ({opp.farSymbol} @ ₹{opp.farPrice})
-                              </p>
-                              <ArbitrageSignalPayoffChart opp={opp} />
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⏳ Submit ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                              <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="Calendar Spread Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -6268,7 +6074,7 @@ function SyntheticArbView({ handleExecuteInline, executionBroker }) {
           <p className="text-[10px] text-slate-500">Exploits Put-Call Parity: when Synthetic Futures Price != Actual Futures Price</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button
               key={u}
               onClick={() => setUnderlying(u)}
@@ -6390,7 +6196,7 @@ function IVMonitorView() {
     refetchInterval: 60000
   });
 
-  const underlyings = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+  const underlyings = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'];
 
   const getRegimeColor = (regime) => {
     if (regime === 'LOW') return 'bg-emerald-100 text-emerald-700 border-emerald-300';
@@ -6553,7 +6359,7 @@ function VolSurfaceView() {
           <p className="text-[10px] text-slate-500">IV smile across strikes - detect skew anomalies and mispriced options</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button
               key={u}
               onClick={() => setUnderlying(u)}
@@ -6762,7 +6568,7 @@ function PaperTradesView() {
             ))}
           </div>
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
               <button key={u} onClick={() => setUnderlyingFilter(u)}
                 className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${underlyingFilter === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
                 {u === 'ALL' ? 'ALL' : u}
@@ -6868,9 +6674,9 @@ function PaperTradesView() {
                                 <div><span className="text-slate-500">Order IDs:</span> <span className="font-bold text-[9px]">{pos.ceOrderId || '--'}</span></div>
                                 <div><span className="text-slate-500">Mode:</span> <span className="font-bold">{isPaper ? 'PAPER' : 'LIVE'}</span></div>
                               </div>
-                              {Array.isArray(pos.legList) && pos.legList.length >= 2 && (
+                              {Array.isArray(pos.legList) && pos.legList.length >= 1 && (
                                 <div className="mt-4">
-                                  <ArbitrageSignalPayoffChart opp={pos} />
+                                  <DetailedOpportunityExpandedRow item={pos} title="Trade Payoff Breakdown" />
                                 </div>
                               )}
                               {(pos.status === 'FAILED' || pos.status === 'REJECTED') && pos.errorMessage && (
@@ -6989,7 +6795,7 @@ function CandidateHistoryPanel({ strategyType, label }) {
               </div>
             )}
             <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl">
-              {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+              {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
                 <button key={u} onClick={() => setUnderlyingFilter(u)}
                   className={`px-2 py-0.5 rounded-lg text-xs font-bold transition ${underlyingFilter === u ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
                   {u}
@@ -7547,100 +7353,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                       {isExp && (
                         <tr className="bg-indigo-50/40 border-b border-indigo-100">
                           <td colSpan={12} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block mb-3">Historical Signal Audit Breakdown</span>
-                              
-                              {(() => {
-                                let oppToPass = item;
-                                if ((!Array.isArray(item.legList) || item.legList.length < 2) && typeof item.legs === 'string') {
-                                  const legStrs = item.legs.split('|').map(s => s.trim()).filter(Boolean);
-                                  const legList = legStrs.map(ls => {
-                                    let side = ls.includes('BUY') ? 'BUY' : 'SELL';
-                                    let type = ls.includes('CE') ? 'CE' : ls.includes('PE') ? 'PE' : 'FUT';
-                                    let priceMatch = ls.match(/@\s+([\d.]+)/);
-                                    let price = priceMatch ? Number(priceMatch[1]) : 0;
-                                    let strikeMatch = type !== 'FUT' ? ls.match(/(\d+(?:\.\d+)?)\s+(?:CE|PE)/) : null;
-                                    let strike = strikeMatch ? Number(strikeMatch[1]) : (type === 'FUT' ? 0 : item.strike);
-                                    if (price > 0) return { side, optionType: type, strike, price, qty: 1 };
-                                    return null;
-                                  }).filter(Boolean);
-                                  if (legList.length >= 2) oppToPass = { ...item, legList };
-                                }
-                                
-                                const hasLegs = Array.isArray(oppToPass.legList) && oppToPass.legList.length > 0;
-                                
-                                return (
-                                  <div className="space-y-4">
-                                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                                      {/* Left Column: Execution Legs Table */}
-                                      <div className="bg-white border border-indigo-100 rounded-xl overflow-hidden shadow-sm">
-                                        <div className="bg-slate-50 border-b border-indigo-100 px-3 py-2 flex justify-between items-center">
-                                          <span className="text-xs font-black text-slate-600 uppercase">Execution Legs</span>
-                                          <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">{oppToPass.expiryDate || oppToPass.expiry || '--'}</span>
-                                        </div>
-                                        {hasLegs ? (
-                                          <table className="w-full text-left text-xs">
-                                            <thead className="bg-slate-50/50 text-slate-500 font-bold border-b border-slate-100">
-                                              <tr>
-                                                <th className="py-2 px-3">Action</th>
-                                                <th className="py-2 px-3">Strike</th>
-                                                <th className="py-2 px-3">Type</th>
-                                                <th className="py-2 px-3 text-right">Price</th>
-                                              </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100 font-mono">
-                                              {oppToPass.legList.map((leg, i) => (
-                                                <tr key={i} className={leg.side === 'BUY' ? 'bg-blue-50/30' : 'bg-red-50/30'}>
-                                                  <td className="py-2 px-3 font-bold text-slate-700">
-                                                    <span className={leg.side === 'BUY' ? 'text-blue-600' : 'text-red-600'}>{leg.side}</span>
-                                                  </td>
-                                                  <td className="py-2 px-3 font-bold text-slate-700">{leg.strike || 'FUT'}</td>
-                                                  <td className="py-2 px-3 font-bold text-slate-500">{leg.optionType}</td>
-                                                  <td className="py-2 px-3 font-bold text-slate-800 text-right">₹{leg.price.toFixed(2)}</td>
-                                                </tr>
-                                              ))}
-                                            </tbody>
-                                          </table>
-                                        ) : (
-                                          <div className="p-4 text-center text-xs text-slate-500 font-mono">{item.legs || `${item.action} on ${item.underlying} ${item.strike}`}</div>
-                                        )}
-                                      </div>
-
-                                      {/* Right Column: Risk/Reward Profile */}
-                                      <div className="grid grid-cols-2 gap-3">
-                                        <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex flex-col justify-center">
-                                          <span className="text-[10px] font-black text-emerald-600 uppercase mb-1">Max Profit</span>
-                                          <span className="text-lg font-black text-emerald-700">+{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(oppToPass.maxProfit || oppToPass.edgeAfterCosts || 0)}</span>
-                                        </div>
-                                        <div className="bg-red-50 border border-red-100 p-3 rounded-xl flex flex-col justify-center">
-                                          <span className="text-[10px] font-black text-red-600 uppercase mb-1">Max Loss</span>
-                                          <span className="text-lg font-black text-red-700">{oppToPass.maxLoss ? '-' + new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(oppToPass.maxLoss) : 'Defined'}</span>
-                                        </div>
-                                        <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-col justify-center">
-                                          <span className="text-[10px] font-black text-slate-500 uppercase mb-1">Risk:Reward</span>
-                                          <span className="text-sm font-black text-slate-800">{oppToPass.riskReward ? oppToPass.riskReward + 'x' : '--'}</span>
-                                        </div>
-                                        <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-col justify-center">
-                                          <span className="text-[10px] font-black text-slate-500 uppercase mb-1">POP (Win Rate)</span>
-                                          <span className="text-sm font-black text-slate-800">{oppToPass.confidence ? oppToPass.confidence.toFixed(1) + '%' : '> 90%'}</span>
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {/* Payoff Chart */}
-                                    {hasLegs && (
-                                      <div className="mt-4">
-                                        <ArbitrageSignalPayoffChart opp={oppToPass} />
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); setPendingLiveDeploy(item); }} className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold shadow-md">⚡ Deploy ({executionBroker})
-                                </button>
-                              </div>
-                            </div>
+                            <DetailedOpportunityExpandedRow item={item} executionBroker={executionBroker} setPendingLiveDeploy={setPendingLiveDeploy} title="Historical Signal Audit Breakdown" />
                           </td>
                         </tr>
                       )}
@@ -7724,7 +7437,7 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
       </div>
 
       {subTab === 'history' ? (
-        <ErrorBoundary><HistoryView lockedStrategy={null} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} underlyings={['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY']} /></ErrorBoundary>
+        <ErrorBoundary><HistoryView lockedStrategy={null} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} underlyings={['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX']} /></ErrorBoundary>
       ) : (
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -7734,7 +7447,7 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
               <button key={u} onClick={() => setUnderlying(u)}
                 className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
                 {u}
@@ -7836,4 +7549,8 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
       )}
     </div>
   );
+}
+
+export function GlobalConfirmModal() {
+  return null; // Dummy component to fix the missing export since the real one was lost
 }

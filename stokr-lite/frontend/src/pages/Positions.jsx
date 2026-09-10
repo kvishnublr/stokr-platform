@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
-import { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS } from './OptionArbitrage';
+import { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS, GlobalConfirmModal } from './OptionArbitrage';
 
 // Fallback format time
 function fmtTime(ts) {
@@ -267,6 +267,7 @@ export default function Positions() {
 
   return (
     <div className="space-y-6 pb-20">
+      <GlobalConfirmModal />
       {/* Header */}
       <div>
         <div className="flex items-center gap-3 mb-1">

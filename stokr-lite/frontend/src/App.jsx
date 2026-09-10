@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { ExecutionBrokerProvider } from './context/ExecutionBrokerContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
@@ -31,6 +32,7 @@ const AdminStrategyMappings = lazy(() => import('./pages/admin/AdminStrategyMapp
 const AdminStrategyConfigs = lazy(() => import('./pages/admin/AdminStrategyConfigs'));
 const AdminOrders = lazy(() => import('./pages/admin/AdminOrders'));
 const AdminAuditLog = lazy(() => import('./pages/admin/AdminAuditLog'));
+const StrategyBuilder = lazy(() => import('./pages/StrategyBuilder'));
 const OptionArbitrage = lazy(() => import('./pages/OptionArbitrage'));
 
 const routeImports = [
@@ -55,6 +57,7 @@ const routeImports = [
   () => import('./pages/admin/AdminStrategyConfigs'),
   () => import('./pages/admin/AdminOrders'),
   () => import('./pages/admin/AdminAuditLog'),
+  () => import('./pages/StrategyBuilder'),
   () => import('./pages/OptionArbitrage'),
 ];
 
@@ -79,6 +82,7 @@ export default function App() {
   }, []);
 
   return (
+    <ExecutionBrokerProvider>
     <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/login" element={<Login />} />
@@ -95,6 +99,7 @@ export default function App() {
             <Route path="/brokers" element={<Brokers />} />
             <Route path="/orders" element={<Orders />} />
             <Route path="/positions" element={<Positions />} />
+            <Route path="/strategy-builder" element={<StrategyBuilder />} />
             <Route path="/option-arbitrage" element={<OptionArbitrage />} />
             <Route path="/settings" element={<Settings />} />
             <Route element={<AdminRoute />}>
@@ -115,5 +120,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
+    </ExecutionBrokerProvider>
   );
 }

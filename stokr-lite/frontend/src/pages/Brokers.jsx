@@ -81,6 +81,9 @@ export default function Brokers() {
   const [mofslClientCode, setMofslClientCode] = useState('');
   const [mofslPassword, setMofslPassword] = useState('');
   const [mofslTotpSecret, setMofslTotpSecret] = useState('');
+  const [mofslApiKey, setMofslApiKey] = useState('');
+  const [mofslApiSecret, setMofslApiSecret] = useState('');
+  const [mofslDob, setMofslDob] = useState('');
   const [mofslSaving, setMofslSaving] = useState(false);
   const [mofslMsg, setMofslMsg] = useState(null);
   const [naviaSaving, setNaviaSaving] = useState(false);
@@ -159,19 +162,23 @@ export default function Brokers() {
   };
 
   const saveMofsl = async () => {
-    if (!mofslClientCode.trim() || !mofslPassword.trim() || !mofslTotpSecret.trim()) {
-      setMofslMsg({ ok: false, text: 'Client Code, Password, and TOTP Secret are all required' }); return;
+    if (!mofslClientCode.trim() || !mofslPassword.trim() || !mofslTotpSecret.trim() || !mofslApiKey.trim() || !mofslDob.trim()) {
+      setMofslMsg({ ok: false, text: 'Client Code, Password, TOTP Secret, API Key, and Date of Birth are all required' }); return;
     }
     setMofslSaving(true); setMofslMsg(null);
     try {
       await client.post('/brokers/motilaloswal/connect', {
         clientCode: mofslClientCode.trim(),
         password: mofslPassword.trim(),
-        totpSecret: mofslTotpSecret.trim()
+        totpSecret: mofslTotpSecret.trim(),
+        apiKey: mofslApiKey.trim(),
+        apiSecret: mofslApiSecret.trim(),
+        dob: mofslDob.trim()
       });
       setMofslMsg({ ok: true, text: 'Motilal Oswal connected successfully!' });
       setMofslFormOpen(false);
       setMofslClientCode(''); setMofslPassword(''); setMofslTotpSecret('');
+      setMofslApiKey(''); setMofslApiSecret(''); setMofslDob('');
       queryClient.invalidateQueries({ queryKey: ['brokers'] });
       queryClient.invalidateQueries({ queryKey: ['broker-health'] });
       refetchHealth();
@@ -650,9 +657,7 @@ export default function Brokers() {
               style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#94a3b8' }}>✕</button>
           </div>
           <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
-            Enter your MOFSL login credentials. The TOTP secret is from your authenticator app setup.
-            This integration is newly built and unverified against a real account — test with margin-check
-            before trusting it for live orders.
+            Enter your MOFSL login credentials and API keys from the Motilal Oswal developer portal.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div>
@@ -673,6 +678,27 @@ export default function Brokers() {
               <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'block' }}>TOTP Secret</label>
               <input type="text" value={mofslTotpSecret} onChange={e => setMofslTotpSecret(e.target.value)}
                 placeholder="Enter your MOFSL TOTP secret (base32 key)"
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid rgba(148,163,184,0.2)',
+                  background: 'rgba(255,255,255,0.8)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'block' }}>API Key *</label>
+              <input type="text" value={mofslApiKey} onChange={e => setMofslApiKey(e.target.value)}
+                placeholder="Your MOFSL OpenAPI key"
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid rgba(148,163,184,0.2)',
+                  background: 'rgba(255,255,255,0.8)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'block' }}>API Secret (optional)</label>
+              <input type="password" value={mofslApiSecret} onChange={e => setMofslApiSecret(e.target.value)}
+                placeholder="Your MOFSL OpenAPI secret (if applicable)"
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid rgba(148,163,184,0.2)',
+                  background: 'rgba(255,255,255,0.8)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'block' }}>Date of Birth *</label>
+              <input type="text" value={mofslDob} onChange={e => setMofslDob(e.target.value)}
+                placeholder="DD/MM/YYYY (e.g. 15/08/1990)"
                 style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid rgba(148,163,184,0.2)',
                   background: 'rgba(255,255,255,0.8)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
             </div>

@@ -211,4 +211,19 @@ public class OptionArbOpportunity {
         if (legs2 != null) map.put("legList", legs2);
         return map;
     }
+
+    @Column(name = "reentry_product_type")
+    private String reentryProductType = "NRML";
+
+    @Column(name = "profit_exit_trigger")
+    private BigDecimal profitExitTrigger;
+
+    @Column(name = "loss_reentry_trigger")
+    private BigDecimal lossReentryTrigger;
+
+    @Column(name = "reentry_count")
+    private Integer reentryCount = 0;
+
+    @Column(name = "max_reentries")
+    private Integer maxReentries = 1;
 }
