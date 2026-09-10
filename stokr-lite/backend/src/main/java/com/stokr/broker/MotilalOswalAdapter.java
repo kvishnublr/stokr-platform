@@ -5,40 +5,37 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 
-import java.io.BufferedReader;
-import java.io.StringReader;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.security.MessageDigest;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Component
 public class MotilalOswalAdapter implements BrokerAdapter {
 
-    private static final String MOFSL_BASE = "https://openapi.motilaloswal.com";
+    private static final String XTS_BASE = "https://moxtsapi.motilaloswal.com:3000";
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private final RestClient http;
     private final BrokerAccountRepository repository;
 
     private final ConcurrentHashMap<Long, CachedSession> sessionCache = new ConcurrentHashMap<>();
 
-    // Scripmaster: maps "NSEFO|scripname" → scripcode (refreshed daily)
-    private volatile Map<String, Integer> scripMaster = Collections.emptyMap();
-    private volatile long scripMasterLoadedAt = 0;
-    private static final long SCRIP_MASTER_TTL = 6 * 60 * 60 * 1000L; // 6 hours
+    // exchangeInstrumentID cache: "NSEFO|NIFTY2691523500CE" → instrumentID
+    private volatile Map<String, Long> instrumentCache = new ConcurrentHashMap<>();
 
-    public MotilalOswalAdapter(RestClient.Builder restClientBuilder, BrokerAccountRepository repository) {
-        this.http = restClientBuilder.build();
+    public MotilalOswalAdapter(BrokerAccountRepository repository) {
         this.repository = repository;
     }
 
-    private record CachedSession(String token, String clientCode, String apiKey, String apiSecret, long expiresAt) {
+    private record CachedSession(String token, String userId, String clientCode,
+                                  String apiKey, String apiSecret, long expiresAt) {
         boolean isExpired() { return System.currentTimeMillis() > expiresAt; }
     }
 
@@ -47,20 +44,20 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         try {
             List<BrokerAccount> accounts = repository.findByBrokerNameAndStatus("MOTILALOSWAL", "ACTIVE");
             for (BrokerAccount acct : accounts) {
-                if (acct.getMofslPassword() != null && acct.getMofslTotpSecret() != null && acct.getMofslApiKey() != null) {
-                    log.info("MOFSL: auto-login on startup for clientCode={}", acct.getClientId());
+                if (acct.getMofslApiKey() != null && acct.getMofslApiSecret() != null) {
+                    log.info("MOFSL-XTS: auto-login on startup for clientCode={}", acct.getClientId());
                     try {
                         String token = login(acct);
                         acct.setAccessToken(token);
                         repository.save(acct);
-                        log.info("MOFSL: startup login successful, token saved for account {}", acct.getId());
+                        log.info("MOFSL-XTS: startup login successful for account {}", acct.getId());
                     } catch (Exception e) {
-                        log.warn("MOFSL: startup login failed for {}: {}", acct.getClientId(), e.getMessage());
+                        log.warn("MOFSL-XTS: startup login failed for {}: {}", acct.getClientId(), e.getMessage());
                     }
                 }
             }
         } catch (Exception e) {
-            log.warn("MOFSL: startup auto-login error: {}", e.getMessage());
+            log.warn("MOFSL-XTS: startup auto-login error: {}", e.getMessage());
         }
     }
 
@@ -69,138 +66,12 @@ public class MotilalOswalAdapter implements BrokerAdapter {
 
     @Override
     public String getAuthUrl() {
-        throw new UnsupportedOperationException("Motilal Oswal uses TOTP-based auth, not OAuth.");
+        throw new UnsupportedOperationException("Motilal Oswal XTS uses API key/secret auth, not OAuth.");
     }
 
     @Override
     public String[] exchangeToken(String requestToken) {
-        throw new UnsupportedOperationException("Motilal Oswal uses TOTP-based auth, not OAuth.");
-    }
-
-    // ---- Scripmaster: resolve text trading symbol → numeric scrip code ----
-
-    private void ensureScripMaster(String exchange) {
-        if (!scripMaster.isEmpty() && (System.currentTimeMillis() - scripMasterLoadedAt) < SCRIP_MASTER_TTL) {
-            return;
-        }
-        try {
-            loadScripMasterCsv(exchange);
-        } catch (Exception e) {
-            log.warn("MOFSL: scripmaster CSV load failed for {}: {}", exchange, e.getMessage());
-        }
-    }
-
-    private synchronized void loadScripMasterCsv(String exchange) {
-        if (!scripMaster.isEmpty() && (System.currentTimeMillis() - scripMasterLoadedAt) < SCRIP_MASTER_TTL) {
-            return; // another thread loaded it
-        }
-        String url = MOFSL_BASE + "/getscripmastercsv?name=" + exchange;
-        log.info("MOFSL: downloading scripmaster CSV from {}", url);
-        try {
-            String csv = http.get().uri(url)
-                    .header("Accept", "text/csv")
-                    .retrieve().body(String.class);
-            if (csv == null || csv.isBlank()) {
-                log.warn("MOFSL: scripmaster CSV empty for {}", exchange);
-                return;
-            }
-            Map<String, Integer> newMap = new ConcurrentHashMap<>();
-            try (BufferedReader reader = new BufferedReader(new StringReader(csv))) {
-                String headerLine = reader.readLine();
-                if (headerLine == null) return;
-                // CSV columns: exchange,exchangename,scripcode,scripname,marketlot,scripshortname,...
-                String[] headers = headerLine.split(",", -1);
-                int scripCodeIdx = -1, scripNameIdx = -1, exchangeIdx = -1;
-                for (int i = 0; i < headers.length; i++) {
-                    String h = headers[i].trim().toLowerCase();
-                    if ("scripcode".equals(h)) scripCodeIdx = i;
-                    else if ("scripname".equals(h)) scripNameIdx = i;
-                    else if ("exchange".equals(h) || "exchangename".equals(h)) exchangeIdx = i;
-                }
-                if (scripCodeIdx < 0 || scripNameIdx < 0) {
-                    log.warn("MOFSL: scripmaster CSV missing scripcode/scripname columns. Headers: {}", headerLine);
-                    return;
-                }
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    String[] cols = line.split(",", -1);
-                    if (cols.length <= Math.max(scripCodeIdx, scripNameIdx)) continue;
-                    try {
-                        int code = Integer.parseInt(cols[scripCodeIdx].trim());
-                        String name = cols[scripNameIdx].trim().toUpperCase();
-                        String exch = exchangeIdx >= 0 && cols.length > exchangeIdx
-                                ? cols[exchangeIdx].trim().toUpperCase() : exchange;
-                        
-                        newMap.put(exch + "|" + name, code);
-                        
-                        try {
-                            String[] parts = name.split(" ");
-                            if (parts.length >= 4) {
-                                String underlying = parts[0];
-                                String dateStr = parts[1]; // 29-Sep-2026
-                                String type = parts[2]; // CE
-                                String strikeStr = parts[3]; // 24200
-                                String[] dateParts = dateStr.split("-");
-                                if (dateParts.length == 3) {
-                                    int day = Integer.parseInt(dateParts[0]);
-                                    String monStr = dateParts[1].toUpperCase();
-                                    int year = Integer.parseInt(dateParts[2]);
-                                    int yy = year % 100;
-                                    int strike = (int) Double.parseDouble(strikeStr);
-                                    
-                                    int month = 0;
-                                    switch (monStr) {
-                                        case "JAN": month = 1; break;
-                                        case "FEB": month = 2; break;
-                                        case "MAR": month = 3; break;
-                                        case "APR": month = 4; break;
-                                        case "MAY": month = 5; break;
-                                        case "JUN": month = 6; break;
-                                        case "JUL": month = 7; break;
-                                        case "AUG": month = 8; break;
-                                        case "SEP": month = 9; break;
-                                        case "OCT": month = 10; break;
-                                        case "NOV": month = 11; break;
-                                        case "DEC": month = 12; break;
-                                    }
-                                    
-                                    String mCode = (month == 10) ? "O" : (month == 11) ? "N" : (month == 12) ? "D" : String.valueOf(month);
-                                    
-                                    String cand1 = String.format("%s%02d%s%d%s", underlying, yy, monStr, strike, type);
-                                    String cand2 = String.format("%s%02d%s%02d%d%s", underlying, yy, mCode, day, strike, type);
-                                    String cand3 = String.format("%s%02d%d%02d%d%s", underlying, yy, month, day, strike, type);
-                                    
-                                    newMap.put(exch + "|" + cand1, code);
-                                    newMap.put(exch + "|" + cand2, code);
-                                    newMap.put(exch + "|" + cand3, code);
-                                }
-                            }
-                        } catch (Exception ignored) {}
-
-                    } catch (NumberFormatException ignored) {}
-                }
-            }
-            log.info("MOFSL: scripmaster loaded {} entries for {}", newMap.size(), exchange);
-            scripMaster = newMap;
-            scripMasterLoadedAt = System.currentTimeMillis();
-        } catch (Exception e) {
-            log.error("MOFSL: scripmaster download failed: {}", e.getMessage());
-        }
-    }
-
-    private Integer resolveScripCode(String exchange, String tradingSymbol) {
-        ensureScripMaster(exchange);
-        String key = exchange.toUpperCase() + "|" + tradingSymbol.toUpperCase();
-        Integer code = scripMaster.get(key);
-        if (code != null) return code;
-        // Try without exchange prefix (some entries use different exchange naming)
-        for (var entry : scripMaster.entrySet()) {
-            if (entry.getKey().endsWith("|" + tradingSymbol.toUpperCase())) {
-                return entry.getValue();
-            }
-        }
-        log.warn("MOFSL: no scripcode found for {} on {}", tradingSymbol, exchange);
-        return null;
+        throw new UnsupportedOperationException("Motilal Oswal XTS uses API key/secret auth, not OAuth.");
     }
 
     // ---- Auth ----
@@ -209,7 +80,10 @@ public class MotilalOswalAdapter implements BrokerAdapter {
                                           String totpSecret, String apiKey, String apiSecret,
                                           String dob) {
         if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalStateException("MOFSL API key is required. Get it from the Motilal Oswal developer portal.");
+            throw new IllegalStateException("MOFSL XTS Interactive API key is required.");
+        }
+        if (apiSecret == null || apiSecret.isBlank()) {
+            throw new IllegalStateException("MOFSL XTS Interactive API secret is required.");
         }
         BrokerAccount account = repository.findByUserIdAndBrokerNameAndStatus(userId, "MOTILALOSWAL", "ACTIVE")
                 .stream().findFirst().orElse(null);
@@ -228,8 +102,8 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         account.setClientId(clientCode);
         account.setMofslPassword(password);
         account.setMofslTotpSecret(totpSecret);
-        account.setMofslApiKey(apiKey);
-        account.setMofslApiSecret(apiSecret);
+        account.setMofslApiKey(apiKey);       // XTS Interactive API Key
+        account.setMofslApiSecret(apiSecret); // XTS Interactive API Secret
         if (dob != null && !dob.isBlank()) account.setMofslDob(dob.trim());
         account.setTokenExpiry(java.time.Instant.now().plusSeconds(365L * 24 * 3600));
         BrokerAccount saved = repository.save(account);
@@ -237,75 +111,66 @@ public class MotilalOswalAdapter implements BrokerAdapter {
             String token = login(saved);
             saved.setAccessToken(token);
             repository.save(saved);
-            log.info("MOFSL connected with TOTP for user {}, clientCode={}", userId, clientCode);
+            log.info("MOFSL-XTS connected for user {}, clientCode={}", userId, clientCode);
         } catch (Exception e) {
-            log.warn("MOFSL initial login failed (credentials saved anyway): {}", e.getMessage());
+            log.warn("MOFSL-XTS initial login failed (credentials saved anyway): {}", e.getMessage());
         }
         return saved;
     }
 
     private String login(BrokerAccount account) {
-        String clientCode = account.getClientId();
-        String password = account.getMofslPassword();
-        String totpSecret = account.getMofslTotpSecret();
         String apiKey = account.getMofslApiKey();
+        String apiSecret = account.getMofslApiSecret();
 
-        if (clientCode == null || clientCode.isBlank() || password == null || password.isBlank()) {
-            throw new IllegalStateException("MOFSL client code and password are required.");
-        }
-        if (totpSecret == null || totpSecret.isBlank()) {
-            throw new IllegalStateException("MOFSL TOTP secret is required.");
-        }
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalStateException("MOFSL API key is required.");
+        if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
+            throw new IllegalStateException("MOFSL XTS API key and secret are required.");
         }
 
         CachedSession cached = sessionCache.get(account.getId());
         if (cached != null && !cached.isExpired()) {
-            log.debug("MOFSL: reusing cached session for account {}", account.getId());
+            log.debug("MOFSL-XTS: reusing cached session for account {}", account.getId());
             return cached.token;
         }
 
-        String otp = TotpUtils.generate(totpSecret);
-        String hashedPassword = sha256(password + apiKey);
-        String dob = account.getMofslDob();
-        log.info("MOFSL: logging in with TOTP for clientCode={}, hasDob={}", clientCode, dob != null);
+        log.info("MOFSL-XTS: logging in for clientCode={}", account.getClientId());
 
         Map<String, Object> loginBody = new LinkedHashMap<>();
-        loginBody.put("userid", clientCode);
-        loginBody.put("password", hashedPassword);
-        loginBody.put("2FA", dob != null && !dob.isBlank() ? dob : otp);
-        loginBody.put("totp", otp);
+        loginBody.put("secretKey", apiSecret);
+        loginBody.put("appKey", apiKey);
+        loginBody.put("source", "WEBAPI");
 
         try {
-            String respJson = mofslPost("/rest/login/v7/authdirectapi", loginBody, null, apiKey, account.getMofslApiSecret(), clientCode);
+            String respJson = xtsPost("/interactive/user/session", loginBody, null);
             JsonNode root = MAPPER.readTree(respJson);
-            String status = root.path("status").asText("");
-            if (!"SUCCESS".equalsIgnoreCase(status)) {
-                throw new RuntimeException("MOFSL login failed: " + root.path("message").asText(respJson));
+            String type = root.path("type").asText("");
+            if (!"success".equalsIgnoreCase(type)) {
+                throw new RuntimeException("MOFSL-XTS login failed: " + root.path("description").asText(respJson));
             }
-            String token = root.path("AuthToken").asText(null);
+            JsonNode result = root.path("result");
+            String token = result.path("token").asText(null);
+            String userId = result.path("userID").asText("");
             if (token == null || token.isBlank()) {
-                throw new RuntimeException("MOFSL login returned no AuthToken");
+                throw new RuntimeException("MOFSL-XTS login returned no token");
             }
-            sessionCache.put(account.getId(), new CachedSession(token, clientCode, apiKey, account.getMofslApiSecret(),
-                    System.currentTimeMillis() + 8 * 60 * 60 * 1000));
-            log.info("MOFSL: login successful for clientCode={}", clientCode);
+            sessionCache.put(account.getId(), new CachedSession(token, userId,
+                    account.getClientId(), apiKey, apiSecret,
+                    System.currentTimeMillis() + 23 * 60 * 60 * 1000)); // 23h (tokens expire at 6AM next day)
+            log.info("MOFSL-XTS: login successful, userID={}", userId);
             return token;
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
-            throw new RuntimeException("MOFSL login error: " + e.getMessage(), e);
+            throw new RuntimeException("MOFSL-XTS login error: " + e.getMessage(), e);
         }
     }
 
-    private record ResolvedAccount(String token, String clientCode, String apiKey, String apiSecret) {}
+    private record ResolvedAccount(String token, String userId, String clientCode, String apiKey, String apiSecret) {}
 
     private ResolvedAccount ensureToken(String accessToken) {
         for (var entry : sessionCache.entrySet()) {
             CachedSession c = entry.getValue();
             if (c.token.equals(accessToken) && !c.isExpired()) {
-                return new ResolvedAccount(accessToken, c.clientCode, c.apiKey, c.apiSecret);
+                return new ResolvedAccount(accessToken, c.userId, c.clientCode, c.apiKey, c.apiSecret);
             }
         }
         List<BrokerAccount> accounts = repository.findByBrokerNameAndStatus("MOTILALOSWAL", "ACTIVE");
@@ -313,169 +178,213 @@ public class MotilalOswalAdapter implements BrokerAdapter {
             BrokerAccount acct = accounts.get(0);
             try {
                 String token = login(acct);
-                return new ResolvedAccount(token, acct.getClientId(), acct.getMofslApiKey(), acct.getMofslApiSecret());
+                return new ResolvedAccount(token, acct.getClientId(), acct.getClientId(),
+                        acct.getMofslApiKey(), acct.getMofslApiSecret());
             } catch (Exception e) {
-                log.warn("MOFSL re-login failed: {}", e.getMessage());
-                return new ResolvedAccount(accessToken, acct.getClientId(), acct.getMofslApiKey(), acct.getMofslApiSecret());
+                log.warn("MOFSL-XTS re-login failed: {}", e.getMessage());
+                return new ResolvedAccount(accessToken, acct.getClientId(), acct.getClientId(),
+                        acct.getMofslApiKey(), acct.getMofslApiSecret());
             }
         }
-        return new ResolvedAccount(accessToken, "", "", "");
+        return new ResolvedAccount(accessToken, "", "", "", "");
     }
 
-    private static String mapExchange(String exchange) {
+    private static String mapExchangeSegment(String exchange) {
         if (exchange == null) return "NSEFO";
         return switch (exchange.toUpperCase()) {
             case "NFO", "NSEFO" -> "NSEFO";
-            case "NSE" -> "NSE";
-            case "BSE" -> "BSE";
-            case "MCX" -> "MCX";
+            case "NSE", "NSECM" -> "NSECM";
+            case "BSE", "BSECM" -> "BSECM";
+            case "MCX", "MCXFO" -> "MCXFO";
             case "NSECD", "CDS" -> "NSECD";
             case "BSEFO", "BFO" -> "BSEFO";
             default -> exchange;
         };
     }
 
+    private static String mapProductType(String productType) {
+        if (productType == null) return "NRML";
+        return switch (productType.toUpperCase()) {
+            case "MIS", "INTRADAY" -> "MIS";
+            case "NRML", "NORMAL", "CARRYFORWARD" -> "NRML";
+            case "CNC", "DELIVERY" -> "CNC";
+            case "CO", "COVER" -> "CO";
+            case "BO", "BRACKET" -> "BO";
+            default -> "NRML";
+        };
+    }
+
+    private static String mapOrderType(BrokerOrderRequest request) {
+        if (request.price() != null && request.price() > 0) {
+            return "LIMIT";
+        }
+        return "MARKET";
+    }
+
     // ---- Order placement ----
 
     @Override
     public BrokerOrderResponse placeOrder(String accessToken, BrokerOrderRequest request) {
-        log.info("MOFSL: placing order {} {} {} qty={}", request.side(), request.symbol(), request.orderType(), request.quantity());
+        log.info("MOFSL-XTS: placing order {} {} {} qty={}", request.side(), request.symbol(), request.orderType(), request.quantity());
         ResolvedAccount resolved = ensureToken(accessToken);
 
-        String mofslExchange = mapExchange(request.exchange());
+        String exchangeSegment = mapExchangeSegment(request.exchange());
 
-        // Resolve text symbol → numeric scrip code
-        Integer scripCode = resolveScripCode(mofslExchange, request.symbol());
-        if (scripCode == null) {
-            log.error("MOFSL: cannot resolve scripcode for symbol={} exchange={}", request.symbol(), mofslExchange);
+        // XTS uses exchangeInstrumentID (numeric) — we need to resolve from trading symbol
+        Long instrumentId = resolveInstrumentId(exchangeSegment, request.symbol(), resolved.token);
+        if (instrumentId == null) {
+            log.error("MOFSL-XTS: cannot resolve instrumentID for symbol={} exchange={}", request.symbol(), exchangeSegment);
             return new BrokerOrderResponse(null, "REJECTED",
-                    "Symbol not found in MOFSL scripmaster: " + request.symbol() + " on " + mofslExchange);
+                    "Symbol not found in XTS: " + request.symbol() + " on " + exchangeSegment);
         }
-        log.info("MOFSL: resolved {} → scripcode {}", request.symbol(), scripCode);
+        log.info("MOFSL-XTS: resolved {} → instrumentID {}", request.symbol(), instrumentId);
 
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("exchange", mofslExchange);
-        body.put("symboltoken", scripCode);
-        body.put("buyorsell", request.side().name());
-        body.put("ordertype", request.price() != null && request.price() > 0 ? "LIMIT" : "MARKET");
-        String prod = request.productType() != null ? request.productType().toUpperCase() : "NORMAL";
-        if ("NRML".equals(prod) || "MIS".equals(prod)) prod = "NORMAL";
-        body.put("producttype", prod);
-        body.put("orderduration", "DAY");
-        body.put("price", request.price() != null ? request.price() : 0.0);
-        body.put("triggerprice", 0.0);
-        int lots = 1;
-        body.put("quantityinlot", lots);
-        body.put("disclosedquantity", 0);
-        body.put("amoorder", "N");
-        body.put("algoid", "");
-        body.put("goodtilldate", "");
-        body.put("tag", "STOKR");
+        body.put("exchangeSegment", exchangeSegment);
+        body.put("exchangeInstrumentID", instrumentId);
+        body.put("productType", mapProductType(request.productType()));
+        body.put("orderType", mapOrderType(request));
+        body.put("orderSide", request.side().name());
+        body.put("timeInForce", "DAY");
+        body.put("disclosedQuantity", 0);
+        body.put("orderQuantity", request.quantity());
+        body.put("limitPrice", request.price() != null ? request.price() : 0.0);
+        body.put("stopPrice", 0.0);
+        body.put("orderUniqueIdentifier", "STOKR_" + System.currentTimeMillis());
+        body.put("clientID", resolved.userId);
 
         try {
-            String respJson = mofslPost("/rest/trans/v2/placeorder", body, resolved.token, resolved.apiKey, resolved.apiSecret, resolved.clientCode);
+            String respJson = xtsPost("/interactive/orders", body, resolved.token);
             JsonNode root = MAPPER.readTree(respJson);
-            String status = root.path("status").asText("");
-            String message = root.path("message").asText("");
-            if ("SUCCESS".equalsIgnoreCase(status)) {
-                String orderId = root.path("uniqueorderid").asText(root.path("orderid").asText(null));
-                log.info("MOFSL order placed: {} (scrip={}) -> {} (message={})", request.symbol(), scripCode, orderId, message);
-                return new BrokerOrderResponse(orderId, "OPEN", message);
+            String type = root.path("type").asText("");
+            String description = root.path("description").asText("");
+            if ("success".equalsIgnoreCase(type)) {
+                JsonNode result = root.path("result");
+                String orderId = result.path("AppOrderID").asText(null);
+                if (orderId == null) orderId = result.asText(null);
+                log.info("MOFSL-XTS order placed: {} (instrID={}) -> AppOrderID={}", request.symbol(), instrumentId, orderId);
+                return new BrokerOrderResponse(orderId, "OPEN", description);
             }
-            log.warn("MOFSL order REJECTED: symbol={} scrip={} side={} qty={} status={} message={}",
-                    request.symbol(), scripCode, request.side(), request.quantity(), status, message);
-            return new BrokerOrderResponse(null, "REJECTED", message);
+            log.warn("MOFSL-XTS order REJECTED: symbol={} instrID={} side={} qty={} desc={}",
+                    request.symbol(), instrumentId, request.side(), request.quantity(), description);
+            return new BrokerOrderResponse(null, "REJECTED", description);
         } catch (Exception e) {
-            log.error("MOFSL placeOrder failed for {} (scrip={}): {}", request.symbol(), scripCode, e.getMessage());
+            log.error("MOFSL-XTS placeOrder failed for {} (instrID={}): {}", request.symbol(), instrumentId, e.getMessage());
             return new BrokerOrderResponse(null, "REJECTED", e.getMessage());
         }
     }
 
     @Override
     public void cancelOrder(String accessToken, String orderId) {
-        log.info("MOFSL: cancelling order {}", orderId);
+        log.info("MOFSL-XTS: cancelling order {}", orderId);
         ResolvedAccount resolved = ensureToken(accessToken);
-        Map<String, Object> body = Map.of("uniqueorderid", orderId);
         try {
-            mofslPost("/rest/trans/v1/cancelorder", body, resolved.token, resolved.apiKey, resolved.apiSecret, resolved.clientCode);
+            xtsDelete("/interactive/orders?appOrderID=" + orderId, resolved.token);
         } catch (Exception e) {
-            log.warn("MOFSL cancel order {} failed: {}", orderId, e.getMessage());
+            log.warn("MOFSL-XTS cancel order {} failed: {}", orderId, e.getMessage());
         }
     }
 
     @Override
     public List<BrokerPosition> getPositions(String accessToken) {
-        log.info("MOFSL: fetching positions");
+        log.info("MOFSL-XTS: fetching positions");
         ResolvedAccount resolved = ensureToken(accessToken);
         try {
-            String respJson = mofslPost("/rest/book/v4/getposition", Map.of(), resolved.token, resolved.apiKey, resolved.apiSecret, resolved.clientCode);
+            String respJson = xtsGet("/interactive/portfolio/positions?dayOrNet=DayWise&clientID=" + resolved.userId, resolved.token);
             JsonNode root = MAPPER.readTree(respJson);
-            JsonNode positions = root.path("data");
+            String type = root.path("type").asText("");
+            if (!"success".equalsIgnoreCase(type)) {
+                log.warn("MOFSL-XTS getPositions failed: {}", root.path("description").asText());
+                return Collections.emptyList();
+            }
+            JsonNode positionList = root.path("result").path("positionList");
             List<BrokerPosition> result = new ArrayList<>();
-            if (positions.isArray()) {
-                for (JsonNode p : positions) {
-                    int buyQty = p.path("buyquantity").asInt(0);
-                    int sellQty = p.path("sellquantity").asInt(0);
+            if (positionList.isArray()) {
+                for (JsonNode p : positionList) {
+                    int buyQty = p.path("Quantity").path("BuyQuantity").asInt(
+                            p.path("BuyQty").asInt(p.path("buyQty").asInt(0)));
+                    int sellQty = p.path("Quantity").path("SellQuantity").asInt(
+                            p.path("SellQty").asInt(p.path("sellQty").asInt(0)));
                     int qty = buyQty - sellQty;
                     if (qty == 0) continue;
 
-                    BigDecimal buyAmount = new BigDecimal(p.path("buyamount").asText("0"));
-                    BigDecimal sellAmount = new BigDecimal(p.path("sellamount").asText("0"));
+                    double buyAvg = p.path("BuyAveragePrice").asDouble(p.path("buyAvgPrice").asDouble(0));
+                    double sellAvg = p.path("SellAveragePrice").asDouble(p.path("sellAvgPrice").asDouble(0));
                     BigDecimal avgPrice = qty > 0
-                            ? (buyQty > 0 ? buyAmount.divide(BigDecimal.valueOf(buyQty), 4, RoundingMode.HALF_UP) : BigDecimal.ZERO)
-                            : (sellQty > 0 ? sellAmount.divide(BigDecimal.valueOf(sellQty), 4, RoundingMode.HALF_UP) : BigDecimal.ZERO);
-                    BigDecimal ltp = new BigDecimal(p.path("LTP").asText(p.path("ltp").asText("0")));
-                    BigDecimal mtm = new BigDecimal(p.path("marktomarket").asText("0"));
-                    BigDecimal booked = new BigDecimal(p.path("bookedprofitloss").asText("0"));
+                            ? BigDecimal.valueOf(buyAvg)
+                            : BigDecimal.valueOf(sellAvg);
+                    BigDecimal ltp = BigDecimal.valueOf(p.path("LastTradedPrice").asDouble(
+                            p.path("ltp").asDouble(0)));
+                    BigDecimal mtm = BigDecimal.valueOf(p.path("RealizedMTM").asDouble(
+                            p.path("realizedMTM").asDouble(0)));
+                    BigDecimal unrealized = BigDecimal.valueOf(p.path("UnrealizedMTM").asDouble(
+                            p.path("unrealizedMTM").asDouble(0)));
 
                     result.add(new BrokerPosition(
-                            p.path("symbol").asText(""),
-                            p.path("exchange").asText("NSEFO"),
+                            p.path("TradingSymbol").asText(p.path("tradingSymbol").asText("")),
+                            p.path("ExchangeSegment").asText(p.path("exchangeSegment").asText("NSEFO")),
                             qty,
                             avgPrice,
                             ltp,
+                            unrealized,
                             mtm,
-                            booked,
-                            p.path("productname").asText(p.path("producttype").asText("NORMAL"))
+                            p.path("ProductType").asText(p.path("productType").asText("NRML"))
                     ));
                 }
             }
             return result;
         } catch (Exception e) {
-            log.warn("MOFSL getPositions failed: {}", e.getMessage());
+            log.warn("MOFSL-XTS getPositions failed: {}", e.getMessage());
             return Collections.emptyList();
         }
     }
 
     @Override
     public BigDecimal getAvailableMargin(String accessToken) {
-        log.info("MOFSL: fetching available margin");
+        log.info("MOFSL-XTS: fetching available margin");
         ResolvedAccount resolved = ensureToken(accessToken);
         try {
-            String respJson = mofslPost("/rest/report/v3/getreportmarginsummary", Map.of(), resolved.token, resolved.apiKey, resolved.apiSecret, resolved.clientCode);
+            String respJson = xtsGet("/interactive/user/balance?clientID=" + resolved.userId, resolved.token);
             JsonNode root = MAPPER.readTree(respJson);
-            String status = root.path("status").asText("");
-            if ("SUCCESS".equalsIgnoreCase(status)) {
-                JsonNode data = root.path("data");
-                double available = 0;
-                if (data.isArray()) {
-                    for (JsonNode item : data) {
-                        int srno = item.path("srno").asInt(0);
-                        if (srno == 103) {
-                            available = item.path("amount").asDouble(0);
-                            break;
+            String type = root.path("type").asText("");
+            if ("success".equalsIgnoreCase(type)) {
+                JsonNode result = root.path("result");
+                JsonNode balList = result.path("BalanceList");
+                if (balList.isArray()) {
+                    for (JsonNode bal : balList) {
+                        String limitHeader = bal.path("limitHeader").asText("");
+                        if ("Net margin available".equalsIgnoreCase(limitHeader)
+                                || "Cash Available".equalsIgnoreCase(limitHeader)
+                                || limitHeader.toLowerCase().contains("net margin")) {
+                            double marginValue = bal.path("marginAvailable").asDouble(
+                                    bal.path("limitBranch").asDouble(0));
+                            if (marginValue > 0) {
+                                log.info("MOFSL-XTS: available margin={} ({})", marginValue, limitHeader);
+                                return BigDecimal.valueOf(marginValue);
+                            }
                         }
                     }
-                } else {
-                    available = data.path("cashavailable").asDouble(
-                            data.path("CashAvailable").asDouble(0));
+                    // fallback: sum all marginAvailable
+                    double total = 0;
+                    for (JsonNode bal : balList) {
+                        total += bal.path("marginAvailable").asDouble(0);
+                    }
+                    if (total > 0) {
+                        log.info("MOFSL-XTS: available margin (sum)={}", total);
+                        return BigDecimal.valueOf(total);
+                    }
                 }
-                log.info("MOFSL: available margin={}", available);
-                return BigDecimal.valueOf(available);
+                // Try flat result fields
+                double netMargin = result.path("netMarginAvailable").asDouble(
+                        result.path("cashAvailable").asDouble(0));
+                if (netMargin > 0) {
+                    log.info("MOFSL-XTS: available margin={}", netMargin);
+                    return BigDecimal.valueOf(netMargin);
+                }
             }
-            log.warn("MOFSL margin fetch failed: {}", root.path("message").asText());
+            log.warn("MOFSL-XTS margin fetch failed: {}", root.path("description").asText());
         } catch (Exception e) {
-            log.warn("MOFSL getAvailableMargin failed: {}", e.getMessage());
+            log.warn("MOFSL-XTS getAvailableMargin failed: {}", e.getMessage());
         }
         return BigDecimal.ZERO;
     }
@@ -484,85 +393,159 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     public String getOrderStatus(String accessToken, String orderId) {
         ResolvedAccount resolved = ensureToken(accessToken);
         try {
-            String respJson = mofslPost("/rest/book/v5/getorderbook", Map.of(), resolved.token, resolved.apiKey, resolved.apiSecret, resolved.clientCode);
+            String respJson = xtsGet("/interactive/orders?clientID=" + resolved.userId, resolved.token);
             JsonNode root = MAPPER.readTree(respJson);
-            JsonNode orders = root.path("data");
-            if (orders.isArray()) {
-                for (JsonNode o : orders) {
-                    String id = o.path("uniqueorderid").asText(o.path("orderid").asText(""));
-                    if (orderId.equals(id)) {
-                        return o.path("orderstatus").asText("UNKNOWN");
+            String type = root.path("type").asText("");
+            if ("success".equalsIgnoreCase(type)) {
+                JsonNode orders = root.path("result");
+                if (orders.isArray()) {
+                    for (JsonNode o : orders) {
+                        String appOrderId = String.valueOf(o.path("AppOrderID").asInt(0));
+                        if (orderId.equals(appOrderId)) {
+                            String status = o.path("OrderStatus").asText(
+                                    o.path("orderStatus").asText("UNKNOWN"));
+                            return mapXtsOrderStatus(status);
+                        }
                     }
                 }
             }
         } catch (Exception e) {
-            log.warn("MOFSL getOrderStatus {} failed: {}", orderId, e.getMessage());
+            log.warn("MOFSL-XTS getOrderStatus {} failed: {}", orderId, e.getMessage());
         }
         return "UNKNOWN";
     }
 
-    // ---- HTTP ----
+    private String mapXtsOrderStatus(String xtsStatus) {
+        if (xtsStatus == null) return "UNKNOWN";
+        return switch (xtsStatus.toLowerCase()) {
+            case "new", "open", "pendnew", "pendingnew" -> "OPEN";
+            case "filled", "completely filled" -> "COMPLETE";
+            case "partially filled", "partfilled" -> "PARTIAL";
+            case "cancelled", "canceled" -> "CANCELLED";
+            case "rejected" -> "REJECTED";
+            default -> xtsStatus.toUpperCase();
+        };
+    }
 
-    private String mofslPost(String path, Map<String, Object> body, String token,
-                              String apiKey, String apiSecret, String clientCode) throws Exception {
-        String bodyJson = MAPPER.writeValueAsString(body);
-        String serverIp = System.getProperty("server.public-ip", "173.249.55.84");
-        String vendorVal = (clientCode != null && !clientCode.isBlank()) ? clientCode.toUpperCase() : "";
+    // ---- Instrument ID resolution ----
+    // XTS uses numeric exchangeInstrumentID. We search the master or use the symbol directly.
 
-        java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
-                .version(java.net.http.HttpClient.Version.HTTP_1_1)
-                .connectTimeout(java.time.Duration.ofSeconds(30))
+    private Long resolveInstrumentId(String exchangeSegment, String tradingSymbol, String token) {
+        String key = exchangeSegment + "|" + tradingSymbol.toUpperCase();
+        Long cached = instrumentCache.get(key);
+        if (cached != null) return cached;
+
+        // Try XTS search API to find the instrument
+        try {
+            Map<String, Object> searchBody = new LinkedHashMap<>();
+            searchBody.put("searchString", tradingSymbol);
+            searchBody.put("source", "WEBAPI");
+
+            String respJson = xtsPost("/interactive/search/instrumentsbystring", searchBody, token);
+            JsonNode root = MAPPER.readTree(respJson);
+            if ("success".equalsIgnoreCase(root.path("type").asText(""))) {
+                JsonNode results = root.path("result");
+                if (results.isArray()) {
+                    for (JsonNode instr : results) {
+                        String segment = instr.path("ExchangeSegment").asText("");
+                        String symbol = instr.path("DisplayName").asText(
+                                instr.path("TradingSymbol").asText(""));
+                        long instrId = instr.path("ExchangeInstrumentID").asLong(0);
+                        if (instrId > 0 && segment.equalsIgnoreCase(exchangeSegment)
+                                && symbol.toUpperCase().contains(tradingSymbol.toUpperCase())) {
+                            instrumentCache.put(key, instrId);
+                            return instrId;
+                        }
+                    }
+                    // Fallback: take first match on the right exchange
+                    for (JsonNode instr : results) {
+                        String segment = instr.path("ExchangeSegment").asText("");
+                        long instrId = instr.path("ExchangeInstrumentID").asLong(0);
+                        if (instrId > 0 && segment.equalsIgnoreCase(exchangeSegment)) {
+                            instrumentCache.put(key, instrId);
+                            return instrId;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("MOFSL-XTS: instrument search failed for {}: {}", tradingSymbol, e.getMessage());
+        }
+
+        // Try treating the symbol itself as a numeric ID (some callers may pass it directly)
+        try {
+            long id = Long.parseLong(tradingSymbol);
+            instrumentCache.put(key, id);
+            return id;
+        } catch (NumberFormatException ignored) {}
+
+        return null;
+    }
+
+    // ---- HTTP helpers ----
+
+    private HttpClient buildClient() {
+        return HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofSeconds(30))
                 .build();
+    }
 
-        var reqBuilder = java.net.http.HttpRequest.newBuilder()
-                .uri(java.net.URI.create(MOFSL_BASE + path))
-                .timeout(java.time.Duration.ofSeconds(30))
+    private HttpRequest.Builder baseRequest(String path, String token) {
+        var builder = HttpRequest.newBuilder()
+                .uri(URI.create(XTS_BASE + path))
+                .timeout(Duration.ofSeconds(30))
                 .header("Content-Type", "application/json")
-                .header("Accept", "application/json")
-                .header("ApiKey", apiKey != null ? apiKey : "")
-                .header("SourceId", "WEB")
-                .header("vendorinfo", vendorVal)
-                .header("User-Agent", "MOSL/V.1.1.0")
-                .header("ClientLocalIp", serverIp)
-                .header("ClientPublicIp", serverIp)
-                .header("MacAddress", "00:00:00:00:00:00")
-                .header("osname", "WEB")
-                .header("osversion", "1.0.0")
-                .header("devicemodel", "WEB")
-                .header("manufacturer", "WEB")
-                .header("productname", "STOKR")
-                .header("productversion", "1.0.0")
-                .header("browsername", "Chrome")
-                .header("browserversion", "120.0.0");
-
-        if (apiSecret != null && !apiSecret.isBlank()) {
-            reqBuilder = reqBuilder.header("apisecretkey", apiSecret);
-        }
+                .header("Accept", "application/json");
         if (token != null && !token.isBlank()) {
-            reqBuilder = reqBuilder.header("Authorization", token);
+            builder = builder.header("Authorization", token);
         }
+        return builder;
+    }
 
-        var request = reqBuilder.POST(java.net.http.HttpRequest.BodyPublishers.ofString(bodyJson))
+    private String xtsPost(String path, Map<String, Object> body, String token) throws Exception {
+        String bodyJson = MAPPER.writeValueAsString(body);
+        HttpClient client = buildClient();
+        HttpRequest request = baseRequest(path, token)
+                .POST(HttpRequest.BodyPublishers.ofString(bodyJson))
                 .build();
 
-        log.info("MOFSL HTTP: {} vendorinfo={} hasToken={}", path, vendorVal, token != null && !token.isBlank());
+        log.info("MOFSL-XTS HTTP POST: {} hasToken={}", path, token != null && !token.isBlank());
 
-        var response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
         String responseBody = response.body();
-        log.info("MOFSL HTTP response: {} status={} body={}", path, response.statusCode(),
+        log.info("MOFSL-XTS HTTP response: {} status={} body={}", path, response.statusCode(),
                 responseBody.length() > 500 ? responseBody.substring(0, 500) : responseBody);
         return responseBody;
     }
 
-    private static String sha256(String input) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hash) sb.append(String.format("%02x", b));
-            return sb.toString();
-        } catch (Exception e) {
-            throw new RuntimeException("SHA-256 hashing failed", e);
-        }
+    private String xtsGet(String path, String token) throws Exception {
+        HttpClient client = buildClient();
+        HttpRequest request = baseRequest(path, token)
+                .GET()
+                .build();
+
+        log.info("MOFSL-XTS HTTP GET: {}", path);
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        String responseBody = response.body();
+        log.info("MOFSL-XTS HTTP response: {} status={} body={}", path, response.statusCode(),
+                responseBody.length() > 500 ? responseBody.substring(0, 500) : responseBody);
+        return responseBody;
+    }
+
+    private String xtsDelete(String path, String token) throws Exception {
+        HttpClient client = buildClient();
+        HttpRequest request = baseRequest(path, token)
+                .DELETE()
+                .build();
+
+        log.info("MOFSL-XTS HTTP DELETE: {}", path);
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        String responseBody = response.body();
+        log.info("MOFSL-XTS HTTP response: {} status={} body={}", path, response.statusCode(),
+                responseBody.length() > 500 ? responseBody.substring(0, 500) : responseBody);
+        return responseBody;
     }
 }
