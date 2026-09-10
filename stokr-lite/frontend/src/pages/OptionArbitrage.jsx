@@ -2153,7 +2153,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
-  const allUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+  const allUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'];
 
   const sortedOpps = [...filteredByUnderlying].sort((a, b) => {
     let va, vb;
@@ -2260,7 +2260,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
           ))}
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -2496,7 +2496,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const boxPnlMap = boxLivePnlRes?.pnlMap || {};
   const boxStatusMap = boxLivePnlRes?.statusMap || {};
 
-  const boxUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+  const boxUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'];
   const boxStats = useMemo(() => {
     return boxUnds.map(u => {
       const items = allOpps.filter(o => o.underlying === u);
@@ -2592,7 +2592,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
         </div>
 
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -2780,7 +2780,7 @@ function BoxNearMissPanel() {
           <p className="text-xs text-slate-500">{nearMisses.length} combos within {Math.round(maxGapPct * 100)}% of width of becoming real arbitrage, sorted by closest gap first</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => setUnderlying(u)}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -2972,7 +2972,7 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
           <p className="text-xs text-slate-500">{sortedOpps.length} signals shown{totalHistory > 0 ? ` of ${totalHistory.toLocaleString('en-IN')} total today` : ''} — model-free convexity bound (spread price vs strike width), no interest-rate or futures assumption</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -3255,7 +3255,7 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
           <p className="text-xs text-slate-500">{candidates.length} candidates — cost ≤ {Math.round(maxCostRatio * 100)}% of width, sorted by model POP (highest first)</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setAutoSelected(false); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -4127,7 +4127,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
           <p className="text-xs text-slate-500">{sortedOpps.length} signals shown{totalHistory > 0 ? ` of ${totalHistory.toLocaleString('en-IN')} total today` : ''} — model-free convexity bound (0 ≤ price ≤ width), no interest-rate or futures assumption</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-fuchsia-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -4566,7 +4566,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
           <p className="text-xs text-slate-500">{candidates.length} candidates — cost ≤ {Math.round(maxCostRatio * 100)}% of width, sorted by model POP (highest first)</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setAutoSelected(false); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -4975,7 +4975,7 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
           <p className="text-xs text-slate-500">{sortedOpps.length} signals shown{totalHistory > 0 ? ` of ${totalHistory.toLocaleString('en-IN')} total today` : ''} — model-free convexity bound (0 ≤ price ≤ width), same family as Box/Vertical/Butterfly. Not the same as Iron Condor (a real-risk premium-selling strategy).</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -5264,7 +5264,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
           <p className="text-xs text-slate-500">{candidates.length} candidates — cost ≤ {Math.round(maxCostRatio * 100)}% of width, sorted by model POP (highest first)</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setAutoSelected(false); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -5598,7 +5598,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
   const icPnlMap = icLivePnlRes?.pnlMap || {};
   const icStatusMap = icLivePnlRes?.statusMap || {};
 
-  const icUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+  const icUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'];
   const icStats = useMemo(() => {
     return icUnds.map(u => {
       const items = allOpps.filter(o => o.underlying === u);
@@ -5711,7 +5711,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
         </div>
 
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
@@ -6069,7 +6069,7 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
         </div>
 
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button
               key={u}
               onClick={() => setUnderlying(u)}
@@ -6173,7 +6173,7 @@ function SyntheticArbView({ handleExecuteInline, executionBroker }) {
           <p className="text-[10px] text-slate-500">Exploits Put-Call Parity: when Synthetic Futures Price != Actual Futures Price</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button
               key={u}
               onClick={() => setUnderlying(u)}
@@ -6295,7 +6295,7 @@ function IVMonitorView() {
     refetchInterval: 60000
   });
 
-  const underlyings = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+  const underlyings = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'];
 
   const getRegimeColor = (regime) => {
     if (regime === 'LOW') return 'bg-emerald-100 text-emerald-700 border-emerald-300';
@@ -6458,7 +6458,7 @@ function VolSurfaceView() {
           <p className="text-[10px] text-slate-500">IV smile across strikes - detect skew anomalies and mispriced options</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
             <button
               key={u}
               onClick={() => setUnderlying(u)}
@@ -6667,7 +6667,7 @@ function PaperTradesView() {
             ))}
           </div>
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
               <button key={u} onClick={() => setUnderlyingFilter(u)}
                 className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${underlyingFilter === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
                 {u === 'ALL' ? 'ALL' : u}
@@ -6894,7 +6894,7 @@ function CandidateHistoryPanel({ strategyType, label }) {
               </div>
             )}
             <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl">
-              {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+              {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
                 <button key={u} onClick={() => setUnderlyingFilter(u)}
                   className={`px-2 py-0.5 rounded-lg text-xs font-bold transition ${underlyingFilter === u ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
                   {u}
@@ -7536,7 +7536,7 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
       </div>
 
       {subTab === 'history' ? (
-        <ErrorBoundary><HistoryView lockedStrategy={null} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} underlyings={['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY']} /></ErrorBoundary>
+        <ErrorBoundary><HistoryView lockedStrategy={null} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} underlyings={['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX']} /></ErrorBoundary>
       ) : (
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -7546,7 +7546,7 @@ function TopPicksView({ executionBroker, handleExecuteInline }) {
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(u => (
               <button key={u} onClick={() => setUnderlying(u)}
                 className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
                 {u}

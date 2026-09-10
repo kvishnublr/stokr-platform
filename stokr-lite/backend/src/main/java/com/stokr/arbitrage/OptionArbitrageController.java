@@ -165,7 +165,7 @@ public class OptionArbitrageController {
             "scannerReady", true,
             "marketOpen", marketOpen,
             "currentTimeIST", nowIST.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")),
-            "underlyings", List.of("NIFTY", "BANKNIFTY", "MIDCPNIFTY", "FINNIFTY"),
+            "underlyings", List.of("NIFTY", "BANKNIFTY", "MIDCPNIFTY", "FINNIFTY", "SENSEX", "BANKEX"),
             "feature", "option-arbitrage"
         ));
     }
@@ -583,7 +583,7 @@ public class OptionArbitrageController {
             ));
         }
         List<String> targets = "ALL".equalsIgnoreCase(underlying)
-            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX")
             : List.of(underlying);
         List<Map<String, Object>> allOpps = new ArrayList<>();
         for (String u : targets) {
@@ -619,16 +619,15 @@ public class OptionArbitrageController {
 
     private List<Map<String, Object>> scanIronCondorForUnderlying(String underlying) {
         List<Map<String, Object>> results = new ArrayList<>();
-        LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
-        if (expiry == null) return results;
 
         double[] spotFut = null;
         try {
             Map<String, String> spotKeys = Map.of(
                 "NIFTY", "NSE:NIFTY 50", "BANKNIFTY", "NSE:NIFTY BANK",
-                "MIDCPNIFTY", "NSE:NIFTY MID SELECT", "FINNIFTY", "NSE:NIFTY FIN SERVICE"
+                "MIDCPNIFTY", "NSE:NIFTY MID SELECT", "FINNIFTY", "NSE:NIFTY FIN SERVICE",
+                "SENSEX", "BSE:SENSEX", "BANKEX", "BSE:BANKEX"
             );
-            String spotKey = spotKeys.getOrDefault(underlying, "NSE:NIFTY 50");
+            String spotKey = spotKeys.getOrDefault(underlying.toUpperCase(), "NSE:" + underlying);
             String futKey = FuturesKeyResolver.resolveFuturesKey(underlying, spotFetcher, spotKey);
             spotFut = spotFetcher.getSpotAndFutures(spotKey, futKey);
         } catch (Exception e) { return results; }
@@ -638,99 +637,106 @@ public class OptionArbitrageController {
         int atmStrike = (int) (Math.round(spot / step) * step);
         int lotSize = OptionChainService.getLotSize(underlying);
 
-        List<Integer> strikes = new ArrayList<>();
-        for (int i = -12; i <= 12; i++) strikes.add(atmStrike + i * step);
+        // Scan both weekly (NIFTY only) and monthly expiries
+        List<LocalDate> expiries = java.util.stream.Stream.of(
+                optionChainService.getWeeklyExpiryDate(underlying),
+                optionChainService.getMonthlyExpiryDate(underlying)
+            ).filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.toList());
+        if (expiries.isEmpty()) return results;
 
-        List<String> instruments = new ArrayList<>();
-        for (int s : strikes) {
-            instruments.add(optionChainService.buildNfoSymbol(underlying, expiry, s, "CE"));
-            instruments.add(optionChainService.buildNfoSymbol(underlying, expiry, s, "PE"));
-        }
-        Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
+        for (LocalDate expiry : expiries) {
+            List<Integer> strikes = new ArrayList<>();
+            for (int i = -12; i <= 12; i++) strikes.add(atmStrike + i * step);
 
-        for (int wingWidth = 1; wingWidth <= 8; wingWidth++) {
-            int putSell = atmStrike - wingWidth * step;
-            int callSell = atmStrike + wingWidth * step;
-            int putBuy = putSell - step;
-            int callBuy = callSell + step;
+            List<String> instruments = new ArrayList<>();
+            for (int s : strikes) {
+                instruments.add(optionChainService.buildNfoSymbol(underlying, expiry, s, "CE"));
+                instruments.add(optionChainService.buildNfoSymbol(underlying, expiry, s, "PE"));
+            }
+            Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
-            String psKey = optionChainService.buildNfoSymbol(underlying, expiry, putSell, "PE");
-            String pbKey = optionChainService.buildNfoSymbol(underlying, expiry, putBuy, "PE");
-            String csKey = optionChainService.buildNfoSymbol(underlying, expiry, callSell, "CE");
-            String cbKey = optionChainService.buildNfoSymbol(underlying, expiry, callBuy, "CE");
+            for (int wingWidth = 1; wingWidth <= 8; wingWidth++) {
+                int putSell = atmStrike - wingWidth * step;
+                int callSell = atmStrike + wingWidth * step;
+                int putBuy = putSell - step;
+                int callBuy = callSell + step;
 
-            OptionChainService.OptionQuote ps = quotes.get(psKey);
-            OptionChainService.OptionQuote pb = quotes.get(pbKey);
-            OptionChainService.OptionQuote cs = quotes.get(csKey);
-            OptionChainService.OptionQuote cb = quotes.get(cbKey);
-            if (ps == null || pb == null || cs == null || cb == null) continue;
+                String psKey = optionChainService.buildNfoSymbol(underlying, expiry, putSell, "PE");
+                String pbKey = optionChainService.buildNfoSymbol(underlying, expiry, putBuy, "PE");
+                String csKey = optionChainService.buildNfoSymbol(underlying, expiry, callSell, "CE");
+                String cbKey = optionChainService.buildNfoSymbol(underlying, expiry, callBuy, "CE");
 
-            double psBid = ps.bid > 0 ? ps.bid : ps.lastPrice;
-            double pbAsk = pb.ask > 0 ? pb.ask : pb.lastPrice;
-            double csBid = cs.bid > 0 ? cs.bid : cs.lastPrice;
-            double cbAsk = cb.ask > 0 ? cb.ask : cb.lastPrice;
-            if (psBid <= 0 || pbAsk <= 0 || csBid <= 0 || cbAsk <= 0) continue;
+                OptionChainService.OptionQuote ps = quotes.get(psKey);
+                OptionChainService.OptionQuote pb = quotes.get(pbKey);
+                OptionChainService.OptionQuote cs = quotes.get(csKey);
+                OptionChainService.OptionQuote cb = quotes.get(cbKey);
+                if (ps == null || pb == null || cs == null || cb == null) continue;
 
-            double credit = (psBid - pbAsk) + (csBid - cbAsk);
-            double maxLoss = (double) step - credit;
-            if (maxLoss <= 0) continue;
-            double riskReward = credit / maxLoss;
+                double psBid = ps.bid > 0 ? ps.bid : ps.lastPrice;
+                double pbAsk = pb.ask > 0 ? pb.ask : pb.lastPrice;
+                double csBid = cs.bid > 0 ? cs.bid : cs.lastPrice;
+                double cbAsk = cb.ask > 0 ? cb.ask : cb.lastPrice;
+                if (psBid <= 0 || pbAsk <= 0 || csBid <= 0 || cbAsk <= 0) continue;
 
-            // Real fee schedule (STT/brokerage/exchange/SEBI/GST/stamp) instead of a flat
-            // guess -- was previously a fictional flat Rs 200 regardless of premium/lot size.
-            double sttPutSell = psBid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
-            double sttPutBuy = pbAsk * lotSize * ArbitrageCosts.STT_OPTION_BUY;
-            double sttCallSell = csBid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
-            double sttCallBuy = cbAsk * lotSize * ArbitrageCosts.STT_OPTION_BUY;
-            double stt = sttPutSell + sttPutBuy + sttCallSell + sttCallBuy;
-            double brokerage = ArbitrageCosts.PER_LEG_BROKERAGE * 4;
-            double turnover = (psBid + pbAsk + csBid + cbAsk) * lotSize;
-            double exchange = turnover * ArbitrageCosts.EXCHANGE_RATE;
-            double sebi = turnover * ArbitrageCosts.SEBI_RATE;
-            double gst = (brokerage + exchange + sebi) * ArbitrageCosts.GST_RATE;
-            double stamp = turnover * ArbitrageCosts.STAMP_RATE;
-            double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
-            double netEdge = credit * lotSize - totalCosts;
+                double credit = (psBid - pbAsk) + (csBid - cbAsk);
+                double maxLoss = (double) step - credit;
+                if (maxLoss <= 0) continue;
+                double riskReward = credit / maxLoss;
 
-            if (riskReward >= 0.2 && netEdge > 0) {
-                Map<String, Object> opp = new LinkedHashMap<>();
-                
-                double width = putSell - putBuy; // Wing width
-                double widthMultiplier = width / step;
-                String riskProfile = "HIGH";
-                if (widthMultiplier >= 4) {
-                    riskProfile = "LOW";
-                } else if (widthMultiplier >= 2) {
-                    riskProfile = "MEDIUM";
+                double sttPutSell = psBid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
+                double sttPutBuy = pbAsk * lotSize * ArbitrageCosts.STT_OPTION_BUY;
+                double sttCallSell = csBid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
+                double sttCallBuy = cbAsk * lotSize * ArbitrageCosts.STT_OPTION_BUY;
+                double stt = sttPutSell + sttPutBuy + sttCallSell + sttCallBuy;
+                double brokerage = ArbitrageCosts.PER_LEG_BROKERAGE * 4;
+                double turnover = (psBid + pbAsk + csBid + cbAsk) * lotSize;
+                double exchange = turnover * ArbitrageCosts.EXCHANGE_RATE;
+                double sebi = turnover * ArbitrageCosts.SEBI_RATE;
+                double gst = (brokerage + exchange + sebi) * ArbitrageCosts.GST_RATE;
+                double stamp = turnover * ArbitrageCosts.STAMP_RATE;
+                double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
+                double netEdge = credit * lotSize - totalCosts;
+
+                if (riskReward >= 0.2 && netEdge > 0) {
+                    Map<String, Object> opp = new LinkedHashMap<>();
+
+                    double width = putSell - putBuy;
+                    double widthMultiplier = width / step;
+                    String riskProfile = "HIGH";
+                    if (widthMultiplier >= 4) {
+                        riskProfile = "LOW";
+                    } else if (widthMultiplier >= 2) {
+                        riskProfile = "MEDIUM";
+                    }
+
+                    double estimatedMargin = 40000.0 * lotSize;
+                    double roiPct = (netEdge / estimatedMargin) * 100.0;
+
+                    opp.put("riskProfile", riskProfile);
+                    opp.put("roiPct", Math.round(roiPct * 100.0) / 100.0);
+                    opp.put("estimatedMargin", estimatedMargin);
+
+                    opp.put("type", "IRON_CONDOR");
+                    opp.put("underlying", underlying);
+                    opp.put("strike", putSell);
+                    opp.put("action", "SELL " + putSell + "PE/" + callSell + "CE | BUY " + putBuy + "PE/" + callBuy + "CE");
+                    opp.put("legs", String.format("SELL %d PE @ %.1f | BUY %d PE @ %.1f | SELL %d CE @ %.1f | BUY %d CE @ %.1f",
+                        putSell, psBid, putBuy, pbAsk, callSell, csBid, callBuy, cbAsk));
+                    opp.put("credit", Math.round(credit * 100.0) / 100.0);
+                    opp.put("maxLoss", Math.round(maxLoss * 100.0) / 100.0);
+                    opp.put("riskReward", Math.round(riskReward * 100.0) / 100.0);
+                    opp.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
+                    opp.put("edgeAfterCosts", Math.round(netEdge * 10.0) / 10.0);
+                    opp.put("expiry", expiry.toString());
+                    opp.put("lotSize", lotSize);
+                    opp.put("spotPrice", spot);
+                    opp.put("wingWidth", wingWidth * step);
+                    opp.put("confidence", Math.min(95, 60 + riskReward * 100));
+                    opp.put("legList", List.of(
+                        ironLeg(putSell, "PE", "SELL", 1, psBid), ironLeg(putBuy, "PE", "BUY", 1, pbAsk),
+                        ironLeg(callSell, "CE", "SELL", 1, csBid), ironLeg(callBuy, "CE", "BUY", 1, cbAsk)));
+                    results.add(opp);
                 }
-                
-                double estimatedMargin = 40000.0 * lotSize;
-                double roiPct = (netEdge / estimatedMargin) * 100.0;
-                
-                opp.put("riskProfile", riskProfile);
-                opp.put("roiPct", Math.round(roiPct * 100.0) / 100.0);
-                opp.put("estimatedMargin", estimatedMargin);
-                
-                opp.put("type", "IRON_CONDOR");
-                opp.put("underlying", underlying);
-                opp.put("strike", putSell);
-                opp.put("action", "SELL " + putSell + "PE/" + callSell + "CE | BUY " + putBuy + "PE/" + callBuy + "CE");
-                opp.put("legs", String.format("SELL %d PE @ %.1f | BUY %d PE @ %.1f | SELL %d CE @ %.1f | BUY %d CE @ %.1f",
-                    putSell, psBid, putBuy, pbAsk, callSell, csBid, callBuy, cbAsk));
-                opp.put("credit", Math.round(credit * 100.0) / 100.0);
-                opp.put("maxLoss", Math.round(maxLoss * 100.0) / 100.0);
-                opp.put("riskReward", Math.round(riskReward * 100.0) / 100.0);
-                opp.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
-                opp.put("edgeAfterCosts", Math.round(netEdge * 10.0) / 10.0);
-                opp.put("expiry", expiry.toString());
-                opp.put("lotSize", lotSize);
-                opp.put("spotPrice", spot);
-                opp.put("wingWidth", wingWidth * step);
-                opp.put("confidence", Math.min(95, 60 + riskReward * 100));
-                opp.put("legList", List.of(
-                    ironLeg(putSell, "PE", "SELL", 1, psBid), ironLeg(putBuy, "PE", "BUY", 1, pbAsk),
-                    ironLeg(callSell, "CE", "SELL", 1, csBid), ironLeg(callBuy, "CE", "BUY", 1, cbAsk)));
-                results.add(opp);
             }
         }
         return results;
@@ -2688,7 +2694,7 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
             });
             java.util.concurrent.CompletableFuture<List<Map<String, Object>>> f6 = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
                 List<Map<String, Object>> ironCondors = new ArrayList<>();
-                List<String> targets = "ALL".equalsIgnoreCase(underlying) ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY") : List.of(underlying);
+                List<String> targets = "ALL".equalsIgnoreCase(underlying) ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX") : List.of(underlying);
                 for (String u : targets) {
                     try {
                         List<Map<String, Object>> res = scanIronCondorForUnderlying(u);
