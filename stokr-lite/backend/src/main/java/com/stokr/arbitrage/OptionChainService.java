@@ -271,7 +271,7 @@ public class OptionChainService {
         return strikes;
     }
 
-    private DayOfWeek getExpiryDayForUnderlying(String underlying) {
+    public DayOfWeek getExpiryDayForUnderlying(String underlying) {
         return switch (underlying.toUpperCase()) {
             case "NIFTY" -> DayOfWeek.TUESDAY;
             case "BANKNIFTY" -> DayOfWeek.WEDNESDAY;

@@ -17,34 +17,16 @@ export default function StrategyBuilder() {
   const [lots, setLots] = useState(1);
   const chainContainerRef = useRef(null);
 
-  // Generate expiry dates: NIFTY = weekly (Thu), others = monthly only
-  const generatedExpiries = useMemo(() => {
-      const expiryDayMap = { NIFTY: 4, BANKNIFTY: 3, FINNIFTY: 2, MIDCPNIFTY: 1, SENSEX: 5, BANKEX: 1 };
-      const targetDay = expiryDayMap[underlying] ?? 4;
-      const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      const expiries = [];
-
-      if (underlying === 'NIFTY') {
-          let current = new Date();
-          while (current.getDay() !== targetDay) current.setDate(current.getDate() + 1);
-          for (let i = 0; i < 6; i++) {
-              expiries.push(fmtDate(current));
-              current = new Date(current);
-              current.setDate(current.getDate() + 7);
-          }
-      } else {
-          // Monthly expiries — last occurrence of target weekday in month
-          let d = new Date();
-          for (let m = 0; m < 4; m++) {
-              const year = d.getFullYear();
-              const month = d.getMonth() + m;
-              const lastDay = new Date(year, month + 1, 0);
-              while (lastDay.getDay() !== targetDay) lastDay.setDate(lastDay.getDate() - 1);
-              if (lastDay >= new Date(new Date().toDateString())) expiries.push(fmtDate(lastDay));
-          }
-      }
-      return expiries;
-  }, [underlying]);
+  // Fetch available expiry dates from backend
+  const { data: availableExpiries } = useQuery({
+    queryKey: ['availableExpiries', underlying],
+    queryFn: async () => {
+      const res = await client.get(`/option-arbitrage/available-expiries?underlying=${underlying}`);
+      return res.data;
+    },
+    staleTime: 60000,
+  });
+  const generatedExpiries = availableExpiries || [];
 
   const { data: chainData, isLoading: chainLoading } = useQuery({
     queryKey: ['optionChain', underlying, expiry],

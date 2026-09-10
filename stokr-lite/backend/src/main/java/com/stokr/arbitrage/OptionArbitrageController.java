@@ -2960,6 +2960,32 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
         ));
     }
 
+    @GetMapping("/available-expiries")
+    public ResponseEntity<List<String>> getAvailableExpiries(
+            @RequestParam(defaultValue = "NIFTY") String underlying) {
+        java.util.TreeSet<String> expiries = new java.util.TreeSet<>();
+        LocalDate weekly = optionChainService.getWeeklyExpiryDate(underlying);
+        LocalDate monthly = optionChainService.getMonthlyExpiryDate(underlying);
+        if (underlying.equalsIgnoreCase("NIFTY") && weekly != null) {
+            LocalDate w = weekly;
+            for (int i = 0; i < 8; i++) {
+                expiries.add(w.toString());
+                w = w.plusWeeks(1);
+            }
+        }
+        if (monthly != null) expiries.add(monthly.toString());
+        // Add next month's monthly expiry too
+        LocalDate nextMonthEnd = LocalDate.now().plusMonths(1).withDayOfMonth(1).plusMonths(1).minusDays(1);
+        java.time.DayOfWeek tgtDay = optionChainService.getExpiryDayForUnderlying(underlying);
+        while (nextMonthEnd.getDayOfWeek() != tgtDay) nextMonthEnd = nextMonthEnd.minusDays(1);
+        expiries.add(nextMonthEnd.toString());
+        // And the month after
+        LocalDate twoMonthEnd = LocalDate.now().plusMonths(2).withDayOfMonth(1).plusMonths(1).minusDays(1);
+        while (twoMonthEnd.getDayOfWeek() != tgtDay) twoMonthEnd = twoMonthEnd.minusDays(1);
+        expiries.add(twoMonthEnd.toString());
+        return ResponseEntity.ok(new java.util.ArrayList<>(expiries));
+    }
+
     @GetMapping("/option-chain")
     public ResponseEntity<Map<String, Object>> getOptionChain(
             @RequestParam(defaultValue = "NIFTY") String underlying,
