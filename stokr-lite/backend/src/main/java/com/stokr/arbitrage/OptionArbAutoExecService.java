@@ -768,8 +768,10 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
     @Scheduled(fixedDelayString = "30000", initialDelay = 30000)
     public synchronized void checkRollover() {
 
+        LocalDate todayIST = LocalDate.now(ZoneId.of("Asia/Kolkata"));
         List<LivePosition> openPositions = positionRepo.findAllOpen().stream()
                 .filter(p -> "OPEN".equals(p.getStatus()))
+                .filter(p -> p.getExpiryDate() == null || !p.getExpiryDate().isBefore(todayIST))
                 .toList();
         if (openPositions.isEmpty()) return;
 
@@ -1965,6 +1967,89 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             result.put("message", detail != null ? detail : "Live order failed");
         }
         return result;
+    }
+
+    @Scheduled(cron = "0 35 15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void closeExpiredPositions() {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        try {
+            List<LivePosition> expired = positionRepo.findOpenExpiredBefore(today);
+            if (expired.isEmpty()) return;
+
+            List<String> symbols = new ArrayList<>();
+            for (LivePosition p : expired) {
+                if (p.getCeSymbol() != null) symbols.add(p.getCeSymbol());
+                if (p.getPeSymbol() != null) symbols.add(p.getPeSymbol());
+                if (p.getFutSymbol() != null) symbols.add(p.getFutSymbol());
+                if (p.getLegs() != null) for (Map<String, Object> leg : p.getLegs()) {
+                    Object sym = leg.get("symbol");
+                    if (sym instanceof String s) symbols.add(s);
+                }
+            }
+            Map<String, OptionChainService.OptionQuote> quotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
+
+            int closed = 0;
+            for (LivePosition pos : expired) {
+                boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
+                double pnl = isMultiLeg ? computeMultiLegPnl(pos, quotes) : computePnl(pos, quotes);
+
+                boolean isPaper = pos.getBroker() == null || "PAPER".equalsIgnoreCase(pos.getBroker());
+                if (!isPaper) {
+                    try {
+                        List<BrokerAccount> accounts = pos.getUserId() != null
+                                ? brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(pos.getUserId(), pos.getBroker(), "ACTIVE")
+                                : List.of();
+                        if (!accounts.isEmpty()) {
+                            BrokerAccount account = accounts.get(0);
+                            BrokerAdapter adapter = brokerService.getAdapter(pos.getBroker());
+                            boolean ok = isMultiLeg ? squareOffMultiLegPosition(account, adapter, pos) : squareOffPosition(account, adapter, pos);
+                            if (!ok) {
+                                addLog("AUTO_EXPIRE", "SQUAREOFF_FAILED", pos.getUnderlying() + " " + pos.getStrike() + " live square-off failed");
+                                continue;
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.error("Auto-expire live close failed for {}: {}", pos.getId(), e.getMessage());
+                        continue;
+                    }
+                }
+
+                pos.setStatus("CLOSED");
+                pos.setExitedAt(LocalDateTime.now());
+                pos.setCurrentPnl(BigDecimal.valueOf(pnl));
+                positionRepo.save(pos);
+
+                if (pos.getOpportunityId() != null) {
+                    oppRepo.findById(pos.getOpportunityId()).ifPresent(opp -> {
+                        opp.setStatus("EXPIRED");
+                        opp.setExitTime(LocalDateTime.now());
+                        opp.setPnlAfterCosts(BigDecimal.valueOf(pnl));
+                        oppRepo.save(opp);
+                    });
+                }
+                closed++;
+            }
+            if (closed > 0) {
+                addLog("AUTO_EXPIRE", "CLOSED", "Auto-closed " + closed + " expired positions");
+                log.info("Auto-expired {} positions with expiry before {}", closed, today);
+            }
+        } catch (Exception e) {
+            log.error("closeExpiredPositions failed: {}", e.getMessage(), e);
+        }
+    }
+
+    @Scheduled(cron = "0 31 15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void closeExpiredOpportunities() {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        try {
+            int updated = oppRepo.expireRunningBefore(today);
+            if (updated > 0) {
+                addLog("AUTO_EXPIRE", "OPPS", "Expired " + updated + " RUNNING opportunities past expiry");
+                log.info("Auto-expired {} RUNNING opportunities with expiry before {}", updated, today);
+            }
+        } catch (Exception e) {
+            log.error("closeExpiredOpportunities failed: {}", e.getMessage());
+        }
     }
 
 }
