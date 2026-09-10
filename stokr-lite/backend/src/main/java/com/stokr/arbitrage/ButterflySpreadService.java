@@ -131,7 +131,7 @@ public class ButterflySpreadService {
             ).filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.toList())) {
 
                 List<Integer> strikes = new ArrayList<>();
-                for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
+                for (int i = -10; i <= 10; i++) strikes.add(atmStrike + i * step);
 
                 List<String> instruments = new ArrayList<>();
                 for (int strike : strikes) {

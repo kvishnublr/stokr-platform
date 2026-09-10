@@ -4450,7 +4450,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
   });
 
   const candidates = data?.candidates || [];
-  const rowKey = (c) => `${c.underlying}-${c.optionType}-${c.k1}-${c.k2}-${c.k3}`;
+  const rowKey = (c) => `${c.underlying}-${c.optionType}-${c.k1}-${c.k2}-${c.k3}-${c.expiryDate}`;
 
   const toggleSort = (col) => { if (sortCol === col) setSortAsc(!sortAsc); else { setSortCol(col); setSortAsc(col === 'strikes' || col === 'underlying'); } };
   const sortIcon = (col) => sortCol === col ? (sortAsc ? ' ▲' : ' ▼') : ' ↕';
@@ -4529,7 +4529,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
 
     return (
       <tr>
-        <td colSpan={16} className="p-0">
+        <td colSpan={13} className="p-0">
           <div className="bg-gradient-to-br from-white via-amber-50/30 to-indigo-50/30 border-t-2 border-amber-200 p-4 space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               <div className="bg-white rounded-xl border border-slate-200 p-2 text-center">
