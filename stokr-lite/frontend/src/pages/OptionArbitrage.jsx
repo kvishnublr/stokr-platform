@@ -1093,6 +1093,75 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo', executionBro
   );
 }
 
+/* Per-position trigger controls: Re-entry, Exit, MIS/NRML product type */
+function PositionTriggersPanel({ positionId }) {
+  const [triggers, setTriggers] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    client.get(`/option-arbitrage/positions/${positionId}/triggers`).then(r => setTriggers(r.data)).catch(() => {});
+  }, [positionId]);
+
+  if (!triggers) return <div className="text-[10px] text-slate-400 py-2">Loading triggers...</div>;
+
+  const update = (field, value) => { setTriggers(prev => ({ ...prev, [field]: value })); setDirty(true); };
+  const save = async () => {
+    setSaving(true);
+    try {
+      await client.put(`/option-arbitrage/positions/${positionId}/triggers`, triggers);
+      setDirty(false);
+    } catch (e) { alert('Failed to save: ' + (e.response?.data?.message || e.message)); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3 mt-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-black text-amber-800 uppercase">Position Triggers</span>
+        {dirty && (
+          <button onClick={save} disabled={saving}
+            className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold rounded-lg shadow-sm transition">
+            {saving ? 'Saving...' : 'Save Triggers'}
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-4 items-end">
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-600 uppercase">Product Type</label>
+          <select value={triggers.reentryProductType || 'NRML'} onChange={e => update('reentryProductType', e.target.value)}
+            className="w-24 px-2 py-1.5 text-xs font-bold border border-slate-300 rounded-lg bg-white outline-none">
+            <option value="NRML">NRML</option>
+            <option value="MIS">MIS</option>
+          </select>
+          <p className="text-[8px] text-slate-400">MIS = Intraday, NRML = Carry</p>
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-600 uppercase">Profit Exit (₹)</label>
+          <input type="number" value={triggers.profitExitTrigger || ''} placeholder="Auto-exit at profit"
+            onChange={e => update('profitExitTrigger', e.target.value ? Number(e.target.value) : null)}
+            className="w-28 px-2 py-1.5 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
+          <p className="text-[8px] text-slate-400">Exit when P&L ≥ this</p>
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-600 uppercase">Loss Re-entry (₹)</label>
+          <input type="number" value={triggers.lossReentryTrigger || ''} placeholder="Re-enter at loss"
+            onChange={e => update('lossReentryTrigger', e.target.value ? Number(e.target.value) : null)}
+            className="w-28 px-2 py-1.5 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
+          <p className="text-[8px] text-slate-400">Average down when loss ≤ this</p>
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-600 uppercase">Max Re-entries</label>
+          <input type="number" value={triggers.maxReentries || 1} min={0} max={10}
+            onChange={e => update('maxReentries', Number(e.target.value))}
+            className="w-16 px-2 py-1.5 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
+          <p className="text-[8px] text-slate-400">Times to re-enter</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* Live Positions Section — standalone, always visible, 2s tick-by-tick refresh */
 function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   const [collapsed, setCollapsed] = useState(!defaultExpanded);
@@ -1342,6 +1411,9 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                       <tr className="bg-fuchsia-50/40 border-b border-fuchsia-100">
                         <td colSpan={17} className="p-3">
                           <DetailedOpportunityExpandedRow item={p} executionBroker={executionBroker} title={`Open Position — ${p.underlying} ${p.action}`} />
+                          {p.status === 'OPEN' && p.opportunityId && (
+                            <PositionTriggersPanel positionId={p.opportunityId} />
+                          )}
                         </td>
                       </tr>
                     )}
