@@ -367,9 +367,16 @@ export default function StrategyBuilder() {
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
                     Go To ATM
                 </button>
-                <div className="text-[10px] text-indigo-600 font-black tracking-widest bg-indigo-50/50 px-3 py-1.5 rounded-lg border border-indigo-100 shadow-sm uppercase">
-                    EXP: {chainData?.expiry || '...'}
-                </div>
+                <select
+                    value={expiry}
+                    onChange={e => { setExpiry(e.target.value); setLegs([]); }}
+                    className="appearance-none text-[10px] text-indigo-600 font-black tracking-widest bg-indigo-50/50 px-3 py-1.5 pr-7 rounded-lg border border-indigo-100 shadow-sm uppercase cursor-pointer outline-none"
+                >
+                    <option value="">EXP: {chainData?.expiry || '...'}</option>
+                    {generatedExpiries.map(exp => (
+                        <option key={exp} value={exp}>{exp}</option>
+                    ))}
+                </select>
             </div>
           </div>
           
