@@ -61,7 +61,7 @@ export default function StrategyBuilder() {
     if (!chainData || !chainData.spotPrice || legs.length === 0) return [];
     
     const spot = chainData.spotPrice;
-    const lotSize = underlying === 'NIFTY' ? 25 : (underlying === 'BANKNIFTY' ? 15 : (underlying === 'FINNIFTY' ? 40 : 50));
+    const lotSize = chainData.lotSize || (underlying === 'NIFTY' ? 75 : (underlying === 'BANKNIFTY' ? 30 : 40));
     const actualLots = Math.max(1, lots);
 
     // Dynamic range based on furthest strikes
@@ -115,7 +115,7 @@ export default function StrategyBuilder() {
     });
 
     let netPremium = 0;
-    const lotSize = underlying === 'NIFTY' ? 25 : (underlying === 'BANKNIFTY' ? 15 : (underlying === 'FINNIFTY' ? 40 : 50));
+    const lotSize = chainData?.lotSize || (underlying === 'NIFTY' ? 75 : (underlying === 'BANKNIFTY' ? 30 : 40));
     legs.forEach(l => {
       const val = l.price * lotSize * Math.max(1, lots) * l.qty;
       if (l.side === 'BUY') netPremium -= val;
@@ -353,12 +353,18 @@ export default function StrategyBuilder() {
           </div>
 
           {chainData && (
-            <div className="bg-indigo-50 border border-indigo-100/50 px-6 py-3 rounded-2xl shadow-[0_4px_15px_rgba(99,102,241,0.1)] flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                 <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_12px_rgba(99,102,241,0.8)]"></div>
-                 <span className="text-[11px] text-indigo-400 uppercase tracking-widest font-black">Spot</span>
+            <div className="flex items-center gap-3">
+              <div className="bg-indigo-50 border border-indigo-100/50 px-6 py-3 rounded-2xl shadow-[0_4px_15px_rgba(99,102,241,0.1)] flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                   <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_12px_rgba(99,102,241,0.8)]"></div>
+                   <span className="text-[11px] text-indigo-400 uppercase tracking-widest font-black">Spot</span>
+                </div>
+                <span className="text-[15px] md:text-lg font-black text-indigo-700">{chainData.spotPrice.toLocaleString()}</span>
               </div>
-              <span className="text-[15px] md:text-lg font-black text-indigo-700">{chainData.spotPrice.toLocaleString()}</span>
+              <div className="bg-slate-50 border border-slate-200 px-4 py-3 rounded-2xl flex items-center gap-2">
+                <span className="text-[10px] text-slate-400 uppercase tracking-widest font-black">Lot</span>
+                <span className="text-sm font-black text-slate-700">{chainData.lotSize || '—'}</span>
+              </div>
             </div>
           )}
         </div>
@@ -387,25 +393,29 @@ export default function StrategyBuilder() {
             <table className="w-full text-left border-collapse">
               <thead className="bg-white/95 backdrop-blur-md sticky top-0 z-20">
                 <tr>
-                  <th colSpan="3" className="py-3 text-center text-[10px] font-black text-emerald-600 tracking-[0.25em] border-b border-slate-100 bg-emerald-50/30">CALLS</th>
+                  <th colSpan="5" className="py-3 text-center text-[10px] font-black text-emerald-600 tracking-[0.25em] border-b border-slate-100 bg-emerald-50/30">CALLS</th>
                   <th className="py-3 text-center text-[10px] font-black text-slate-400 tracking-[0.25em] border-b border-slate-100 bg-white">STRIKE</th>
-                  <th colSpan="3" className="py-3 text-center text-[10px] font-black text-rose-600 tracking-[0.25em] border-b border-slate-100 bg-rose-50/30">PUTS</th>
+                  <th colSpan="5" className="py-3 text-center text-[10px] font-black text-rose-600 tracking-[0.25em] border-b border-slate-100 bg-rose-50/30">PUTS</th>
                 </tr>
                 <tr>
                   <th className="p-2.5 text-center text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 w-12 bg-white/50">OI</th>
+                  <th className="p-1.5 text-right text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">BID</th>
                   <th className="p-2.5 text-right text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">LTP</th>
-                  <th className="p-2.5 text-center text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 w-28 bg-white/50">ACTION</th>
-                  
+                  <th className="p-1.5 text-right text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">ASK</th>
+                  <th className="p-2.5 text-center text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 w-20 bg-white/50">ACTION</th>
+
                   <th className="p-2.5 border-b border-slate-100 bg-slate-50/30"></th>
-                  
-                  <th className="p-2.5 text-center text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 w-28 bg-white/50">ACTION</th>
+
+                  <th className="p-2.5 text-center text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 w-20 bg-white/50">ACTION</th>
+                  <th className="p-1.5 text-left text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">BID</th>
                   <th className="p-2.5 text-left text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">LTP</th>
+                  <th className="p-1.5 text-left text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">ASK</th>
                   <th className="p-2.5 text-center text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 w-12 bg-white/50">OI</th>
                 </tr>
               </thead>
               <tbody>
                 {chainLoading ? (
-                  <tr><td colSpan="7" className="text-center p-20 text-slate-400 text-xs font-black tracking-widest animate-pulse uppercase">Connecting to Feed...</td></tr>
+                  <tr><td colSpan="11" className="text-center p-20 text-slate-400 text-xs font-black tracking-widest animate-pulse uppercase">Connecting to Feed...</td></tr>
                 ) : (
                   chainData?.chain?.map(row => {
                     const spot = chainData.spotPrice;
@@ -416,17 +426,19 @@ export default function StrategyBuilder() {
                     return (
                       <tr key={row.strike} className={`group hover:bg-white transition-all duration-300 ${isAtm ? 'atm-row' : ''}`}>
                         {/* CALLS */}
-                        <td className={`p-2.5 text-center text-[11px] font-bold text-slate-400 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceOi || '-'}</td>
+                        <td className={`p-2.5 text-center text-[11px] font-bold text-slate-400 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceOi ? row.ceOi.toLocaleString() : '-'}</td>
+                        <td className={`p-1.5 text-right text-[11px] font-bold text-emerald-600 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceBid?.toFixed(2) || '-'}</td>
                         <td className={`p-2.5 text-right border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>
                           <span className="text-[13px] font-black text-slate-700">{row.ceLtp?.toFixed(2) || '-'}</span>
                         </td>
+                        <td className={`p-1.5 text-right text-[11px] font-bold text-rose-500 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceAsk?.toFixed(2) || '-'}</td>
                         <td className={`p-1.5 text-center border-b border-slate-100/40 overflow-hidden ${callItm ? 'bg-amber-50/30' : ''}`}>
-                           <div className="flex justify-center gap-1.5 opacity-0 group-hover:opacity-100 translate-x-4 group-hover:translate-x-0 transition-all duration-300">
-                              <button onClick={() => addLeg(row.strike, 'CE', 'BUY', row.ceLtp)} className="w-9 h-7 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-200 text-[11px] font-black hover:bg-emerald-500 hover:text-white hover:border-emerald-500 transition-all shadow-sm">B</button>
-                              <button onClick={() => addLeg(row.strike, 'CE', 'SELL', row.ceLtp)} className="w-9 h-7 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 text-[11px] font-black hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-all shadow-sm">S</button>
+                           <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 translate-x-4 group-hover:translate-x-0 transition-all duration-300">
+                              <button onClick={() => addLeg(row.strike, 'CE', 'BUY', row.ceAsk || row.ceLtp)} title="Buy at Ask" className="w-8 h-6 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] font-black hover:bg-emerald-500 hover:text-white hover:border-emerald-500 transition-all shadow-sm">B</button>
+                              <button onClick={() => addLeg(row.strike, 'CE', 'SELL', row.ceBid || row.ceLtp)} title="Sell at Bid" className="w-8 h-6 rounded-md bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-all shadow-sm">S</button>
                            </div>
                         </td>
-                        
+
                         {/* STRIKE */}
                         <td className={`p-2.5 text-center relative border-b border-slate-100/40 ${isAtm ? 'bg-indigo-50/30' : 'bg-slate-50/20'}`}>
                           {isAtm && (
@@ -436,18 +448,20 @@ export default function StrategyBuilder() {
                             {row.strike}
                           </span>
                         </td>
-                        
+
                         {/* PUTS */}
                         <td className={`p-1.5 text-center border-b border-slate-100/40 overflow-hidden ${putItm ? 'bg-amber-50/30' : ''}`}>
-                           <div className="flex justify-center gap-1.5 opacity-0 group-hover:opacity-100 -translate-x-4 group-hover:translate-x-0 transition-all duration-300">
-                              <button onClick={() => addLeg(row.strike, 'PE', 'BUY', row.peLtp)} className="w-9 h-7 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-200 text-[11px] font-black hover:bg-emerald-500 hover:text-white hover:border-emerald-500 transition-all shadow-sm">B</button>
-                              <button onClick={() => addLeg(row.strike, 'PE', 'SELL', row.peLtp)} className="w-9 h-7 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 text-[11px] font-black hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-all shadow-sm">S</button>
+                           <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 -translate-x-4 group-hover:translate-x-0 transition-all duration-300">
+                              <button onClick={() => addLeg(row.strike, 'PE', 'BUY', row.peAsk || row.peLtp)} title="Buy at Ask" className="w-8 h-6 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] font-black hover:bg-emerald-500 hover:text-white hover:border-emerald-500 transition-all shadow-sm">B</button>
+                              <button onClick={() => addLeg(row.strike, 'PE', 'SELL', row.peBid || row.peLtp)} title="Sell at Bid" className="w-8 h-6 rounded-md bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-all shadow-sm">S</button>
                            </div>
                         </td>
+                        <td className={`p-1.5 text-left text-[11px] font-bold text-emerald-600 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peBid?.toFixed(2) || '-'}</td>
                         <td className={`p-2.5 text-left border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>
                           <span className="text-[13px] font-black text-slate-700">{row.peLtp?.toFixed(2) || '-'}</span>
                         </td>
-                        <td className={`p-2.5 text-center text-[11px] font-bold text-slate-400 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peOi || '-'}</td>
+                        <td className={`p-1.5 text-left text-[11px] font-bold text-rose-500 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peAsk?.toFixed(2) || '-'}</td>
+                        <td className={`p-2.5 text-center text-[11px] font-bold text-slate-400 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peOi ? row.peOi.toLocaleString() : '-'}</td>
                       </tr>
                     );
                   })
@@ -726,49 +740,6 @@ export default function StrategyBuilder() {
         </div>
       )}
 
-      
-      {showDeployModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowDeployModal(false)}></div>
-          <div className="relative w-full max-w-md bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] border border-white/60 overflow-hidden animate-[scale-in_0.2s_ease-out]">
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
-            
-            <form onSubmit={confirmDeploy} className="p-8">
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center border border-indigo-100">
-                  <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-slate-800">Deploy Strategy</h3>
-                  <p className="text-[11px] font-bold text-slate-400">{executionBroker === 'PAPER' ? 'Save as PAPER Trade' : `Execute LIVE via ${executionBroker}`}</p>
-                </div>
-              </div>
-              
-              <div className="mb-8">
-                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Strategy Name</label>
-                <input 
-                  type="text" 
-                  autoFocus
-                  required
-                  value={deployName}
-                  onChange={e => setDeployName(e.target.value)}
-                  className="w-full bg-slate-50 border-2 border-slate-200 text-slate-800 font-bold text-sm rounded-xl px-4 py-3 outline-none focus:border-indigo-400 focus:bg-white transition-all shadow-inner"
-                  placeholder="e.g. My NIFTY Condor..."
-                />
-              </div>
-              
-              <div className="flex items-center justify-end gap-3">
-                <button type="button" onClick={() => setShowDeployModal(false)} className="px-5 py-2.5 rounded-xl font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors">
-                  Cancel
-                </button>
-                <button type="submit" className="px-6 py-2.5 rounded-xl font-black text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/20 active:scale-95 transition-all">
-                  Confirm & Deploy
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
     </div>
   );

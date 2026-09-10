@@ -2916,6 +2916,7 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
             @RequestParam(required = false) String expiry) {
         try {
             LocalDate expiryDate = expiry != null ? LocalDate.parse(expiry) : optionChainService.getWeeklyExpiryDate(underlying);
+            if (expiryDate == null) expiryDate = optionChainService.getMonthlyExpiryDate(underlying);
             int step = OptionChainService.getStrikeStep(underlying);
             
             // Get spot price
@@ -2976,6 +2977,7 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
             result.put("underlying", underlying);
             result.put("expiry", expiryDate.toString());
             result.put("spotPrice", spot);
+            result.put("lotSize", OptionChainService.getLotSize(underlying));
             if (futSym != null && quotes.get(futSym) != null) {
                 result.put("futuresPrice", quotes.get(futSym).lastPrice);
             }

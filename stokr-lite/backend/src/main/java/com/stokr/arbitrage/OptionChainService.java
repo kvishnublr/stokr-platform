@@ -270,7 +270,7 @@ public class OptionChainService {
             case "BANKNIFTY" -> DayOfWeek.WEDNESDAY;
             case "FINNIFTY" -> DayOfWeek.TUESDAY;
             case "MIDCPNIFTY" -> DayOfWeek.MONDAY;
-            default -> DayOfWeek.THURSDAY; // NIFTY — SEBI changed from Thursday to Tuesday
+            default -> DayOfWeek.THURSDAY; // NIFTY weekly expiry
         };
     }
 
