@@ -1099,6 +1099,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   const [closingId, setClosingId] = useState(null);
   const [goLiveId, setGoLiveId] = useState(null);
   const [goLiveConfirm, setGoLiveConfirm] = useState(null);
+  const [goLiveResult, setGoLiveResult] = useState(null); // { posId, type: 'success'|'error', message, detail }
   const [expandedPosId, setExpandedPosId] = useState(null);
   // Defaults to whatever mode the Execution Broker dropdown is currently in, so switching
   // to a live broker doesn't leave old paper positions looking like they might be real --
@@ -1177,14 +1178,26 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   };
   const executeGoLive = async () => {
     if (!goLiveConfirm) return;
-    const { id, broker, lots } = goLiveConfirm;
+    const { id, broker, lots, underlying, strike } = goLiveConfirm;
     setGoLiveId(id);
     setGoLiveConfirm(null);
+    setGoLiveResult(null);
     try {
       const res = await client.post(`/option-arbitrage/positions/${id}/go-live`, { broker, lots });
+      const d = res.data;
+      setGoLiveResult({ posId: id, type: 'success', message: d.message || `${underlying} ${strike} entered LIVE via ${broker}` });
       refetch();
+      setTimeout(() => setGoLiveResult(r => r?.posId === id ? null : r), 8000);
     } catch (e) {
-      alert(`Failed: ${e.response?.data?.message || e.message}`);
+      const status = e.response?.status;
+      const msg = e.response?.data?.message || e.message || 'Unknown error';
+      const detail = status === 502 ? 'Backend is restarting (CI deploy in progress). Wait 30s and retry.'
+        : status === 503 ? 'Service temporarily unavailable. The server may be restarting.'
+        : status >= 500 ? `Server error (${status}). Check if the backend is running.`
+        : status === 400 ? msg
+        : `${msg} (HTTP ${status || 'network error'})`;
+      setGoLiveResult({ posId: id, type: 'error', message: msg, detail });
+      setTimeout(() => setGoLiveResult(r => r?.posId === id ? null : r), 15000);
     } finally {
       setGoLiveId(null);
     }
@@ -1382,6 +1395,31 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                           {p.status === 'OPEN' && p.opportunityId && (
                             <PositionTriggersPanel positionId={p.opportunityId} />
                           )}
+                        </td>
+                      </tr>
+                    )}
+                    {goLiveResult && goLiveResult.posId === p.id && (
+                      <tr className={goLiveResult.type === 'success' ? 'bg-emerald-50' : 'bg-red-50'}>
+                        <td colSpan={18} className="px-4 py-2.5">
+                          <div className="flex items-start gap-2">
+                            <span className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-black ${goLiveResult.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`}>
+                              {goLiveResult.type === 'success' ? '✓' : '✕'}
+                            </span>
+                            <div className="min-w-0">
+                              <div className={`text-xs font-black ${goLiveResult.type === 'success' ? 'text-emerald-800' : 'text-red-800'}`}>
+                                {goLiveResult.type === 'success' ? 'Live Trade Entered' : 'Go Live Failed'}
+                              </div>
+                              <div className={`text-[11px] mt-0.5 ${goLiveResult.type === 'success' ? 'text-emerald-700' : 'text-red-700'}`}>
+                                {goLiveResult.message}
+                              </div>
+                              {goLiveResult.detail && goLiveResult.detail !== goLiveResult.message && (
+                                <div className="text-[10px] mt-1 text-red-600 bg-red-100 rounded px-2 py-1 font-mono">
+                                  {goLiveResult.detail}
+                                </div>
+                              )}
+                            </div>
+                            <button onClick={() => setGoLiveResult(null)} className="ml-auto text-slate-400 hover:text-slate-600 text-xs">✕</button>
+                          </div>
                         </td>
                       </tr>
                     )}
