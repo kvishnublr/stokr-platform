@@ -756,6 +756,7 @@ public class OptionArbitrageController {
             List<Map<String, Object>> opps = cashScannerService.scanCashSurge();
             resp.put("opportunities", opps);
             resp.put("count", opps.size());
+            resp.put("totalScanned", cashScannerService.getScannedSymbolCount());
             if (opps.isEmpty()) {
                 resp.put("message", "No delivery/volume surge setups in the latest EOD data.");
             }
@@ -777,6 +778,7 @@ public class OptionArbitrageController {
             List<Map<String, Object>> opps = cashScannerService.scanCashSwing();
             resp.put("opportunities", opps);
             resp.put("count", opps.size());
+            resp.put("totalScanned", cashScannerService.getScannedSymbolCount());
             if (opps.isEmpty()) {
                 resp.put("message", "No RSI 60-68 swing setups with sustained delivery accumulation right now.");
             }
@@ -2262,6 +2264,27 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                 Number strikeNum = (Number) body.get("strike");
                 String action = (String) body.getOrDefault("action", "BUY FUT + SELL CE + BUY PE");
                 String strategyType = (String) body.getOrDefault("strategyType", "BID_PARITY");
+
+                // For multi-leg strategies (CUSTOM_BUILDER etc.), extract strike from legList if not provided
+                Object legListObj = body.get("legList");
+                List<Map<String, Object>> parsedLegList = null;
+                if (legListObj instanceof List<?> ll) {
+                    try {
+                        @SuppressWarnings("unchecked")
+                        List<Map<String, Object>> cast = (List<Map<String, Object>>) ll;
+                        parsedLegList = cast;
+                        if (strikeNum == null && !cast.isEmpty()) {
+                            for (Map<String, Object> leg : cast) {
+                                Object s = leg.get("strike");
+                                if (s instanceof Number n && n.intValue() > 0) {
+                                    strikeNum = n;
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
+
                 String description = (String) body.getOrDefault("description", strategyType + " " + underlying + " " + (strikeNum != null ? strikeNum.intValue() : ""));
                 Number edgeNum = (Number) body.getOrDefault("edgeAfterCosts", 0);
                 Number ceEntry = (Number) body.getOrDefault("ceEntryPrice", 0);
@@ -2290,13 +2313,8 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                     .expiryDate(expiry)
                     .status("RUNNING")
                     .build();
-                Object legListObj = body.get("legList");
-                if (legListObj instanceof List<?> ll) {
-                    try {
-                        @SuppressWarnings("unchecked")
-                        List<Map<String, Object>> cast = (List<Map<String, Object>>) ll;
-                        opp.setLegList(cast);
-                    } catch (Exception ignored) {}
+                if (parsedLegList != null) {
+                    opp.setLegList(parsedLegList);
                 }
                 opp = historyService.getRepository().save(opp);
                 log.info("Created opportunity from scan data: id={}", opp.getId());

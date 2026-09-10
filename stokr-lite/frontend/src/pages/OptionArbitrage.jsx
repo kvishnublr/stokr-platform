@@ -1252,8 +1252,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                   const pnl = p.currentPnl != null ? Number(p.currentPnl) : null;
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
-                  const PAYOFF_CHART_TYPES = ['BUTTERFLY_SPREAD', 'BOX_SPREAD', 'VERTICAL_SPREAD', 'CONDOR_SPREAD', 'IRON_CONDOR', 'CALENDAR_SPREAD'];
-                  const canShowPayoff = PAYOFF_CHART_TYPES.includes(p.strategyType) && Array.isArray(p.legList) && p.legList.length >= 2;
+                  const canShowPayoff = Array.isArray(p.legList) && p.legList.length >= 2;
                   const isExpanded = expandedPosId === p.id;
                   return (
                     <React.Fragment key={p.id}>
