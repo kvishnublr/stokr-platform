@@ -32,9 +32,9 @@ public class OptionArbAutoExecService {
 
     private final List<Map<String, Object>> execLogs = Collections.synchronizedList(new ArrayList<>());
 
-    /** Settings-key prefixes for each of the 6 real auto-executing strategies. */
+    /** Settings-key prefixes for each of the 7 real auto-executing strategies. */
     private static final List<String> STRATEGY_PREFIXES =
-        List.of("bidParity", "box", "vertical", "butterfly", "condor", "ironCondor");
+        List.of("bidParity", "box", "vertical", "butterfly", "condor", "ironCondor", "calendar");
 
     private static String strategyPrefix(String strategyType) {
         String s = strategyType == null ? "" : strategyType.toUpperCase();
@@ -44,6 +44,7 @@ public class OptionArbAutoExecService {
         if (s.contains("BUTTERFLY")) return "butterfly";
         if (s.contains("IRON")) return "ironCondor";
         if (s.contains("CONDOR")) return "condor";
+        if (s.contains("CALENDAR")) return "calendar";
         return "bidParity";
     }
 

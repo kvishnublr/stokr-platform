@@ -28,6 +28,7 @@ public class MultiLegSpreadScheduler {
     private final VerticalSpreadService verticalSpreadService;
     private final ButterflySpreadService butterflySpreadService;
     private final CondorSpreadService condorSpreadService;
+    private final CalendarSpreadService calendarSpreadService;
     private final OptionArbAutoExecService autoExecService;
 
     @Scheduled(cron = "10/20 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
@@ -48,6 +49,11 @@ public class MultiLegSpreadScheduler {
     @Scheduled(cron = "5/20 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
     public void scanCondor() {
         scanAndExec("condor-spread", () -> condorSpreadService.scanCondorSpread("ALL"));
+    }
+
+    @Scheduled(cron = "18/20 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void scanCalendar() {
+        scanAndExec("calendar-spread", () -> calendarSpreadService.scanCalendarSpreads("ALL"));
     }
 
     private void scanAndExec(String label, java.util.function.Supplier<List<Map<String, Object>>> scan) {

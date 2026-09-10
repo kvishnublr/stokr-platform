@@ -24,6 +24,7 @@ public class CalendarSpreadService {
 
     private final OptionChainService optionChainService;
     private final ZerodhaSpotPriceFetcher spotFetcher;
+    private final OptionArbHistoryService historyService;
 
     private static final Map<String, String> SPOT_KEYS = Map.of(
         "NIFTY", "NSE:NIFTY 50",
@@ -33,9 +34,11 @@ public class CalendarSpreadService {
     );
 
     public CalendarSpreadService(OptionChainService optionChainService,
-                                  ZerodhaSpotPriceFetcher spotFetcher) {
+                                  ZerodhaSpotPriceFetcher spotFetcher,
+                                  OptionArbHistoryService historyService) {
         this.optionChainService = optionChainService;
         this.spotFetcher = spotFetcher;
+        this.historyService = historyService;
     }
 
     public List<Map<String, Object>> scanCalendarSpreads(String underlying) {
@@ -140,11 +143,13 @@ public class CalendarSpreadService {
 
         if (nearIV <= 0 || farIV <= 0) return;
 
-        // Compute Greeks for both legs
-        BlackScholesCalculator.Greeks nearGreeks = BlackScholesCalculator.callGreeks(
-            spot, strike, nearYears, RISK_FREE_RATE, nearIV);
-        BlackScholesCalculator.Greeks farGreeks = BlackScholesCalculator.callGreeks(
-            spot, strike, farYears, RISK_FREE_RATE, farIV);
+        // Compute Greeks for both legs (use putGreeks for PE options)
+        BlackScholesCalculator.Greeks nearGreeks = isCall
+            ? BlackScholesCalculator.callGreeks(spot, strike, nearYears, RISK_FREE_RATE, nearIV)
+            : BlackScholesCalculator.putGreeks(spot, strike, nearYears, RISK_FREE_RATE, nearIV);
+        BlackScholesCalculator.Greeks farGreeks = isCall
+            ? BlackScholesCalculator.callGreeks(spot, strike, farYears, RISK_FREE_RATE, farIV)
+            : BlackScholesCalculator.putGreeks(spot, strike, farYears, RISK_FREE_RATE, farIV);
 
         // Net theta = short near theta (positive, collecting) - long far theta (negative, paying)
         // BlackScholes theta is negative for long options, so:
@@ -194,6 +199,11 @@ public class CalendarSpreadService {
         opp.put("farTheta", round2(farTheta));
         opp.put("thetaDiff", round2(thetaDiff));
         opp.put("thetaDiffRs", round2(thetaDiffRs));
+        // Expected total theta income over near-expiry DTE minus transaction costs
+        double expectedEdge = thetaDiffRs * nearDte - txnCost;
+        opp.put("edgePoints", round2(thetaDiff * nearDte));
+        opp.put("edgeAfterCosts", round2(expectedEdge));
+        opp.put("expiryDate", nearExpiry.toString());
         opp.put("maxLoss", round2(totalCost));
         opp.put("lotSize", lotSize);
         opp.put("spotPrice", round2(spot));
