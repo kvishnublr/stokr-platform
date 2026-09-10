@@ -604,7 +604,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
         if (!Boolean.TRUE.equals(settings.get("enabled"))) return;
 
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
+        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 29))) return;
 
         String broker = (String) settings.getOrDefault("broker", "NAVIA");
         if ("PAPER".equalsIgnoreCase(broker) || "PAPER".equalsIgnoreCase(mode)) {

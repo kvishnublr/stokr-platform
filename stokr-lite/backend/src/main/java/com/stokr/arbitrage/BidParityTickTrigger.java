@@ -43,6 +43,7 @@ public class BidParityTickTrigger {
     );
 
     private final BidParityService bidParityService;
+    private final OptionArbAutoExecService autoExecService;
     private final OptionChainService optionChainService;
     private final ZerodhaSpotPriceFetcher spotPriceFetcher;
     private final KiteInstrumentTokenCache tokenCache;
@@ -56,12 +57,14 @@ public class BidParityTickTrigger {
         return t;
     });
 
-    public BidParityTickTrigger(BidParityService bidParityService,
+    public BidParityTickTrigger(@org.springframework.context.annotation.Lazy BidParityService bidParityService,
+                                 OptionArbAutoExecService autoExecService,
                                  OptionChainService optionChainService,
                                  ZerodhaSpotPriceFetcher spotPriceFetcher,
                                  KiteInstrumentTokenCache tokenCache,
                                  KiteTickWebSocketClient tickClient) {
         this.bidParityService = bidParityService;
+        this.autoExecService = autoExecService;
         this.optionChainService = optionChainService;
         this.spotPriceFetcher = spotPriceFetcher;
         this.tokenCache = tokenCache;
@@ -142,7 +145,11 @@ public class BidParityTickTrigger {
             try {
                 LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
                 if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30))) return;
-                bidParityService.scanBidParitySingle(underlying);
+                java.util.List<java.util.Map<String, Object>> results = bidParityService.scanBidParitySingle(underlying);
+                if (!results.isEmpty()) {
+                    try { autoExecService.evaluateAndExecuteFromMaps(results); }
+                    catch (Exception ex) { log.debug("Auto-exec from tick scan failed for {}: {}", underlying, ex.getMessage()); }
+                }
             } catch (Exception e) {
                 log.debug("Tick-triggered bid parity scan failed for {}: {}", underlying, e.getMessage());
             }

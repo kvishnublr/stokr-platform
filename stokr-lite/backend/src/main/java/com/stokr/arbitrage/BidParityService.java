@@ -19,6 +19,7 @@ public class BidParityService {
     private final OptionChainService optionChainService;
     private final OptionArbHistoryService historyService;
     private final ZerodhaSpotPriceFetcher spotPriceFetcher;
+    private final OptionArbAutoExecService autoExecService;
 
     private static final double RISK_FREE_RATE = 0.065;
     private static final double MIN_PARITY_DEVIATION_BID = 1.5;
@@ -60,10 +61,12 @@ public class BidParityService {
 
     public BidParityService(OptionChainService optionChainService,
                             OptionArbHistoryService historyService,
-                            ZerodhaSpotPriceFetcher spotPriceFetcher) {
+                            ZerodhaSpotPriceFetcher spotPriceFetcher,
+                            @org.springframework.context.annotation.Lazy OptionArbAutoExecService autoExecService) {
         this.optionChainService = optionChainService;
         this.historyService = historyService;
         this.spotPriceFetcher = spotPriceFetcher;
+        this.autoExecService = autoExecService;
     }
 
     /**
@@ -78,7 +81,14 @@ public class BidParityService {
             return;
         }
         try {
-            scanBidParity("ALL");
+            List<Map<String, Object>> results = scanBidParity("ALL");
+            if (!results.isEmpty()) {
+                try {
+                    autoExecService.evaluateAndExecuteFromMaps(results);
+                } catch (Exception e) {
+                    log.error("Auto-exec from scheduled bid parity scan failed: {}", e.getMessage());
+                }
+            }
         } catch (Exception e) {
             log.error("Scheduled bid parity scan failed: {}", e.getMessage(), e);
         }
