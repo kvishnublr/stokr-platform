@@ -17,32 +17,32 @@ export default function StrategyBuilder() {
   const [lots, setLots] = useState(1);
   const chainContainerRef = useRef(null);
 
-  // Helper to generate next few expiries
+  // Generate expiry dates: NIFTY = weekly (Thursday), others = monthly only (last Thu/Wed/Tue)
   const generatedExpiries = useMemo(() => {
       const targetDay = underlying === 'NIFTY' ? 4 : (underlying === 'BANKNIFTY' ? 3 : 2);
       const expiries = [];
-      let current = new Date();
-      
-      // If today is expiry and time is past 15:30, move to next day to start search
-      const expiryCutoff = new Date();
-      expiryCutoff.setHours(15, 30, 0, 0);
-      if (new Date() > expiryCutoff && current.getDay() === targetDay) {
-          current.setDate(current.getDate() + 1);
-      }
-      
-      // Advance to next target day
-      while (current.getDay() !== targetDay) {
-          current.setDate(current.getDate() + 1);
-      }
-      
-      for (let i = 0; i < 4; i++) {
-          const yyyy = current.getFullYear();
-          const mm = String(current.getMonth() + 1).padStart(2, '0');
-          const dd = String(current.getDate()).padStart(2, '0');
-          expiries.push(`${yyyy}-${mm}-${dd}`);
-          // Next week
-          current = new Date(current);
-          current.setDate(current.getDate() + 7);
+      const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+      if (underlying === 'NIFTY') {
+          // Weekly expiries on Thursday — show current + next 5 weeks
+          let current = new Date();
+          // Start from today even if past market hours so user can review after-hours
+          while (current.getDay() !== targetDay) current.setDate(current.getDate() + 1);
+          for (let i = 0; i < 6; i++) {
+              expiries.push(fmtDate(current));
+              current = new Date(current);
+              current.setDate(current.getDate() + 7);
+          }
+      } else {
+          // Monthly expiries only (SEBI removed weekly for BANKNIFTY/FINNIFTY)
+          let d = new Date();
+          for (let m = 0; m < 3; m++) {
+              const year = d.getFullYear();
+              const month = d.getMonth() + m;
+              const lastDay = new Date(year, month + 1, 0);
+              while (lastDay.getDay() !== targetDay) lastDay.setDate(lastDay.getDate() - 1);
+              if (lastDay >= new Date(new Date().toDateString())) expiries.push(fmtDate(lastDay));
+          }
       }
       return expiries;
   }, [underlying]);
@@ -427,11 +427,11 @@ export default function StrategyBuilder() {
                       <tr key={row.strike} className={`group hover:bg-white transition-all duration-300 ${isAtm ? 'atm-row' : ''}`}>
                         {/* CALLS */}
                         <td className={`p-2.5 text-center text-[11px] font-bold text-slate-400 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceOi ? row.ceOi.toLocaleString() : '-'}</td>
-                        <td className={`p-1.5 text-right text-[11px] font-bold text-emerald-600 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceBid?.toFixed(2) || '-'}</td>
+                        <td className={`p-1.5 text-right text-[11px] font-bold text-emerald-600 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceBid > 0 ? row.ceBid.toFixed(2) : '-'}</td>
                         <td className={`p-2.5 text-right border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>
                           <span className="text-[13px] font-black text-slate-700">{row.ceLtp?.toFixed(2) || '-'}</span>
                         </td>
-                        <td className={`p-1.5 text-right text-[11px] font-bold text-rose-500 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceAsk?.toFixed(2) || '-'}</td>
+                        <td className={`p-1.5 text-right text-[11px] font-bold text-rose-500 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceAsk > 0 ? row.ceAsk.toFixed(2) : '-'}</td>
                         <td className={`p-1.5 text-center border-b border-slate-100/40 overflow-hidden ${callItm ? 'bg-amber-50/30' : ''}`}>
                            <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 translate-x-4 group-hover:translate-x-0 transition-all duration-300">
                               <button onClick={() => addLeg(row.strike, 'CE', 'BUY', row.ceAsk || row.ceLtp)} title="Buy at Ask" className="w-8 h-6 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] font-black hover:bg-emerald-500 hover:text-white hover:border-emerald-500 transition-all shadow-sm">B</button>
@@ -456,11 +456,11 @@ export default function StrategyBuilder() {
                               <button onClick={() => addLeg(row.strike, 'PE', 'SELL', row.peBid || row.peLtp)} title="Sell at Bid" className="w-8 h-6 rounded-md bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-all shadow-sm">S</button>
                            </div>
                         </td>
-                        <td className={`p-1.5 text-left text-[11px] font-bold text-emerald-600 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peBid?.toFixed(2) || '-'}</td>
+                        <td className={`p-1.5 text-left text-[11px] font-bold text-emerald-600 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peBid > 0 ? row.peBid.toFixed(2) : '-'}</td>
                         <td className={`p-2.5 text-left border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>
                           <span className="text-[13px] font-black text-slate-700">{row.peLtp?.toFixed(2) || '-'}</span>
                         </td>
-                        <td className={`p-1.5 text-left text-[11px] font-bold text-rose-500 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peAsk?.toFixed(2) || '-'}</td>
+                        <td className={`p-1.5 text-left text-[11px] font-bold text-rose-500 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peAsk > 0 ? row.peAsk.toFixed(2) : '-'}</td>
                         <td className={`p-2.5 text-center text-[11px] font-bold text-slate-400 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peOi ? row.peOi.toLocaleString() : '-'}</td>
                       </tr>
                     );
