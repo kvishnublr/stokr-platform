@@ -1252,7 +1252,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                   const pnl = p.currentPnl != null ? Number(p.currentPnl) : null;
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
-                  const canShowPayoff = Array.isArray(p.legList) && p.legList.length >= 2;
+                  const canShowPayoff = Array.isArray(p.legList) && p.legList.length >= 1;
                   const isExpanded = expandedPosId === p.id;
                   return (
                     <React.Fragment key={p.id}>
@@ -3828,7 +3828,7 @@ function ArbitrageSignalPayoffChart({ opp }) {
   const chartRef = useRef(null);
   const [hover, setHover] = useState(null);
 
-  const hasLegs = Array.isArray(opp.legList) && opp.legList.length >= 2;
+  const hasLegs = Array.isArray(opp.legList) && opp.legList.length >= 1;
 
   const lotSize = Number(opp.lotSize) > 0 ? Number(opp.lotSize) : 1;
 
