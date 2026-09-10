@@ -131,11 +131,11 @@ public class OptionChainService {
         List<String> toFetch = new ArrayList<>();
         
         for (String inst : instruments) {
-            String key = inst.startsWith("NFO:") ? inst : "NFO:" + inst;
+            String key = addExchangePrefix(inst);
             CachedQuote cq = globalQuoteCache.get(key);
             if (cq != null && (now - cq.timestamp) < 12000) { // 12 seconds cache
                 quotes.put(key, cq.quote);
-                quotes.put(key.replace("NFO:", ""), cq.quote);
+                quotes.put(stripExchangePrefix(key), cq.quote);
             } else {
                 toFetch.add(inst);
             }
@@ -163,7 +163,7 @@ public class OptionChainService {
                 StringBuilder sb = new StringBuilder();
                 for (int j = 0; j < batch.size(); j++) {
                     if (j > 0) sb.append("&i=");
-                    String item = batch.get(j); sb.append(item.startsWith("NFO:") ? item : "NFO:" + item);
+                    String item = batch.get(j); sb.append(addExchangePrefix(item));
                 }
 
                 String url = "https://api.kite.trade/quote?i=" + sb.toString();
@@ -180,7 +180,7 @@ public class OptionChainService {
                     if (data != null) {
                         for (Map.Entry<String, Object> entry : data.entrySet()) {
                             String rawKey = entry.getKey();
-                            String cleanKey = rawKey.replace("NFO:", "");
+                            String cleanKey = stripExchangePrefix(rawKey);
                             Map<String, Object> qData = (Map<String, Object>) entry.getValue();
 
                             OptionQuote q = new OptionQuote();
@@ -225,7 +225,11 @@ public class OptionChainService {
             case "BANKNIFTY" -> 100;
             case "MIDCPNIFTY" -> 25;
             case "FINNIFTY" -> 50;
-            default -> 100; // NIFTY
+            case "SENSEX" -> 100;
+            case "BANKEX" -> 100;
+            case "NIFTY" -> 50;
+            case "NIFTY NEXT 50", "NIFTYNXT50" -> 100;
+            default -> 100;
         };
     }
 
@@ -247,10 +251,12 @@ public class OptionChainService {
         Integer dynamic = DYNAMIC_LOT_SIZES.get(key);
         if (dynamic != null && dynamic > 0) return dynamic;
         return switch (key) {
-            case "NIFTY" -> 25;
-            case "BANKNIFTY" -> 15;
+            case "NIFTY" -> 75;
+            case "BANKNIFTY" -> 30;
             case "MIDCPNIFTY" -> 50;
-            case "FINNIFTY" -> 25;
+            case "FINNIFTY" -> 40;
+            case "SENSEX" -> 20;
+            case "BANKEX" -> 30;
             default -> 25;
         };
     }
@@ -270,6 +276,8 @@ public class OptionChainService {
             case "BANKNIFTY" -> DayOfWeek.WEDNESDAY;
             case "FINNIFTY" -> DayOfWeek.TUESDAY;
             case "MIDCPNIFTY" -> DayOfWeek.MONDAY;
+            case "SENSEX" -> DayOfWeek.FRIDAY;
+            case "BANKEX" -> DayOfWeek.MONDAY;
             default -> DayOfWeek.THURSDAY; // NIFTY weekly expiry
         };
     }
@@ -380,6 +388,17 @@ public class OptionChainService {
         int yy = expiryDate.getYear() % 100;
         String mon = expiryDate.getMonth().name().substring(0, 3);
         return String.format("%s%02d%sFUT", clean, yy, mon);
+    }
+
+    static String addExchangePrefix(String instrument) {
+        if (instrument.contains(":")) return instrument;
+        if (instrument.startsWith("SENSEX") || instrument.startsWith("BANKEX")) return "BFO:" + instrument;
+        return "NFO:" + instrument;
+    }
+
+    static String stripExchangePrefix(String key) {
+        int idx = key.indexOf(':');
+        return idx >= 0 ? key.substring(idx + 1) : key;
     }
 
     private double calculateParityEdge(double cePrice, double pePrice, double futPrice, int lotSize, double grossEdge) {

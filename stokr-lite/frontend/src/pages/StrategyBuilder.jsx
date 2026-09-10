@@ -17,16 +17,15 @@ export default function StrategyBuilder() {
   const [lots, setLots] = useState(1);
   const chainContainerRef = useRef(null);
 
-  // Generate expiry dates: NIFTY = weekly (Thursday), others = monthly only (last Thu/Wed/Tue)
+  // Generate expiry dates: NIFTY = weekly (Thu), others = monthly only
   const generatedExpiries = useMemo(() => {
-      const targetDay = underlying === 'NIFTY' ? 4 : (underlying === 'BANKNIFTY' ? 3 : 2);
-      const expiries = [];
+      const expiryDayMap = { NIFTY: 4, BANKNIFTY: 3, FINNIFTY: 2, MIDCPNIFTY: 1, SENSEX: 5, BANKEX: 1 };
+      const targetDay = expiryDayMap[underlying] ?? 4;
       const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const expiries = [];
 
       if (underlying === 'NIFTY') {
-          // Weekly expiries on Thursday — show current + next 5 weeks
           let current = new Date();
-          // Start from today even if past market hours so user can review after-hours
           while (current.getDay() !== targetDay) current.setDate(current.getDate() + 1);
           for (let i = 0; i < 6; i++) {
               expiries.push(fmtDate(current));
@@ -34,9 +33,9 @@ export default function StrategyBuilder() {
               current.setDate(current.getDate() + 7);
           }
       } else {
-          // Monthly expiries only (SEBI removed weekly for BANKNIFTY/FINNIFTY)
+          // Monthly expiries — last occurrence of target weekday in month
           let d = new Date();
-          for (let m = 0; m < 3; m++) {
+          for (let m = 0; m < 4; m++) {
               const year = d.getFullYear();
               const month = d.getMonth() + m;
               const lastDay = new Date(year, month + 1, 0);
@@ -61,7 +60,7 @@ export default function StrategyBuilder() {
     if (!chainData || !chainData.spotPrice || legs.length === 0) return [];
     
     const spot = chainData.spotPrice;
-    const lotSize = chainData.lotSize || (underlying === 'NIFTY' ? 75 : (underlying === 'BANKNIFTY' ? 30 : 40));
+    const lotSize = chainData.lotSize || ({ NIFTY: 75, BANKNIFTY: 30, FINNIFTY: 40, MIDCPNIFTY: 50, SENSEX: 20, BANKEX: 30 }[underlying] || 50);
     const actualLots = Math.max(1, lots);
 
     // Dynamic range based on furthest strikes
@@ -345,9 +344,12 @@ export default function StrategyBuilder() {
               onChange={e => { setUnderlying(e.target.value); setExpiry(''); setLegs([]); }}
               className="appearance-none bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-black text-sm px-6 py-3 pr-12 rounded-2xl outline-none cursor-pointer transition-all shadow-[0_4px_15px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.06)]"
             >
-              <option value="NIFTY">NIFTY</option>
-              <option value="BANKNIFTY">BANKNIFTY</option>
-              <option value="FINNIFTY">FINNIFTY</option>
+              <option value="NIFTY">NIFTY 50</option>
+              <option value="BANKNIFTY">BANK NIFTY</option>
+              <option value="FINNIFTY">FIN NIFTY</option>
+              <option value="MIDCPNIFTY">MIDCAP NIFTY</option>
+              <option value="SENSEX">SENSEX</option>
+              <option value="BANKEX">BANKEX</option>
             </select>
             <svg className="w-5 h-5 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7"></path></svg>
           </div>

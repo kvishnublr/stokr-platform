@@ -2919,12 +2919,21 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
             if (expiryDate == null) expiryDate = optionChainService.getMonthlyExpiryDate(underlying);
             int step = OptionChainService.getStrikeStep(underlying);
             
-            // Get spot price
-            Map<String, OptionChainService.OptionQuote> spotQuote = optionChainService.fetchQuotes(List.of(underlying.equals("NIFTY") ? "NSE:NIFTY 50" : (underlying.equals("BANKNIFTY") ? "NSE:NIFTY BANK" : "NSE:" + underlying)));
+            // Get spot price — map underlying to Zerodha quote symbol
+            String spotSymbol = switch (underlying.toUpperCase()) {
+                case "NIFTY" -> "NSE:NIFTY 50";
+                case "BANKNIFTY" -> "NSE:NIFTY BANK";
+                case "FINNIFTY" -> "NSE:NIFTY FIN SERVICE";
+                case "MIDCPNIFTY" -> "NSE:NIFTY MID SELECT";
+                case "SENSEX" -> "BSE:SENSEX";
+                case "BANKEX" -> "BSE:BANKEX";
+                default -> "NSE:" + underlying;
+            };
+            Map<String, OptionChainService.OptionQuote> spotQuote = optionChainService.fetchQuotes(List.of(spotSymbol));
             double spot = spotQuote.values().stream().findFirst().map(q -> q.lastPrice).orElse(0.0);
             if (spot == 0) {
-                // fallback to zerodha spot fetcher logic if needed, but normally fetchQuotes works for indices if token mapped
-                spot = 24000.0; // fallback just in case
+                log.warn("Could not fetch spot price for {} (symbol: {})", underlying, spotSymbol);
+                return ResponseEntity.status(503).body(Map.of("error", "Could not fetch spot price for " + underlying));
             }
             
             // We want +/- 20 strikes from ATM
