@@ -545,17 +545,22 @@ export default function OptionArbitrage() {
   };
 
 
-  // PREFETCH / BACKGROUND SCANNING
-  // The user requested that all scanners run continuously in the background so tabs load instantly.
+  // PREFETCH / BACKGROUND SCANNING — all scanners run continuously so tabs show cached data instantly.
+  // Backend caches responses for 8s, so rapid tab switches don't re-scan. Frontend staleTime=30s means
+  // switching tabs within 30s shows cached data with zero loading state.
   const bgInterval = autoRefresh ? 30000 : false;
-  useQuery({ queryKey: ['bid-parity-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/parity/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
-  useQuery({ queryKey: ['box-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/box-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
-  useQuery({ queryKey: ['vertical-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/vertical-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
-  useQuery({ queryKey: ['butterfly-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/butterfly-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
-  useQuery({ queryKey: ['condor-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/condor-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
-  useQuery({ queryKey: ['iron-condor-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/iron-condor/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
-  useQuery({ queryKey: ['cash-surge-scan'], queryFn: async () => (await client.get('/option-arbitrage/cash-trade/surge-scan')).data, refetchInterval: bgInterval });
-  useQuery({ queryKey: ['cash-momentum-scan'], queryFn: async () => (await client.get('/option-arbitrage/cash-trade/momentum-scan')).data, refetchInterval: bgInterval });
+  const scanFn = (url, params) => async () => (await client.get(url, { params })).data;
+  useQuery({ queryKey: ['bid-parity-scan', 'ALL'], queryFn: scanFn('/option-arbitrage/parity/scan', { underlying: 'ALL' }), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['box-spread-scan', 'ALL'], queryFn: scanFn('/option-arbitrage/box-spread/scan', { underlying: 'ALL' }), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['vertical-spread-scan', 'ALL'], queryFn: scanFn('/option-arbitrage/vertical-spread/scan', { underlying: 'ALL' }), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['butterfly-spread-scan', 'ALL'], queryFn: scanFn('/option-arbitrage/butterfly-spread/scan', { underlying: 'ALL' }), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['condor-spread-scan', 'ALL'], queryFn: scanFn('/option-arbitrage/condor-spread/scan', { underlying: 'ALL' }), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['iron-condor-scan', 'ALL'], queryFn: scanFn('/option-arbitrage/iron-condor/scan', { underlying: 'ALL' }), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['cash-surge-scan'], queryFn: scanFn('/option-arbitrage/cash-trade/surge-scan'), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['cash-momentum-scan'], queryFn: scanFn('/option-arbitrage/cash-trade/momentum-scan'), refetchInterval: bgInterval, staleTime: 25000 });
+  // Prefetch candidates so Candidates tabs load instantly too
+  useQuery({ queryKey: ['butterfly-candidates', 'ALL', 0.35], queryFn: scanFn('/option-arbitrage/butterfly-spread/candidates', { underlying: 'ALL', maxCostRatio: 0.35 }), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['vertical-candidates', 'ALL', 0.35], queryFn: scanFn('/option-arbitrage/vertical-spread/candidates', { underlying: 'ALL', maxCostRatio: 0.35 }), refetchInterval: bgInterval, staleTime: 25000 });
   return (
     <div className="w-full max-w-full space-y-5 font-sans text-slate-900">
       <ToastContainer toasts={toasts} dismiss={dismissToast} />
@@ -2120,7 +2125,8 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       const res = await client.get('/option-arbitrage/bid-parity/scan', { params: { underlying } });
       return res.data;
     },
-    refetchInterval: 15000
+    refetchInterval: 15000,
+    staleTime: 10000
   });
 
   const today = new Date().toLocaleDateString('en-CA');
@@ -2447,6 +2453,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       const res = await client.get('/option-arbitrage/box-spread/scan', { params: { underlying } });
       return res.data;
     },
+    staleTime: 10000,
     refetchInterval: 30000
   });
 
@@ -2861,6 +2868,7 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
       const res = await client.get('/option-arbitrage/vertical-spread/scan', { params: { underlying } });
       return res.data;
     },
+    staleTime: 10000,
     refetchInterval: 30000
   });
 
@@ -3126,7 +3134,8 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
       const res = await client.get('/option-arbitrage/vertical-spread/candidates', { params: { underlying, maxCostRatio } });
       return res.data;
     },
-    refetchInterval: 30000
+    refetchInterval: 30000,
+    staleTime: 15000
   });
 
   const { data: execSettings } = useQuery({
@@ -4012,6 +4021,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
       const res = await client.get('/option-arbitrage/butterfly-spread/scan', { params: { underlying } });
       return res.data;
     },
+    staleTime: 10000,
     refetchInterval: 30000
   });
 
@@ -4429,7 +4439,8 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
       const res = await client.get('/option-arbitrage/butterfly-spread/candidates', { params: { underlying, maxCostRatio } });
       return res.data;
     },
-    refetchInterval: 30000
+    refetchInterval: 30000,
+    staleTime: 15000
   });
 
   const { data: execSettings } = useQuery({
@@ -4765,6 +4776,7 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
       const res = await client.get('/option-arbitrage/condor-spread/scan', { params: { underlying } });
       return res.data;
     },
+    staleTime: 10000,
     refetchInterval: 30000
   });
 
