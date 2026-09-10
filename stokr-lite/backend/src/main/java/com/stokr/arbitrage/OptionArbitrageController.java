@@ -2041,6 +2041,49 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(result);
     }
 
+    @PostMapping("/positions/{positionId}/go-live")
+    public ResponseEntity<Map<String, Object>> goLiveFromPaper(@PathVariable Long positionId,
+                                                                @RequestBody Map<String, Object> body) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        LivePosition pos = livePositionRepo.findById(positionId).orElse(null);
+        if (pos == null) { resp.put("status", "ERROR"); resp.put("message", "Position not found"); return ResponseEntity.badRequest().body(resp); }
+        if (!"OPEN".equals(pos.getStatus())) { resp.put("status", "ERROR"); resp.put("message", "Position is " + pos.getStatus()); return ResponseEntity.badRequest().body(resp); }
+
+        String broker = (String) body.getOrDefault("broker", "ZERODHA");
+        int lots = body.get("lots") instanceof Number n ? n.intValue() : (pos.getLots() != null ? pos.getLots() : 1);
+
+        OptionArbOpportunity opp;
+        if (pos.getOpportunityId() != null) {
+            opp = historyService.getRepository().findById(pos.getOpportunityId()).orElse(null);
+        } else {
+            opp = null;
+        }
+        if (opp == null) {
+            opp = OptionArbOpportunity.builder()
+                .scanTime(LocalDateTime.now())
+                .underlying(pos.getUnderlying())
+                .strike(pos.getStrike())
+                .action(pos.getAction())
+                .strategyType(pos.getStrategyType())
+                .type(pos.getStrategyType())
+                .description(pos.getStrategyType() + " " + pos.getUnderlying() + " " + pos.getStrike())
+                .spotPrice(BigDecimal.ZERO)
+                .futuresPrice(pos.getFutEntryPrice() != null ? pos.getFutEntryPrice() : BigDecimal.ZERO)
+                .ceEntryPrice(pos.getCeEntryPrice() != null ? pos.getCeEntryPrice() : BigDecimal.ZERO)
+                .peEntryPrice(pos.getPeEntryPrice() != null ? pos.getPeEntryPrice() : BigDecimal.ZERO)
+                .edgePoints(pos.getTargetEdge() != null ? pos.getTargetEdge() : BigDecimal.ZERO)
+                .edgeAfterCosts(pos.getTargetEdge() != null ? pos.getTargetEdge() : BigDecimal.ZERO)
+                .expiryDate(pos.getExpiryDate())
+                .status("RUNNING")
+                .build();
+            if (pos.getLegs() != null) opp.setLegList(pos.getLegs());
+            opp = historyService.getRepository().save(opp);
+        }
+
+        Map<String, Object> result = autoExecService.manualExecuteLive(opp, lots, broker);
+        return "ERROR".equals(result.get("status")) ? ResponseEntity.badRequest().body(result) : ResponseEntity.ok(result);
+    }
+
     @GetMapping("/paper-trades")
     public ResponseEntity<Map<String, Object>> getPaperTrades(
             @RequestParam(required = false) String status,

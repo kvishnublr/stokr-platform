@@ -1093,9 +1093,11 @@ function PositionTriggersPanel({ positionId }) {
 
 /* Live Positions Section — standalone, always visible, 2s tick-by-tick refresh */
 function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
+  const { liveBrokerPref } = useGlobalExecutionBroker();
   const [collapsed, setCollapsed] = useState(!defaultExpanded);
   const [rollingId, setRollingId] = useState(null);
   const [closingId, setClosingId] = useState(null);
+  const [goLiveId, setGoLiveId] = useState(null);
   const [expandedPosId, setExpandedPosId] = useState(null);
   // Defaults to whatever mode the Execution Broker dropdown is currently in, so switching
   // to a live broker doesn't leave old paper positions looking like they might be real --
@@ -1164,6 +1166,21 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
       alert(`❌ Failed: ${e.response?.data?.message || e.response?.data?.error || e.message}`);
     } finally {
       setClosingId(null);
+    }
+  };
+
+  const handleGoLive = async (positionId, underlying, strike, lots) => {
+    const broker = liveBrokerPref || 'ZERODHA';
+    if (!window.confirm(`Enter LIVE trade for ${underlying} ${strike} via ${broker}?\n\nThis will place real orders with your broker.`)) return;
+    setGoLiveId(positionId);
+    try {
+      const res = await client.post(`/option-arbitrage/positions/${positionId}/go-live`, { broker, lots: lots || 1 });
+      alert(`LIVE trade entered via ${broker}! ${res.data.message || ''}`);
+      refetch();
+    } catch (e) {
+      alert(`Failed: ${e.response?.data?.message || e.message}`);
+    } finally {
+      setGoLiveId(null);
     }
   };
 
@@ -1240,6 +1257,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                   <th className="px-3 py-2 text-right">Live P&amp;L</th>
                   <th className="px-3 py-2 text-right">Lots</th>
                   <th className="px-3 py-2 text-center">Status</th>
+                  <th className="px-3 py-2 text-center">Go Live</th>
                   <th className="px-3 py-2 text-center">Rollover</th>
                   <th className="px-3 py-2 text-center">Close</th>
                   <th className="px-3 py-2 text-center">Error</th>
@@ -1305,6 +1323,21 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${statusColor(p.status)}`}>{p.status}</span>
                       </td>
                       <td className="px-3 py-2 text-center">
+                        {p.status === 'OPEN' && isPaper(p) && (
+                          <button
+                            disabled={goLiveId === p.id}
+                            onClick={(e) => { e.stopPropagation(); handleGoLive(p.id, p.underlying, p.strike, p.lots); }}
+                            className={`px-2 py-1 rounded-lg text-[9px] font-bold transition border ${
+                              goLiveId === p.id
+                                ? 'bg-slate-200 text-slate-500 border-slate-300 cursor-wait'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400'
+                            }`}
+                          >
+                            {goLiveId === p.id ? '⏳ Entering...' : '🔴 Go Live'}
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-center">
                         {p.status === 'OPEN' && !p.isMultiLeg && (
                           <button
                             disabled={rollingId === p.id}
@@ -1338,7 +1371,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                     </tr>
                     {isExpanded && canShowPayoff && (
                       <tr className="bg-fuchsia-50/40 border-b border-fuchsia-100">
-                        <td colSpan={17} className="p-3">
+                        <td colSpan={18} className="p-3">
                           <DetailedOpportunityExpandedRow item={p} executionBroker={executionBroker} title={`Open Position — ${p.underlying} ${p.action}`} />
                           {p.status === 'OPEN' && p.opportunityId && (
                             <PositionTriggersPanel positionId={p.opportunityId} />
