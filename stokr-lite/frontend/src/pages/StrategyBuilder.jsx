@@ -304,37 +304,45 @@ export default function StrategyBuilder() {
           </div>
         </div>
         
-        <div className="flex items-center gap-4 mt-4 md:mt-0">
-
-          <div className="relative group">
-            <select
-              value={underlying}
-              onChange={e => { setUnderlying(e.target.value); setExpiry(''); setLegs([]); }}
-              className="appearance-none bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-black text-sm px-6 py-3 pr-12 rounded-2xl outline-none cursor-pointer transition-all shadow-[0_4px_15px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.06)]"
-            >
-              <option value="NIFTY">NIFTY 50</option>
-              <option value="BANKNIFTY">BANK NIFTY</option>
-              <option value="FINNIFTY">FIN NIFTY</option>
-              <option value="MIDCPNIFTY">MIDCAP NIFTY</option>
-              <option value="SENSEX">SENSEX</option>
-              <option value="BANKEX">BANKEX</option>
-            </select>
-            <svg className="w-5 h-5 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7"></path></svg>
+        <div className="flex flex-wrap items-center gap-3 mt-4 md:mt-0">
+          {/* Index Tabs */}
+          <div className="flex items-center gap-1 bg-slate-100/80 rounded-2xl p-1">
+            {[
+              {key:'NIFTY', label:'NIFTY'},
+              {key:'BANKNIFTY', label:'BNIFTY'},
+              {key:'FINNIFTY', label:'FINNIFTY'},
+              {key:'MIDCPNIFTY', label:'MIDCAP'},
+              {key:'SENSEX', label:'SENSEX'},
+              {key:'BANKEX', label:'BANKEX'},
+            ].map(idx => (
+              <button key={idx.key} onClick={() => { setUnderlying(idx.key); setExpiry(''); setLegs([]); }}
+                className={`px-3 py-2 rounded-xl text-[11px] font-black tracking-wide transition-all ${
+                  underlying === idx.key
+                    ? 'bg-white text-slate-800 shadow-md'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                }`}
+              >{idx.label}</button>
+            ))}
           </div>
 
+          {/* Live Stats */}
           {chainData && (
-            <div className="flex items-center gap-3">
-              <div className="bg-indigo-50 border border-indigo-100/50 px-6 py-3 rounded-2xl shadow-[0_4px_15px_rgba(99,102,241,0.1)] flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                   <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_12px_rgba(99,102,241,0.8)]"></div>
-                   <span className="text-[11px] text-indigo-400 uppercase tracking-widest font-black">Spot</span>
+            <div className="flex items-center gap-2">
+              <div className="bg-indigo-50 border border-indigo-100/50 px-4 py-2.5 rounded-2xl shadow-[0_4px_15px_rgba(99,102,241,0.1)] flex items-center gap-2">
+                <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(99,102,241,0.8)]"></div>
+                <span className="text-[10px] text-indigo-400 uppercase tracking-widest font-black">Spot</span>
+                <span className="text-sm font-black text-indigo-700">{chainData.spotPrice.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
+              </div>
+              <div className="bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-2xl flex items-center gap-1.5">
+                <span className="text-[9px] text-slate-400 uppercase tracking-widest font-black">Lot</span>
+                <span className="text-xs font-black text-slate-700">{chainData.lotSize || '—'}</span>
+              </div>
+              {chainData.daysToExpiry != null && (
+                <div className="bg-amber-50 border border-amber-200 px-3 py-2.5 rounded-2xl flex items-center gap-1.5">
+                  <span className="text-[9px] text-amber-500 uppercase tracking-widest font-black">DTE</span>
+                  <span className="text-xs font-black text-amber-700">{chainData.daysToExpiry}d</span>
                 </div>
-                <span className="text-[15px] md:text-lg font-black text-indigo-700">{chainData.spotPrice.toLocaleString()}</span>
-              </div>
-              <div className="bg-slate-50 border border-slate-200 px-4 py-3 rounded-2xl flex items-center gap-2">
-                <span className="text-[10px] text-slate-400 uppercase tracking-widest font-black">Lot</span>
-                <span className="text-sm font-black text-slate-700">{chainData.lotSize || '—'}</span>
-              </div>
+              )}
             </div>
           )}
         </div>

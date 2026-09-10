@@ -24,6 +24,8 @@ public class OptionChainService {
     private final ConcurrentHashMap<String, CachedQuote> globalQuoteCache = new ConcurrentHashMap<>();
     private final java.util.Map<String, String> resolvedSymbolCache = new java.util.concurrent.ConcurrentHashMap<>();
 
+    public void clearSymbolCache() { resolvedSymbolCache.clear(); }
+
     private static final Logger log = LoggerFactory.getLogger(OptionChainService.class);
 
     private final ZerodhaTokenManager tokenManager;
@@ -357,14 +359,13 @@ public class OptionChainService {
 
         List<String> list = new ArrayList<>();
         if (isMonthly) {
-            // Monthly format first: NIFTY26SEP23950CE
+            // Monthly: NIFTY26SEP23950CE (3-letter month code, no day)
             list.add(String.format("%s%02d%s%d%s", cleanUnderlying, yy, mon, strike, type));
-            list.add(String.format("%s%02d%s%02d%d%s", cleanUnderlying, yy, mCode, day, strike, type));
         } else {
-            // Weekly format first: NIFTY2691523500CE
+            // Weekly: NIFTY2691523500CE (month-code + day)
             list.add(String.format("%s%02d%s%02d%d%s", cleanUnderlying, yy, mCode, day, strike, type));
+            // Fallback: numeric month + day
             list.add(String.format("%s%02d%d%02d%d%s", cleanUnderlying, yy, month, day, strike, type));
-            list.add(String.format("%s%02d%s%d%s", cleanUnderlying, yy, mon, strike, type));
         }
         return list;
     }
