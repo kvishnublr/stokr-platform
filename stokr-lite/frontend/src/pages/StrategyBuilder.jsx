@@ -342,119 +342,141 @@ export default function StrategyBuilder() {
 
       {/* TWO COLUMNS: Option Chain (Left), Payoff & Basket (Right) */}
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0 relative z-10 items-stretch">
-        
+
         {/* LEFT: Option Chain */}
-        <div className="w-full lg:w-[55%] flex flex-col bg-white/60 backdrop-blur-xl rounded-3xl border border-white shadow-[0_12px_40px_rgba(0,0,0,0.03)] overflow-hidden h-[600px] lg:h-auto">
-          <div className="px-5 pt-4 pb-2 border-b border-slate-100/60 bg-white/40">
+        <div className="w-full lg:w-[60%] flex flex-col bg-white/60 backdrop-blur-xl rounded-3xl border border-white shadow-[0_12px_40px_rgba(0,0,0,0.03)] overflow-hidden h-[600px] lg:h-auto">
+          {/* Expiry Tabs Strip */}
+          <div className="px-5 pt-4 pb-0 bg-white/40">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs md:text-sm font-black text-slate-800 uppercase tracking-[0.2em]">Real-Time Chain</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="text-xs md:text-sm font-black text-slate-800 uppercase tracking-[0.2em]">Option Chain</h3>
+                {chainData && (
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <span className="text-slate-400 font-bold">FUT</span>
+                    <span className="font-black text-slate-700">{chainData.futuresPrice?.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) || '—'}</span>
+                  </div>
+                )}
+              </div>
               <button onClick={scrollToATM} className="text-[10px] font-black tracking-widest text-indigo-500 hover:text-white border border-indigo-200 hover:bg-indigo-500 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm uppercase">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
-                  Go To ATM
+                  ATM
               </button>
             </div>
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
-              <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest mr-1 shrink-0">Expiry</span>
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-3 -mx-1 px-1" style={{scrollbarWidth:'none'}}>
               {generatedExpiries.map((exp, idx) => {
                 const isActive = expiry ? expiry === exp : chainData?.expiry === exp;
                 const d = new Date(exp + 'T00:00:00');
-                const label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-                const isWeekly = idx < 6 && underlying === 'NIFTY';
-                const isMonthly = !isWeekly || (d.getMonth() !== new Date(generatedExpiries[Math.min(idx+1, generatedExpiries.length-1)] + 'T00:00:00').getMonth());
+                const dayLabel = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }).toUpperCase();
+                const now = new Date(); now.setHours(0,0,0,0);
+                const dte = Math.round((d - now) / 86400000);
+                const lastOfMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+                const isMonthly = d.getDate() > lastOfMonth.getDate() - 7;
                 return (
                   <button
                     key={exp}
                     onClick={() => { setExpiry(exp); setLegs([]); }}
-                    className={`shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                    className={`shrink-0 flex flex-col items-center px-3 py-1.5 rounded-xl text-center transition-all cursor-pointer min-w-[70px] ${
                       isActive
-                        ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-[0_4px_12px_rgba(99,102,241,0.35)] scale-105'
-                        : 'bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300'
+                        ? 'bg-gradient-to-b from-indigo-500 to-indigo-600 text-white shadow-[0_4px_16px_rgba(99,102,241,0.4)] scale-[1.02] -translate-y-0.5'
+                        : 'bg-slate-50/80 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-slate-200/60 hover:border-indigo-300'
                     }`}
                   >
-                    {label}
-                    {isMonthly && <span className={`ml-1 text-[8px] font-black uppercase ${isActive ? 'text-indigo-200' : 'text-amber-500'}`}>M</span>}
+                    <span className="text-[11px] font-black leading-tight">{dayLabel}</span>
+                    <span className={`text-[9px] font-bold leading-tight ${isActive ? 'text-indigo-200' : 'text-slate-400'}`}>
+                      {dte}d{isMonthly ? ' · M' : ''}
+                    </span>
                   </button>
                 );
               })}
-              {generatedExpiries.length === 0 && (
-                <span className="text-[10px] text-slate-400 italic">Loading expiries...</span>
+              {generatedExpiries.length === 0 && chainData && (
+                <span className="text-[10px] text-slate-400 italic px-2">Loading expiries...</span>
               )}
             </div>
           </div>
-          
-          <div className="flex-1 overflow-auto light-scrollbar relative" ref={chainContainerRef}>
-            <table className="w-full text-left border-collapse">
+
+          {/* Chain Table */}
+          <div className="flex-1 overflow-auto relative" ref={chainContainerRef} style={{scrollbarWidth:'thin'}}>
+            <table className="w-full text-left border-collapse text-[11px]">
               <thead className="bg-white/95 backdrop-blur-md sticky top-0 z-20">
                 <tr>
-                  <th colSpan="5" className="py-3 text-center text-[10px] font-black text-emerald-600 tracking-[0.25em] border-b border-slate-100 bg-emerald-50/30">CALLS</th>
-                  <th className="py-3 text-center text-[10px] font-black text-slate-400 tracking-[0.25em] border-b border-slate-100 bg-white">STRIKE</th>
-                  <th colSpan="5" className="py-3 text-center text-[10px] font-black text-rose-600 tracking-[0.25em] border-b border-slate-100 bg-rose-50/30">PUTS</th>
+                  <th colSpan="6" className="py-2 text-center text-[9px] font-black text-emerald-600 tracking-[0.3em] border-b border-slate-100 bg-emerald-50/40">CALLS</th>
+                  <th className="py-2 text-center text-[9px] font-black text-slate-400 tracking-[0.3em] border-b border-slate-200 bg-slate-50">STRIKE</th>
+                  <th colSpan="6" className="py-2 text-center text-[9px] font-black text-rose-600 tracking-[0.3em] border-b border-slate-100 bg-rose-50/40">PUTS</th>
                 </tr>
-                <tr>
-                  <th className="p-2.5 text-center text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 w-12 bg-white/50">OI</th>
-                  <th className="p-1.5 text-right text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">BID</th>
-                  <th className="p-2.5 text-right text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">LTP</th>
-                  <th className="p-1.5 text-right text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">ASK</th>
-                  <th className="p-2.5 text-center text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 w-20 bg-white/50">ACTION</th>
-
-                  <th className="p-2.5 border-b border-slate-100 bg-slate-50/30"></th>
-
-                  <th className="p-2.5 text-center text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 w-20 bg-white/50">ACTION</th>
-                  <th className="p-1.5 text-left text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">BID</th>
-                  <th className="p-2.5 text-left text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">LTP</th>
-                  <th className="p-1.5 text-left text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">ASK</th>
-                  <th className="p-2.5 text-center text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 w-12 bg-white/50">OI</th>
+                <tr className="text-[8px] font-black tracking-wider text-slate-400 uppercase">
+                  <th className="px-1.5 py-2 text-center border-b border-slate-100 bg-white/50">OI</th>
+                  <th className="px-1 py-2 text-center border-b border-slate-100 bg-white/50">Vol</th>
+                  <th className="px-1 py-2 text-center border-b border-slate-100 bg-white/50">IV</th>
+                  <th className="px-1.5 py-2 text-right border-b border-slate-100 bg-white/50">LTP</th>
+                  <th className="px-1 py-2 text-right border-b border-slate-100 bg-white/50 text-emerald-500">Bid</th>
+                  <th className="px-1 py-2 text-right border-b border-slate-100 bg-white/50 text-rose-500">Ask</th>
+                  <th className="px-2 py-2 border-b border-slate-200 bg-slate-50"></th>
+                  <th className="px-1 py-2 text-left border-b border-slate-100 bg-white/50 text-emerald-500">Bid</th>
+                  <th className="px-1 py-2 text-left border-b border-slate-100 bg-white/50 text-rose-500">Ask</th>
+                  <th className="px-1.5 py-2 text-left border-b border-slate-100 bg-white/50">LTP</th>
+                  <th className="px-1 py-2 text-center border-b border-slate-100 bg-white/50">IV</th>
+                  <th className="px-1 py-2 text-center border-b border-slate-100 bg-white/50">Vol</th>
+                  <th className="px-1.5 py-2 text-center border-b border-slate-100 bg-white/50">OI</th>
                 </tr>
               </thead>
               <tbody>
                 {chainLoading ? (
-                  <tr><td colSpan="11" className="text-center p-20 text-slate-400 text-xs font-black tracking-widest animate-pulse uppercase">Connecting to Feed...</td></tr>
+                  <tr><td colSpan="13" className="text-center p-20 text-slate-400 text-xs font-black tracking-widest animate-pulse uppercase">Connecting to Feed...</td></tr>
                 ) : (
                   chainData?.chain?.map(row => {
                     const spot = chainData.spotPrice;
-                    const isAtm = Math.abs(row.strike - spot) < 25;
+                    const step = chainData.chain.length > 1 ? Math.abs(chainData.chain[1].strike - chainData.chain[0].strike) : 50;
+                    const isAtm = Math.abs(row.strike - spot) < step * 0.6;
                     const callItm = row.strike < spot;
                     const putItm = row.strike > spot;
+                    const cBg = callItm ? 'bg-emerald-50/20' : '';
+                    const pBg = putItm ? 'bg-rose-50/20' : '';
+                    const fmtOi = (v) => { if (!v) return '-'; if (v >= 10000000) return (v/10000000).toFixed(1)+'Cr'; if (v >= 100000) return (v/100000).toFixed(1)+'L'; if (v >= 1000) return (v/1000).toFixed(1)+'K'; return v.toLocaleString(); };
+                    const fmtVol = fmtOi;
 
                     return (
-                      <tr key={row.strike} className={`group hover:bg-white transition-all duration-300 ${isAtm ? 'atm-row' : ''}`}>
+                      <tr key={row.strike} className={`group transition-colors duration-150 ${isAtm ? 'atm-row' : 'hover:bg-slate-50/60'}`}>
                         {/* CALLS */}
-                        <td className={`p-2.5 text-center text-[11px] font-bold text-slate-400 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceOi ? row.ceOi.toLocaleString() : '-'}</td>
-                        <td className={`p-1.5 text-right text-[11px] font-bold text-emerald-600 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceBid > 0 ? row.ceBid.toFixed(2) : '-'}</td>
-                        <td className={`p-2.5 text-right border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>
-                          <span className="text-[13px] font-black text-slate-700">{row.ceLtp?.toFixed(2) || '-'}</span>
+                        <td className={`px-1.5 py-1.5 text-center font-semibold text-slate-400 border-b border-slate-50 ${cBg}`}>{fmtOi(row.ceOi)}</td>
+                        <td className={`px-1 py-1.5 text-center font-semibold text-slate-400 border-b border-slate-50 ${cBg}`}>{fmtVol(row.ceVol)}</td>
+                        <td className={`px-1 py-1.5 text-center font-bold text-violet-500 border-b border-slate-50 ${cBg}`}>{row.ceIv ? row.ceIv.toFixed(1) : '-'}</td>
+                        <td className={`px-1.5 py-1.5 text-right border-b border-slate-50 ${cBg}`}>
+                          <span className="font-black text-slate-800">{row.ceLtp?.toFixed(2) || '-'}</span>
                         </td>
-                        <td className={`p-1.5 text-right text-[11px] font-bold text-rose-500 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceAsk > 0 ? row.ceAsk.toFixed(2) : '-'}</td>
-                        <td className={`p-1.5 text-center border-b border-slate-100/40 overflow-hidden ${callItm ? 'bg-amber-50/30' : ''}`}>
-                           <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 translate-x-4 group-hover:translate-x-0 transition-all duration-300">
-                              <button onClick={() => addLeg(row.strike, 'CE', 'BUY', row.ceAsk || row.ceLtp)} title="Buy at Ask" className="w-8 h-6 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] font-black hover:bg-emerald-500 hover:text-white hover:border-emerald-500 transition-all shadow-sm">B</button>
-                              <button onClick={() => addLeg(row.strike, 'CE', 'SELL', row.ceBid || row.ceLtp)} title="Sell at Bid" className="w-8 h-6 rounded-md bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-all shadow-sm">S</button>
-                           </div>
+                        <td className={`px-1 py-1.5 text-right font-semibold text-emerald-600 border-b border-slate-50 ${cBg}`}>{row.ceBid > 0 ? row.ceBid.toFixed(2) : '-'}</td>
+                        <td className={`px-1 py-1.5 text-right font-semibold text-rose-500 border-b border-slate-50 ${cBg}`}>
+                          <div className="flex items-center justify-end gap-0.5">
+                            <span>{row.ceAsk > 0 ? row.ceAsk.toFixed(2) : '-'}</span>
+                            <div className="flex gap-px opacity-0 group-hover:opacity-100 transition-opacity ml-1">
+                              <button onClick={() => addLeg(row.strike, 'CE', 'BUY', row.ceAsk || row.ceLtp)} title="Buy CE" className="w-5 h-5 rounded bg-emerald-500 text-white text-[8px] font-black hover:bg-emerald-600 transition-colors flex items-center justify-center">B</button>
+                              <button onClick={() => addLeg(row.strike, 'CE', 'SELL', row.ceBid || row.ceLtp)} title="Sell CE" className="w-5 h-5 rounded bg-rose-500 text-white text-[8px] font-black hover:bg-rose-600 transition-colors flex items-center justify-center">S</button>
+                            </div>
+                          </div>
                         </td>
 
                         {/* STRIKE */}
-                        <td className={`p-2.5 text-center relative border-b border-slate-100/40 ${isAtm ? 'bg-indigo-50/30' : 'bg-slate-50/20'}`}>
-                          {isAtm && (
-                            <div className="absolute inset-0 border-y-2 border-indigo-400 bg-indigo-500/5 pointer-events-none z-0 shadow-[inset_0_0_12px_rgba(99,102,241,0.1)]"></div>
-                          )}
-                          <span className={`relative z-10 text-[13px] font-black ${isAtm ? 'text-indigo-700' : 'text-slate-800'}`}>
-                            {row.strike}
-                          </span>
+                        <td className={`px-2 py-1.5 text-center relative border-b border-slate-100 ${isAtm ? 'bg-indigo-500' : 'bg-slate-50/50'}`}>
+                          {isAtm && <div className="absolute inset-0 bg-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.3)]"></div>}
+                          <span className={`relative z-10 text-[12px] font-black ${isAtm ? 'text-white' : 'text-slate-700'}`}>{row.strike}</span>
                         </td>
 
                         {/* PUTS */}
-                        <td className={`p-1.5 text-center border-b border-slate-100/40 overflow-hidden ${putItm ? 'bg-amber-50/30' : ''}`}>
-                           <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 -translate-x-4 group-hover:translate-x-0 transition-all duration-300">
-                              <button onClick={() => addLeg(row.strike, 'PE', 'BUY', row.peAsk || row.peLtp)} title="Buy at Ask" className="w-8 h-6 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] font-black hover:bg-emerald-500 hover:text-white hover:border-emerald-500 transition-all shadow-sm">B</button>
-                              <button onClick={() => addLeg(row.strike, 'PE', 'SELL', row.peBid || row.peLtp)} title="Sell at Bid" className="w-8 h-6 rounded-md bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-all shadow-sm">S</button>
-                           </div>
+                        <td className={`px-1 py-1.5 text-left font-semibold text-emerald-600 border-b border-slate-50 ${pBg}`}>
+                          <div className="flex items-center gap-0.5">
+                            <div className="flex gap-px opacity-0 group-hover:opacity-100 transition-opacity mr-1">
+                              <button onClick={() => addLeg(row.strike, 'PE', 'BUY', row.peAsk || row.peLtp)} title="Buy PE" className="w-5 h-5 rounded bg-emerald-500 text-white text-[8px] font-black hover:bg-emerald-600 transition-colors flex items-center justify-center">B</button>
+                              <button onClick={() => addLeg(row.strike, 'PE', 'SELL', row.peBid || row.peLtp)} title="Sell PE" className="w-5 h-5 rounded bg-rose-500 text-white text-[8px] font-black hover:bg-rose-600 transition-colors flex items-center justify-center">S</button>
+                            </div>
+                            <span>{row.peBid > 0 ? row.peBid.toFixed(2) : '-'}</span>
+                          </div>
                         </td>
-                        <td className={`p-1.5 text-left text-[11px] font-bold text-emerald-600 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peBid > 0 ? row.peBid.toFixed(2) : '-'}</td>
-                        <td className={`p-2.5 text-left border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>
-                          <span className="text-[13px] font-black text-slate-700">{row.peLtp?.toFixed(2) || '-'}</span>
+                        <td className={`px-1 py-1.5 text-left font-semibold text-rose-500 border-b border-slate-50 ${pBg}`}>{row.peAsk > 0 ? row.peAsk.toFixed(2) : '-'}</td>
+                        <td className={`px-1.5 py-1.5 text-left border-b border-slate-50 ${pBg}`}>
+                          <span className="font-black text-slate-800">{row.peLtp?.toFixed(2) || '-'}</span>
                         </td>
-                        <td className={`p-1.5 text-left text-[11px] font-bold text-rose-500 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peAsk > 0 ? row.peAsk.toFixed(2) : '-'}</td>
-                        <td className={`p-2.5 text-center text-[11px] font-bold text-slate-400 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peOi ? row.peOi.toLocaleString() : '-'}</td>
+                        <td className={`px-1 py-1.5 text-center font-bold text-violet-500 border-b border-slate-50 ${pBg}`}>{row.peIv ? row.peIv.toFixed(1) : '-'}</td>
+                        <td className={`px-1 py-1.5 text-center font-semibold text-slate-400 border-b border-slate-50 ${pBg}`}>{fmtVol(row.peVol)}</td>
+                        <td className={`px-1.5 py-1.5 text-center font-semibold text-slate-400 border-b border-slate-50 ${pBg}`}>{fmtOi(row.peOi)}</td>
                       </tr>
                     );
                   })

@@ -3012,6 +3012,9 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                 return ResponseEntity.status(503).body(Map.of("error", "Could not fetch spot price for " + underlying));
             }
             
+            double daysToExpiry = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), expiryDate);
+            if (daysToExpiry < 1) daysToExpiry = 1;
+
             // We want +/- 20 strikes from ATM
             int atm = OptionChainService.getATMStrike(underlying, spot);
             List<Integer> strikes = new java.util.ArrayList<>();
@@ -3048,12 +3051,18 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                     row.put("ceBid", ceQ.bid);
                     row.put("ceAsk", ceQ.ask);
                     row.put("ceOi", ceQ.openInterest);
+                    row.put("ceVol", ceQ.volume);
+                    double ceIv = computeIV(spot, s, ceQ.lastPrice, daysToExpiry, true);
+                    if (ceIv > 0) row.put("ceIv", Math.round(ceIv * 1000.0) / 10.0);
                 }
                 if (peQ != null) {
                     row.put("peLtp", peQ.lastPrice);
                     row.put("peBid", peQ.bid);
                     row.put("peAsk", peQ.ask);
                     row.put("peOi", peQ.openInterest);
+                    row.put("peVol", peQ.volume);
+                    double peIv = computeIV(spot, s, peQ.lastPrice, daysToExpiry, false);
+                    if (peIv > 0) row.put("peIv", Math.round(peIv * 1000.0) / 10.0);
                 }
                 chain.add(row);
             }
@@ -3062,9 +3071,12 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
             result.put("underlying", underlying);
             result.put("expiry", expiryDate.toString());
             result.put("spotPrice", spot);
+            result.put("atmStrike", atm);
             result.put("lotSize", OptionChainService.getLotSize(underlying));
+            result.put("daysToExpiry", (int) daysToExpiry);
             if (futSym != null && quotes.get(futSym) != null) {
                 result.put("futuresPrice", quotes.get(futSym).lastPrice);
+                result.put("futSymbol", futSym);
             }
             result.put("chain", chain);
             
@@ -3073,5 +3085,42 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
             log.error("Failed to get option chain", e);
             return ResponseEntity.status(500).build();
         }
+    }
+
+    private static double computeIV(double spot, double strike, double price, double daysToExpiry, boolean isCall) {
+        if (price <= 0 || spot <= 0 || daysToExpiry <= 0) return 0;
+        double t = daysToExpiry / 365.0;
+        double intrinsic = isCall ? Math.max(spot - strike, 0) : Math.max(strike - spot, 0);
+        if (price <= intrinsic) return 0;
+        double lo = 0.01, hi = 5.0;
+        for (int i = 0; i < 50; i++) {
+            double mid = (lo + hi) / 2.0;
+            double bsPrice = bsPrice(spot, strike, t, mid, isCall);
+            if (bsPrice > price) hi = mid; else lo = mid;
+            if (Math.abs(bsPrice - price) < 0.01) break;
+        }
+        double iv = (lo + hi) / 2.0;
+        return iv > 0.01 && iv < 4.0 ? iv : 0;
+    }
+
+    private static double bsPrice(double s, double k, double t, double v, boolean isCall) {
+        double d1 = (Math.log(s / k) + 0.5 * v * v * t) / (v * Math.sqrt(t));
+        double d2 = d1 - v * Math.sqrt(t);
+        if (isCall) return s * cdf(d1) - k * cdf(d2);
+        else return k * cdf(-d2) - s * cdf(-d1);
+    }
+
+    private static double cdf(double x) {
+        return 0.5 * (1 + erf(x / Math.sqrt(2)));
+    }
+
+    private static double erf(double x) {
+        double a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429;
+        double p = 0.3275911;
+        double sign = x < 0 ? -1 : 1;
+        x = Math.abs(x);
+        double t = 1.0 / (1.0 + p * x);
+        double y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+        return sign * y;
     }
 }

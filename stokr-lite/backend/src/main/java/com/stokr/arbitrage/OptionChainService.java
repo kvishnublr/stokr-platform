@@ -353,13 +353,19 @@ public class OptionChainService {
 
         String mCode = (month == 10) ? "O" : (month == 11) ? "N" : (month == 12) ? "D" : String.valueOf(month);
 
+        boolean isMonthly = (expiryDate.plusDays(7).getMonthValue() != expiryDate.getMonthValue());
+
         List<String> list = new ArrayList<>();
-        // 1. Monthly format: NIFTY26JUL23950CE
-        list.add(String.format("%s%02d%s%d%s", cleanUnderlying, yy, mon, strike, type));
-        // 2. Weekly format: NSE standard (1-9, O, N, D)
-        list.add(String.format("%s%02d%s%02d%d%s", cleanUnderlying, yy, mCode, day, strike, type));
-        // 3. Fallback math format
-        list.add(String.format("%s%02d%d%02d%d%s", cleanUnderlying, yy, month, day, strike, type));
+        if (isMonthly) {
+            // Monthly format first: NIFTY26SEP23950CE
+            list.add(String.format("%s%02d%s%d%s", cleanUnderlying, yy, mon, strike, type));
+            list.add(String.format("%s%02d%s%02d%d%s", cleanUnderlying, yy, mCode, day, strike, type));
+        } else {
+            // Weekly format first: NIFTY2691523500CE
+            list.add(String.format("%s%02d%s%02d%d%s", cleanUnderlying, yy, mCode, day, strike, type));
+            list.add(String.format("%s%02d%d%02d%d%s", cleanUnderlying, yy, month, day, strike, type));
+            list.add(String.format("%s%02d%s%d%s", cleanUnderlying, yy, mon, strike, type));
+        }
         return list;
     }
 
