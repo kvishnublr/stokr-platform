@@ -23,7 +23,7 @@ public class BoxSpreadService {
     private final OptionArbHistoryService historyService;
     private final ZerodhaSpotPriceFetcher spotPriceFetcher;
 
-    private static final double MIN_BOX_EDGE_AFTER_COSTS = 0.0;
+    private static final double MIN_BOX_EDGE_AFTER_COSTS = 500.0;
 
     public BoxSpreadService(OptionChainService optionChainService,
                             OptionArbHistoryService historyService,
