@@ -1098,6 +1098,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   const [rollingId, setRollingId] = useState(null);
   const [closingId, setClosingId] = useState(null);
   const [goLiveId, setGoLiveId] = useState(null);
+  const [goLiveConfirm, setGoLiveConfirm] = useState(null);
   const [expandedPosId, setExpandedPosId] = useState(null);
   // Defaults to whatever mode the Execution Broker dropdown is currently in, so switching
   // to a live broker doesn't leave old paper positions looking like they might be real --
@@ -1169,13 +1170,18 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
     }
   };
 
-  const handleGoLive = async (positionId, underlying, strike, lots) => {
+  const promptGoLive = (p) => {
     const broker = liveBrokerPref || 'ZERODHA';
-    if (!window.confirm(`Enter LIVE trade for ${underlying} ${strike} via ${broker}?\n\nThis will place real orders with your broker.`)) return;
-    setGoLiveId(positionId);
+    const pnl = p.currentPnl != null ? Number(p.currentPnl) : 0;
+    setGoLiveConfirm({ id: p.id, underlying: p.underlying, strike: p.strike, lots: p.lots || 1, broker, pnl, strategyType: p.strategyType, action: p.action, legList: p.legList });
+  };
+  const executeGoLive = async () => {
+    if (!goLiveConfirm) return;
+    const { id, broker, lots } = goLiveConfirm;
+    setGoLiveId(id);
+    setGoLiveConfirm(null);
     try {
-      const res = await client.post(`/option-arbitrage/positions/${positionId}/go-live`, { broker, lots: lots || 1 });
-      alert(`LIVE trade entered via ${broker}! ${res.data.message || ''}`);
+      const res = await client.post(`/option-arbitrage/positions/${id}/go-live`, { broker, lots });
       refetch();
     } catch (e) {
       alert(`Failed: ${e.response?.data?.message || e.message}`);
@@ -1326,7 +1332,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                         {p.status === 'OPEN' && isPaper(p) && (
                           <button
                             disabled={goLiveId === p.id}
-                            onClick={(e) => { e.stopPropagation(); handleGoLive(p.id, p.underlying, p.strike, p.lots); }}
+                            onClick={(e) => { e.stopPropagation(); promptGoLive(p); }}
                             className={`px-2 py-1 rounded-lg text-[9px] font-bold transition border ${
                               goLiveId === p.id
                                 ? 'bg-slate-200 text-slate-500 border-slate-300 cursor-wait'
@@ -1387,6 +1393,89 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
           </div>
         )}
       </div>
+
+      {/* Go Live Confirmation Modal */}
+      {goLiveConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setGoLiveConfirm(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-[420px] overflow-hidden animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-600 px-5 py-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                  <span className="text-white text-lg">⚡</span>
+                </div>
+                <div>
+                  <h3 className="text-white font-black text-sm">Go Live</h3>
+                  <p className="text-emerald-100 text-[10px] font-medium">Deploy to {goLiveConfirm.broker}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="px-5 py-4 space-y-3">
+              <div className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
+                <div>
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">Underlying</div>
+                  <div className="text-lg font-black text-slate-800">{goLiveConfirm.underlying}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">Strike</div>
+                  <div className="text-lg font-black text-slate-800">{goLiveConfirm.strike}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">Lots</div>
+                  <div className="text-lg font-black text-slate-800">{goLiveConfirm.lots}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-indigo-50 rounded-lg px-3 py-2 border border-indigo-100">
+                  <div className="text-[9px] text-indigo-500 font-bold uppercase">Strategy</div>
+                  <div className="text-xs font-bold text-indigo-700">{STRATEGY_LABELS[goLiveConfirm.strategyType] || goLiveConfirm.strategyType}</div>
+                </div>
+                <div className="bg-violet-50 rounded-lg px-3 py-2 border border-violet-100">
+                  <div className="text-[9px] text-violet-500 font-bold uppercase">Broker</div>
+                  <div className="text-xs font-bold text-violet-700">{goLiveConfirm.broker}</div>
+                </div>
+                <div className={`rounded-lg px-3 py-2 border ${goLiveConfirm.pnl >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
+                  <div className={`text-[9px] font-bold uppercase ${goLiveConfirm.pnl >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>Paper P&L</div>
+                  <div className={`text-xs font-bold ${goLiveConfirm.pnl >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>₹{Math.round(goLiveConfirm.pnl).toLocaleString('en-IN')}</div>
+                </div>
+              </div>
+
+              {goLiveConfirm.legList && goLiveConfirm.legList.length > 0 && (
+                <div className="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                  <div className="text-[9px] text-slate-500 font-bold uppercase mb-1">Legs</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {goLiveConfirm.legList.map((leg, i) => (
+                      <span key={i} className={`px-2 py-0.5 rounded text-[10px] font-bold ${leg.side === 'BUY' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                        {leg.side} {leg.strike}{leg.optionType} @₹{Number(leg.price || 0).toFixed(1)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                <span className="text-amber-500 text-sm">⚠️</span>
+                <p className="text-[10px] text-amber-700 font-medium">This will place <span className="font-black">real orders</span> with {goLiveConfirm.broker}. Margin will be blocked.</p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button onClick={() => setGoLiveConfirm(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition">
+                Cancel
+              </button>
+              <button onClick={executeGoLive}
+                className="px-5 py-2 text-xs font-black text-white bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg hover:from-emerald-600 hover:to-teal-700 shadow-lg shadow-emerald-200 transition">
+                ⚡ Confirm Go Live
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
