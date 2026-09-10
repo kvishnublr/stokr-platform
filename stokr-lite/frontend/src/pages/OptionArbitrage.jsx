@@ -1101,6 +1101,17 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   const [goLiveConfirm, setGoLiveConfirm] = useState(null);
   const [goLiveResult, setGoLiveResult] = useState(null); // { posId, type: 'success'|'error', message, detail }
   const [expandedPosId, setExpandedPosId] = useState(null);
+  const [sortCol, setSortCol] = useState('enteredAt');
+  const [sortDir, setSortDir] = useState('desc');
+  const toggleSort = (col) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir(col === 'enteredAt' ? 'desc' : 'asc'); }
+  };
+  const SortTh = ({ col, children, className = '' }) => (
+    <th className={`px-3 py-2 cursor-pointer select-none hover:bg-slate-100 transition ${className}`} onClick={() => toggleSort(col)}>
+      <span className="inline-flex items-center gap-0.5">{children}{sortCol === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ' ⇅'}</span>
+    </th>
+  );
   // Defaults to whatever mode the Execution Broker dropdown is currently in, so switching
   // to a live broker doesn't leave old paper positions looking like they might be real --
   // "Live Positions" was showing paper trades with no way to tell them apart or filter
@@ -1139,6 +1150,29 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   const positions = brokerFilter === 'ALL' ? allPositions
     : brokerFilter === 'PAPER' ? allPositions.filter(isPaper)
     : allPositions.filter(p => !isPaper(p));
+  const sortedPositions = useMemo(() => {
+    const arr = [...positions];
+    const dir = sortDir === 'asc' ? 1 : -1;
+    arr.sort((a, b) => {
+      let va, vb;
+      switch (sortCol) {
+        case 'enteredAt': va = a.enteredAt || ''; vb = b.enteredAt || ''; break;
+        case 'broker': va = a.broker || 'PAPER'; vb = b.broker || 'PAPER'; break;
+        case 'strategy': va = a.strategyType || ''; vb = b.strategyType || ''; break;
+        case 'underlying': va = a.underlying || ''; vb = b.underlying || ''; break;
+        case 'strike': va = a.strike || 0; vb = b.strike || 0; break;
+        case 'edge': va = a.targetEdge || 0; vb = b.targetEdge || 0; break;
+        case 'edgeProgress': va = a.edgeCaptured || 0; vb = b.edgeCaptured || 0; break;
+        case 'pnl': va = a.currentPnl != null ? Number(a.currentPnl) : 0; vb = b.currentPnl != null ? Number(b.currentPnl) : 0; break;
+        case 'lots': va = a.lots || 0; vb = b.lots || 0; break;
+        case 'status': va = a.status || ''; vb = b.status || ''; break;
+        default: va = a.enteredAt || ''; vb = b.enteredAt || '';
+      }
+      if (typeof va === 'string') return dir * va.localeCompare(vb);
+      return dir * (va - vb);
+    });
+    return arr;
+  }, [positions, sortCol, sortDir]);
   const filteredTotalPnl = positions.reduce((s, p) => s + (p.currentPnl != null ? Number(p.currentPnl) : 0), 0);
   const openPositions = positions.filter(p => p.status === 'OPEN');
 
@@ -1260,22 +1294,22 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
         {!collapsed && positions.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-[11px] text-left">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold text-[10px]">
                 <tr>
-                  <th className="px-3 py-2">Time</th>
-                  <th className="px-3 py-2">Broker</th>
-                  <th className="px-3 py-2">Strategy</th>
-                  <th className="px-3 py-2">Underlying</th>
-                  <th className="px-3 py-2">Strike</th>
+                  <SortTh col="enteredAt">Time</SortTh>
+                  <SortTh col="broker">Broker</SortTh>
+                  <SortTh col="strategy">Strategy</SortTh>
+                  <SortTh col="underlying">Underlying</SortTh>
+                  <SortTh col="strike">Strike</SortTh>
                   <th className="px-3 py-2">Action</th>
                   <th className="px-3 py-2 text-right">CE Entry</th>
                   <th className="px-3 py-2 text-right">PE Entry</th>
                   <th className="px-3 py-2 text-right">FUT Entry</th>
-                  <th className="px-3 py-2 text-right">Edge</th>
-                  <th className="px-3 py-2 text-center">Edge Progress</th>
-                  <th className="px-3 py-2 text-right">Live P&amp;L</th>
-                  <th className="px-3 py-2 text-right">Lots</th>
-                  <th className="px-3 py-2 text-center">Status</th>
+                  <SortTh col="edge" className="text-right">Edge</SortTh>
+                  <SortTh col="edgeProgress" className="text-center">Edge Progress</SortTh>
+                  <SortTh col="pnl" className="text-right">Live P&amp;L</SortTh>
+                  <SortTh col="lots" className="text-right">Lots</SortTh>
+                  <SortTh col="status" className="text-center">Status</SortTh>
                   <th className="px-3 py-2 text-center">Go Live</th>
                   <th className="px-3 py-2 text-center">Rollover</th>
                   <th className="px-3 py-2 text-center">Close</th>
@@ -1283,7 +1317,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {positions.map(p => {
+                {sortedPositions.map(p => {
                   const pnl = p.currentPnl != null ? Number(p.currentPnl) : null;
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
