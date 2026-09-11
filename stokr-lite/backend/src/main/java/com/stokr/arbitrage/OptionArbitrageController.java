@@ -770,6 +770,7 @@ public class OptionArbitrageController {
                     opp.put("maxLoss", Math.round(maxLoss * 100.0) / 100.0);
                     opp.put("riskReward", Math.round(riskReward * 100.0) / 100.0);
                     opp.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
+                    opp.put("edgePoints", Math.round(credit * 100.0) / 100.0);
                     opp.put("edgeAfterCosts", Math.round(netEdge * 10.0) / 10.0);
                     opp.put("expiry", expiry.toString());
                     opp.put("expiryDate", expiry.toString());

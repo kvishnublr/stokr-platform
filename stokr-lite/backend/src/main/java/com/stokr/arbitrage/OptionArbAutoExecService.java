@@ -483,6 +483,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
         long currentOpen = positionRepo.countOpenLive(); 
         for (OptionArbOpportunity opp : newOpps) {
             if (opp.getUnderlying() == null || opp.getEdgeAfterCosts() == null) continue;
+            if (opp.getEdgePoints() == null) continue;
 
             String prefix = strategyPrefix(opp.getStrategyType());
             String key = prefix + capitalize(opp.getUnderlying());
