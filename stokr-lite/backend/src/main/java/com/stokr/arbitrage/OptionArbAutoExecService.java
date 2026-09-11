@@ -1642,7 +1642,14 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             double bid = q.bid > 0 ? q.bid : q.lastPrice;
             double ask = q.ask > 0 ? q.ask : q.lastPrice;
             double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
-            if (q.lastPrice <= 0 || entry <= 0) continue;
+            if (entry <= 0) continue;
+            if (q.lastPrice <= 0 && q.bid <= 0 && q.ask <= 0) {
+                // Expired leg: SELL leg expired worthless = keep full premium, BUY leg = lose full premium
+                double legPnl2 = "BUY".equals(leg.get("side")) ? -entry : entry;
+                int qtyMult2 = leg.get("qty") instanceof Number n2 ? n2.intValue() : 1;
+                pnl += legPnl2 * qtyMult2;
+                continue;
+            }
             int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
             String side = (String) leg.get("side");
             // To close a BUY leg, we must SELL at the BID

@@ -1951,9 +1951,9 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
       action: c.action || 'SELL_FAR_BUY_NEAR',
       cePrice: c.nearPrice || 0,
       pePrice: c.farPrice || 0,
-      edgeAfterCosts: c.edgeAfterCosts || c.spread * 25,
+      edgeAfterCosts: c.edgeAfterCosts || (c.netDebit || 0) * 25,
       confidence: 90,
-      legs: `BUY NEAR (${c.nearSymbol || ''} @ ₹${c.nearPrice}) | SELL FAR (${c.farSymbol || ''} @ ₹${c.farPrice})`
+      legs: `SELL NEAR (${c.nearSymbol || ''} @ ₹${c.nearBid || c.nearPrice}) | BUY FAR (${c.farSymbol || ''} @ ₹${c.farAsk || c.farPrice})`
     }));
 
     return [...opportunities, ...mappedCal, ...(verticalOpportunities || []), ...(butterflyOpportunities || []), ...(condorSpreadOpportunities || [])];
@@ -5787,6 +5787,8 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
                   <ColHead col="strike">Strategy Type</ColHead>
                   <ColHead col="confidence">Risk / Range</ColHead>
                   <ColHead col="edgeAfterCosts" right>Edge / Premium</ColHead>
+                  <th className="px-2 py-3 text-right text-[10px] font-bold">Live P&L</th>
+                  <th className="px-2 py-3 text-right text-[10px] font-bold">Max Loss</th>
                   <th className="px-3 py-3 text-center">Status</th>
                   <th className="px-3 py-3 text-center">Action</th>
                 </tr>
@@ -5831,6 +5833,35 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
                           <div className={`font-mono font-black text-sm ${edge >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{edge >= 0 ? '+' : ''}₹{Math.round(edge)}</div>
                           <div className="text-slate-500 font-mono text-[10px] mt-0.5">Credit: {opp.credit ? opp.credit.toFixed(1) : '--'} pt</div>
                         </td>
+                        {(() => {
+                          const livePnl = opp.id ? icPnlMap[String(opp.id)] : null;
+                          const maxLossVal = (() => {
+                            if (opp.maxLossRs) return opp.maxLossRs;
+                            if (opp.legList && opp.legList.length >= 4) {
+                              const strikes = opp.legList.map(l => Number(l.strike)).sort((a,b)=>a-b);
+                              let wingW = Infinity;
+                              for (let i = 1; i < strikes.length; i++) wingW = Math.min(wingW, strikes[i] - strikes[i-1]);
+                              const credit = Number(opp.credit) || 0;
+                              const lotSz = Number(opp.lotSize) || 25;
+                              return (wingW - credit) * lotSz;
+                            }
+                            return null;
+                          })();
+                          const nearMaxLoss = livePnl != null && maxLossVal && livePnl < 0 && Math.abs(livePnl) >= maxLossVal * 0.7;
+                          return (<>
+                            <td className={`px-2 py-3 text-right font-mono font-black text-sm ${nearMaxLoss ? 'bg-emerald-50 animate-pulse' : ''}`}>
+                              {livePnl != null
+                                ? <span className={`px-1.5 py-0.5 rounded ${Number(livePnl) >= 0 ? 'text-emerald-600 bg-emerald-50' : nearMaxLoss ? 'text-emerald-700 bg-emerald-100 border border-emerald-300 font-black' : 'text-red-500 bg-red-50'}`}>
+                                    {Number(livePnl) >= 0 ? '+' : ''}₹{Math.round(Number(livePnl)).toLocaleString('en-IN')}
+                                    {nearMaxLoss && <span className="ml-1 text-[9px]">ENTRY</span>}
+                                  </span>
+                                : <span className="text-slate-300">--</span>}
+                            </td>
+                            <td className="px-2 py-3 text-right font-mono text-[11px] text-red-400">
+                              {maxLossVal ? `₹${Math.round(maxLossVal).toLocaleString('en-IN')}` : '--'}
+                            </td>
+                          </>);
+                        })()}
                         <td className="px-3 py-3 text-center align-middle">
                           <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${stColor}`}>{st}</span>
                         </td>
@@ -5843,7 +5874,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
                       </tr>
                       {isExp && (
                         <tr className="bg-indigo-50/40 border-b border-indigo-100">
-                          <td colSpan={7} className="p-3">
+                          <td colSpan={8} className="p-3">
                               <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="Iron Condor Breakdown" />
                           </td>
                         </tr>
