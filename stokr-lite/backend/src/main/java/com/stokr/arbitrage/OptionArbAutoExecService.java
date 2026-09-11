@@ -765,7 +765,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
      * Check all open positions for roll-over.
      * When live P&L reaches rolloverThresholdPct% of target edge, square off and open new position.
      */
-    @Scheduled(fixedDelayString = "30000", initialDelay = 30000)
+    @Scheduled(fixedDelayString = "5000", initialDelay = 5000)
     public synchronized void checkRollover() {
 
         LocalDate todayIST = LocalDate.now(ZoneId.of("Asia/Kolkata"));
@@ -1663,8 +1663,33 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         if (legs == null || legs.isEmpty()) return false;
         int lotSize = pos.getLotSize() != null ? pos.getLotSize() : getLotSize(pos.getUnderlying());
         int lots = pos.getLots() != null ? pos.getLots() : 1;
+
+        // Sort legs by bid-ask spread (widest first) to minimize slippage on illiquid legs
+        List<Map<String, Object>> sortedLegs = new java.util.ArrayList<>(legs);
+        try {
+            Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(
+                    sortedLegs.stream().map(l -> (String) l.get("symbol")).filter(java.util.Objects::nonNull).toList());
+            sortedLegs.sort((a, b) -> {
+                String symA = (String) a.get("symbol");
+                String symB = (String) b.get("symbol");
+                double spreadA = 0, spreadB = 0;
+                if (symA != null && quotes.containsKey(symA)) {
+                    OptionChainService.OptionQuote q = quotes.get(symA);
+                    spreadA = q.ask > 0 && q.bid > 0 ? q.ask - q.bid : 0;
+                }
+                if (symB != null && quotes.containsKey(symB)) {
+                    OptionChainService.OptionQuote q = quotes.get(symB);
+                    spreadB = q.ask > 0 && q.bid > 0 ? q.ask - q.bid : 0;
+                }
+                return Double.compare(spreadB, spreadA);
+            });
+            log.info("Auto-exec: Executing legs widest-spread-first for pos {}", pos.getId());
+        } catch (Exception e) {
+            log.warn("Auto-exec: Could not sort legs by spread for pos {}, using original order", pos.getId());
+        }
+
         boolean allConfirmed = true;
-        for (Map<String, Object> leg : legs) {
+        for (Map<String, Object> leg : sortedLegs) {
             String symbol = (String) leg.get("symbol");
             String side = (String) leg.get("side");
             int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
