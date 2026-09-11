@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react';
+import { useState, useMemo, useRef, useCallback, Fragment } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
 
@@ -268,6 +268,22 @@ function computePayoff(legs, lotSize, spot) {
 
 function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
   const points = useMemo(() => computePayoff(legs, lotSize, spot), [legs, lotSize, spot]);
+  const svgRef = useRef(null);
+  const [hover, setHover] = useState(null);
+
+  const handleMouseMove = useCallback((e) => {
+    const svg = svgRef.current;
+    if (!svg || points.length === 0) return;
+    const rect = svg.getBoundingClientRect();
+    const svgX = ((e.clientX - rect.left) / rect.width) * 700;
+    const PAD_L = 70, PAD_R = 40;
+    const plotW = 700 - PAD_L - PAD_R;
+    if (svgX < PAD_L || svgX > 700 - PAD_R) { setHover(null); return; }
+    const ratio = (svgX - PAD_L) / plotW;
+    const idx = Math.min(Math.max(0, Math.round(ratio * (points.length - 1))), points.length - 1);
+    setHover({ idx, svgX });
+  }, [points]);
+
   if (points.length === 0) return null;
 
   const W = 700, H = 260, PAD = { t: 30, r: 40, b: 40, l: 70 };
@@ -285,10 +301,8 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
   const zeroY = y(0);
   const spotX = x(spot);
 
-  // Build path
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.s).toFixed(1)},${y(p.pnl).toFixed(1)}`).join(' ');
 
-  // Fill areas (profit green, loss red)
   const profitPath = [];
   const lossPath = [];
   for (let i = 0; i < points.length - 1; i++) {
@@ -300,7 +314,6 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
     } else if (p1.pnl < 0 && p2.pnl < 0) {
       lossPath.push(`M${x1},${zy} L${x1},${y1} L${x2},${y2} L${x2},${zy} Z`);
     } else {
-      // Crossing zero — split
       const ratio = Math.abs(p1.pnl) / (Math.abs(p1.pnl) + Math.abs(p2.pnl));
       const cx = x1 + (x2 - x1) * ratio;
       if (p1.pnl >= 0) {
@@ -313,15 +326,12 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
     }
   }
 
-  // Y-axis labels
   const yTicks = 5;
   const yLabels = [];
   for (let i = 0; i <= yTicks; i++) {
     const val = minPnl + (pnlRange * i) / yTicks;
     yLabels.push({ val, yPos: y(val) });
   }
-
-  // X-axis labels
   const xTicks = 6;
   const xLabels = [];
   for (let i = 0; i <= xTicks; i++) {
@@ -329,9 +339,10 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
     xLabels.push({ val: Math.round(val), xPos: x(val) });
   }
 
-  // Key points — max profit, max loss, breakevens
   const maxProfitPt = points.reduce((a, b) => b.pnl > a.pnl ? b : a);
   const maxLossPt = points.reduce((a, b) => b.pnl < a.pnl ? b : a);
+
+  const hoverPt = hover ? points[hover.idx] : null;
 
   return (
     <div className="bg-gradient-to-b from-slate-50 to-white rounded-xl border border-slate-100 p-4">
@@ -341,10 +352,15 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
           <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-sm bg-emerald-400/40"></span> Profit Zone</span>
           <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-sm bg-red-400/40"></span> Loss Zone</span>
           <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-slate-400"></span> Spot: {spot}</span>
+          {hoverPt && (
+            <span className={`font-mono font-black ${hoverPt.pnl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+              {hoverPt.s.toLocaleString()} | {hoverPt.pnl >= 0 ? '+' : ''}₹{Math.round(hoverPt.pnl).toLocaleString()}
+            </span>
+          )}
         </div>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 260 }}>
-        {/* Grid */}
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair" style={{ maxHeight: 260 }}
+        onMouseMove={handleMouseMove} onMouseLeave={() => setHover(null)}>
         {yLabels.map((yl, i) => (
           <g key={`y${i}`}>
             <line x1={PAD.l} y1={yl.yPos} x2={W - PAD.r} y2={yl.yPos} stroke="#e2e8f0" strokeWidth="0.5" />
@@ -360,29 +376,22 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
           </g>
         ))}
 
-        {/* Zero line */}
         {minPnl < 0 && maxPnl > 0 && (
           <line x1={PAD.l} y1={zeroY} x2={W - PAD.r} y2={zeroY} stroke="#475569" strokeWidth="1" strokeDasharray="4,3" />
         )}
 
-        {/* Profit/Loss fills */}
         <path d={profitPath.join(' ')} fill="rgba(16,185,129,0.15)" />
         <path d={lossPath.join(' ')} fill="rgba(239,68,68,0.12)" />
-
-        {/* Payoff line */}
         <path d={pathD} fill="none" stroke={accentColor} strokeWidth="2.5" strokeLinejoin="round" />
 
-        {/* Spot vertical */}
         <line x1={spotX} y1={PAD.t} x2={spotX} y2={H - PAD.b} stroke="#64748b" strokeWidth="1" strokeDasharray="3,3" />
         <text x={spotX} y={PAD.t - 6} textAnchor="middle" fontSize="9" fill="#64748b" fontWeight="bold">SPOT</text>
 
-        {/* Max profit dot */}
         <circle cx={x(maxProfitPt.s)} cy={y(maxProfitPt.pnl)} r="4" fill="#10b981" stroke="white" strokeWidth="2" />
         <text x={x(maxProfitPt.s)} y={y(maxProfitPt.pnl) - 10} textAnchor="middle" fontSize="9" fill="#10b981" fontWeight="bold">
           +₹{Math.round(maxProfitPt.pnl).toLocaleString()}
         </text>
 
-        {/* Max loss dot */}
         {maxLossPt.pnl < 0 && (
           <>
             <circle cx={x(maxLossPt.s)} cy={y(maxLossPt.pnl)} r="4" fill="#ef4444" stroke="white" strokeWidth="2" />
@@ -392,7 +401,22 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
           </>
         )}
 
-        {/* Axis labels */}
+        {/* Cursor crosshair + tooltip */}
+        {hoverPt && (
+          <>
+            <line x1={x(hoverPt.s)} y1={PAD.t} x2={x(hoverPt.s)} y2={H - PAD.b} stroke={accentColor} strokeWidth="1" strokeDasharray="2,2" opacity="0.7" />
+            <line x1={PAD.l} y1={y(hoverPt.pnl)} x2={W - PAD.r} y2={y(hoverPt.pnl)} stroke={accentColor} strokeWidth="1" strokeDasharray="2,2" opacity="0.4" />
+            <circle cx={x(hoverPt.s)} cy={y(hoverPt.pnl)} r="5" fill={hoverPt.pnl >= 0 ? '#10b981' : '#ef4444'} stroke="white" strokeWidth="2" />
+            <g transform={`translate(${Math.min(x(hoverPt.s) + 10, W - PAD.r - 120)}, ${Math.max(y(hoverPt.pnl) - 38, PAD.t)})`}>
+              <rect x="0" y="0" width="115" height="32" rx="6" fill="#1e293b" opacity="0.92" />
+              <text x="8" y="13" fontSize="9" fill="#94a3b8" fontFamily="monospace">Price: {hoverPt.s.toLocaleString()}</text>
+              <text x="8" y="26" fontSize="10" fill={hoverPt.pnl >= 0 ? '#6ee7b7' : '#fca5a5'} fontWeight="bold" fontFamily="monospace">
+                P&L: {hoverPt.pnl >= 0 ? '+' : ''}₹{Math.round(hoverPt.pnl).toLocaleString()}
+              </text>
+            </g>
+          </>
+        )}
+
         <text x={W / 2} y={H - 4} textAnchor="middle" fontSize="10" fill="#94a3b8" fontWeight="bold">Underlying Price at Expiry</text>
         <text x={12} y={H / 2} textAnchor="middle" fontSize="10" fill="#94a3b8" fontWeight="bold" transform={`rotate(-90,12,${H / 2})`}>P&L (₹)</text>
       </svg>
@@ -422,6 +446,39 @@ function ExpandableRows({ opps, colSpan, renderRow, getLegs, getLotSize, getSpot
   ));
 }
 
+function useSort(defaultField = null, defaultDir = 'desc') {
+  const [sortField, setSortField] = useState(defaultField);
+  const [sortDir, setSortDir] = useState(defaultDir);
+  const toggle = useCallback((field) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('desc'); }
+  }, [sortField]);
+  const sorted = useCallback((arr) => {
+    if (!sortField) return arr;
+    return [...arr].sort((a, b) => {
+      const va = a[sortField] ?? 0, vb = b[sortField] ?? 0;
+      const cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [sortField, sortDir]);
+  return { sortField, sortDir, toggle, sorted };
+}
+
+function SortTh({ field, label, sort, className = '' }) {
+  const active = sort.sortField === field;
+  return (
+    <th className={`px-4 py-3 cursor-pointer select-none hover:text-slate-600 transition-colors ${className}`}
+      onClick={() => sort.toggle(field)}>
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <span className={`text-[8px] ${active ? 'text-violet-500' : 'text-slate-300'}`}>
+          {active ? (sort.sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+        </span>
+      </span>
+    </th>
+  );
+}
+
 function TabContent({ tab, underlying, tabInfo }) {
   const { data, isLoading, error } = useScan(tab, underlying);
   if (isLoading) return <LoadingState />;
@@ -440,7 +497,9 @@ function TabContent({ tab, underlying, tabInfo }) {
 
 /* ──────── RATIO BUTTERFLY ──────── */
 function RatioContent({ opps }) {
+  const sort = useSort('riskReward');
   const b = opps[0];
+  const sorted = sort.sorted(opps);
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -452,20 +511,20 @@ function RatioContent({ opps }) {
       </div>
       <TableShell tab="ratio" count={opps.length} headerContent={
         <tr>
-          <th className="px-4 py-3 text-left">Index</th>
-          <th className="px-4 py-3 text-left">Type</th>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <SortTh field="optionType" label="Type" sort={sort} className="text-left" />
           <th className="px-4 py-3 text-left">Buy 1x</th>
           <th className="px-4 py-3 text-left">Sell 3x</th>
           <th className="px-4 py-3 text-left">Buy 2x</th>
-          <th className="px-4 py-3 text-right">Net Cost</th>
-          <th className="px-4 py-3 text-right">Max Risk</th>
-          <th className="px-4 py-3 text-right">Max Reward</th>
-          <th className="px-4 py-3 text-right">R:R</th>
+          <SortTh field="netCostRs" label="Net Cost" sort={sort} className="text-right" />
+          <SortTh field="maxLoss" label="Max Risk" sort={sort} className="text-right" />
+          <SortTh field="maxProfit" label="Max Reward" sort={sort} className="text-right" />
+          <SortTh field="riskReward" label="R:R" sort={sort} className="text-right" />
           <th className="px-4 py-3 text-left">Expiry</th>
           <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={opps} colSpan={10} accentColor="#7c3aed"
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#7c3aed"
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -487,7 +546,9 @@ function RatioContent({ opps }) {
 
 /* ──────── BROKEN WING BUTTERFLY ──────── */
 function BWBContent({ opps }) {
+  const sort = useSort('creditRs');
   const b = opps[0];
+  const sorted = sort.sorted(opps);
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -499,20 +560,20 @@ function BWBContent({ opps }) {
       </div>
       <TableShell tab="bwb" count={opps.length} headerContent={
         <tr>
-          <th className="px-4 py-3 text-left">Index</th>
-          <th className="px-4 py-3 text-left">Type</th>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <SortTh field="optionType" label="Type" sort={sort} className="text-left" />
           <th className="px-4 py-3 text-left">Near Wing</th>
           <th className="px-4 py-3 text-left">Body (2x Sell)</th>
           <th className="px-4 py-3 text-left">Far Wing</th>
-          <th className="px-4 py-3 text-right">Credit</th>
-          <th className="px-4 py-3 text-right">Max Profit</th>
-          <th className="px-4 py-3 text-right">Max Loss</th>
-          <th className="px-4 py-3 text-center">Zero Risk</th>
+          <SortTh field="creditRs" label="Credit" sort={sort} className="text-right" />
+          <SortTh field="maxProfit" label="Max Profit" sort={sort} className="text-right" />
+          <SortTh field="maxLoss" label="Max Loss" sort={sort} className="text-right" />
+          <SortTh field="zeroRiskSide" label="Zero Risk" sort={sort} className="text-center" />
           <th className="px-4 py-3 text-left">Expiry</th>
           <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={opps} colSpan={10} accentColor="#f59e0b"
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#f59e0b"
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -538,7 +599,9 @@ function BWBContent({ opps }) {
 
 /* ──────── SKEW HARVEST ──────── */
 function SkewContent({ opps }) {
+  const sort = useSort('skewEdge');
   const b = opps[0];
+  const sorted = sort.sorted(opps);
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -550,20 +613,20 @@ function SkewContent({ opps }) {
       </div>
       <TableShell tab="skew" count={opps.length} headerContent={
         <tr>
-          <th className="px-4 py-3 text-left">Index</th>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
           <th className="px-4 py-3 text-left">Put Spread (Sell)</th>
           <th className="px-4 py-3 text-left">Call Spread (Buy)</th>
-          <th className="px-4 py-3 text-right">Put IV</th>
-          <th className="px-4 py-3 text-right">Call IV</th>
-          <th className="px-4 py-3 text-right">Skew</th>
-          <th className="px-4 py-3 text-right">Net Cost</th>
-          <th className="px-4 py-3 text-right">Flat P&L</th>
-          <th className="px-4 py-3 text-right">Up P&L</th>
-          <th className="px-4 py-3 text-right">Down P&L</th>
+          <SortTh field="putSellIV" label="Put IV" sort={sort} className="text-right" />
+          <SortTh field="callBuyIV" label="Call IV" sort={sort} className="text-right" />
+          <SortTh field="skewEdge" label="Skew" sort={sort} className="text-right" />
+          <SortTh field="netCostRs" label="Net Cost" sort={sort} className="text-right" />
+          <SortTh field="scenarioFlat" label="Flat P&L" sort={sort} className="text-right" />
+          <SortTh field="scenarioUp" label="Up P&L" sort={sort} className="text-right" />
+          <SortTh field="scenarioDown" label="Down P&L" sort={sort} className="text-right" />
           <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={opps} colSpan={10} accentColor="#0891b2"
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#0891b2"
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -587,8 +650,10 @@ function SkewContent({ opps }) {
 
 /* ──────── THETA CRUSH ──────── */
 function ThetaContent({ opps }) {
+  const sort = useSort('thetaDecayExpected');
   const b = opps[0];
   const isExpiryDay = b.dte === 0;
+  const sorted = sort.sorted(opps);
 
   return (
     <div className="space-y-5">
@@ -614,19 +679,19 @@ function ThetaContent({ opps }) {
 
       <TableShell tab="theta" count={opps.length} headerContent={
         <tr>
-          <th className="px-4 py-3 text-left">Index</th>
-          <th className="px-4 py-3 text-left">CE Strike</th>
-          <th className="px-4 py-3 text-left">PE Strike</th>
-          <th className="px-4 py-3 text-right">Straddle</th>
-          <th className="px-4 py-3 text-right">Net Credit</th>
-          <th className="px-4 py-3 text-right">Exp. P&L</th>
-          <th className="px-4 py-3 text-right">Max Loss</th>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <SortTh field="ceStrike" label="CE Strike" sort={sort} className="text-left" />
+          <SortTh field="peStrike" label="PE Strike" sort={sort} className="text-left" />
+          <SortTh field="straddleCredit" label="Straddle" sort={sort} className="text-right" />
+          <SortTh field="netCreditRs" label="Net Credit" sort={sort} className="text-right" />
+          <SortTh field="expectedProfitRs" label="Exp. P&L" sort={sort} className="text-right" />
+          <SortTh field="maxLoss" label="Max Loss" sort={sort} className="text-right" />
           <th className="px-4 py-3 text-center">Window</th>
           <th className="px-4 py-3 text-center">Win Rate</th>
           <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={opps} colSpan={9} accentColor="#10b981"
+        <ExpandableRows opps={sorted} colSpan={9} accentColor="#10b981"
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
