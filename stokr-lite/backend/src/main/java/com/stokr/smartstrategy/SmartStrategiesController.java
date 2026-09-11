@@ -97,8 +97,13 @@ public class SmartStrategiesController {
     }
 
     private void tryAutoExec(List<Map<String, Object>> opps) {
-        if (opps != null && !opps.isEmpty()) {
-            try { autoExecService.evaluateAndExecuteFromMaps(opps); }
+        if (opps == null || opps.isEmpty()) return;
+        List<Map<String, Object>> actionable = opps.stream()
+            .filter(o -> o.containsKey("legList") && o.get("legList") != null)
+            .filter(o -> !"PRE_EXPIRY_SETUP".equals(o.get("subType")))
+            .toList();
+        if (!actionable.isEmpty()) {
+            try { autoExecService.evaluateAndExecuteFromMaps(actionable); }
             catch (Exception e) { log.debug("Smart strategy auto-exec: {}", e.getMessage()); }
         }
     }

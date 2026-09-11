@@ -158,7 +158,7 @@ function RatioButterflyTab({ underlying }) {
                   <td className="px-3 py-2 font-mono">{o.buyStrike} @ ₹{o.buyPrice}</td>
                   <td className="px-3 py-2 font-mono font-bold text-red-600">{o.sellStrike} @ ₹{o.sellPrice}</td>
                   <td className="px-3 py-2 font-mono">{o.farBuyStrike} @ ₹{o.farBuyPrice}</td>
-                  <td className={`px-3 py-2 text-right font-mono font-bold ${o.netCost <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>₹{Math.round(o.netCostRs)}</td>
+                  <td className={`px-3 py-2 text-right font-mono font-bold ${o.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>₹{Math.round(o.netCostRs)}</td>
                   <td className="px-3 py-2 text-right font-mono text-red-500">₹{Math.round(o.maxLoss)}</td>
                   <td className="px-3 py-2 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</td>
                   <td className="px-3 py-2 text-right"><span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-black">1:{Math.round(o.riskReward)}</span></td>
@@ -291,7 +291,7 @@ function SkewHarvestTab({ underlying }) {
                   <td className="px-3 py-2 text-right font-mono">{o.putSellIV}%</td>
                   <td className="px-3 py-2 text-right font-mono">{o.callBuyIV}%</td>
                   <td className="px-3 py-2 text-right"><span className="px-2 py-0.5 bg-cyan-100 text-cyan-700 rounded-full text-[10px] font-black">{o.skewEdge}%</span></td>
-                  <td className={`px-3 py-2 text-right font-mono font-bold ${o.netCost <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>₹{Math.round(o.netCostRs)}</td>
+                  <td className={`px-3 py-2 text-right font-mono font-bold ${o.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>₹{Math.round(o.netCostRs)}</td>
                   <td className="px-3 py-2 text-right font-mono text-emerald-600">₹{Math.round(o.scenarioFlat)}</td>
                   <td className="px-3 py-2 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.scenarioUp)}</td>
                   <td className="px-3 py-2 text-right font-mono text-red-500">₹{Math.round(o.scenarioDown)}</td>
@@ -324,7 +324,7 @@ function ThetaCrushTab({ underlying }) {
           <StatCard label="Status" value={isExpiryDay ? 'EXPIRY DAY' : `${best.dte}d to Expiry`} color={isExpiryDay ? 'text-emerald-600' : 'text-amber-600'} />
           <StatCard label="Window" value={best.window?.split(' ')[0] || '--'} sub={best.isOptimalWindow ? 'GO!' : 'Wait'} color={best.isOptimalWindow ? 'text-emerald-600' : 'text-slate-500'} />
           <StatCard label="Net Credit" value={`₹${Math.round(best.netCreditRs || 0)}`} color="text-emerald-600" />
-          <StatCard label="Expected P&L" value={`₹${Math.round(best.expectedProfitRs || best.dailyDecayRs || 0)}`} color="text-emerald-600" />
+          <StatCard label="Expected P&L" value={`₹${Math.round(best.expectedProfitRs ?? best.dailyDecayRs ?? 0)}`} color="text-emerald-600" />
           <StatCard label="Win Rate" value={best.winRate || '--'} color="text-blue-600" />
         </div>
       )}
@@ -335,7 +335,7 @@ function ThetaCrushTab({ underlying }) {
             <span className="text-2xl">⏳</span>
             <div>
               <div className="text-sm font-black text-amber-800">Not Expiry Day</div>
-              <div className="text-xs text-amber-600">Theta Crush strategy is most effective on expiry day (Thursday) after 1:30 PM. Showing preview of current straddle values.</div>
+              <div className="text-xs text-amber-600">Theta Crush strategy is most effective on expiry day after 1:30 PM. Showing preview of current straddle values.</div>
             </div>
           </div>
         </div>
@@ -368,10 +368,10 @@ function ThetaCrushTab({ underlying }) {
                   <td className="px-3 py-2 font-bold">{o.underlying}</td>
                   <td className="px-3 py-2 font-mono">{o.ceStrike}</td>
                   <td className="px-3 py-2 font-mono">{o.peStrike}</td>
-                  <td className="px-3 py-2 text-right font-mono">₹{o.straddleCredit || o.straddleValue || '--'}</td>
-                  <td className="px-3 py-2 text-right font-mono font-bold text-emerald-600">₹{Math.round((o.netCreditRs || o.dailyDecayRs || 0))}</td>
+                  <td className="px-3 py-2 text-right font-mono">₹{o.straddleCredit ?? o.straddleValue ?? '--'}</td>
+                  <td className="px-3 py-2 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.netCreditRs ?? o.dailyDecayRs ?? 0)}</td>
                   <td className="px-3 py-2 text-right font-mono">{o.thetaDecayExpected ? `₹${o.thetaDecayExpected}` : '--'}</td>
-                  <td className="px-3 py-2 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.expectedProfitRs || o.dailyDecayRs || 0)}</td>
+                  <td className="px-3 py-2 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.expectedProfitRs ?? o.dailyDecayRs ?? 0)}</td>
                   <td className="px-3 py-2 text-right font-mono text-red-500">{o.maxLoss ? `₹${Math.round(o.maxLoss)}` : '--'}</td>
                   <td className="px-3 py-2 text-center">
                     {o.isOptimalWindow

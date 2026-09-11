@@ -79,15 +79,18 @@ public class RatioButterflyScanner {
                 if (buyQ.ask <= 0 || sellQ.bid <= 0 || farBuyQ.ask <= 0) continue;
 
                 double cost = buyQ.ask - 3 * sellQ.bid + 2 * farBuyQ.ask;
-                double maxProfit = (Math.abs(sellStrike - buyStrike) - cost) * lotSize;
-                double maxLoss = Math.abs(cost) * lotSize;
+                int wingWidth = Math.abs(sellStrike - buyStrike);
+                double maxProfit = (wingWidth - cost) * lotSize;
+                // Max loss: 1 uncovered short beyond the far wing. Risk = wingWidth + net debit paid.
+                double maxLoss = (wingWidth + Math.max(cost, 0)) * lotSize;
                 if (maxLoss <= 0) maxLoss = 1;
 
-                double riskReward = maxProfit / maxLoss;
                 if (cost > step * 0.3) continue;
-                if (riskReward < 3) continue;
 
                 double txnCost = ArbitrageCosts.PER_LEG_BROKERAGE * 6 + 50;
+                maxLoss += txnCost;
+                double riskReward = maxProfit / maxLoss;
+                if (riskReward < 3) continue;
 
                 Map<String, Object> opp = new LinkedHashMap<>();
                 opp.put("strategyType", "RATIO_BUTTERFLY");
@@ -107,7 +110,7 @@ public class RatioButterflyScanner {
                 opp.put("netCost", round2(cost));
                 opp.put("netCostRs", round2(cost * lotSize));
                 opp.put("maxProfit", round2(maxProfit));
-                opp.put("maxLoss", round2(maxLoss + txnCost));
+                opp.put("maxLoss", round2(maxLoss));
                 opp.put("riskReward", round2(riskReward));
                 opp.put("sweetSpot", sellStrike);
                 opp.put("breakEvenLow", "CE".equals(optType) ? round2(buyStrike + cost) : round2(farBuyStrike + cost));

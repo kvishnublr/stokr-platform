@@ -94,11 +94,10 @@ public class ExpiryThetaCrushScanner {
             OptionChainService.OptionQuote peQ = getQuote(quotes, underlying, expiry, peStrike, "PE");
             OptionChainService.OptionQuote ceWingQ = getQuote(quotes, underlying, expiry, ceWingStrike, "CE");
             OptionChainService.OptionQuote peWingQ = getQuote(quotes, underlying, expiry, peWingStrike, "PE");
-            if (ceQ == null || peQ == null) continue;
+            if (ceQ == null || peQ == null || ceWingQ == null || peWingQ == null) continue;
 
             double straddleCredit = ceQ.bid + peQ.bid;
-            double wingCost = 0;
-            if (ceWingQ != null && peWingQ != null) wingCost = ceWingQ.ask + peWingQ.ask;
+            double wingCost = ceWingQ.ask + peWingQ.ask;
             double netCredit = straddleCredit - wingCost;
             if (netCredit <= 0) continue;
 
