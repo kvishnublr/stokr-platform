@@ -772,6 +772,7 @@ public class OptionArbitrageController {
                     opp.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
                     opp.put("edgeAfterCosts", Math.round(netEdge * 10.0) / 10.0);
                     opp.put("expiry", expiry.toString());
+                    opp.put("expiryDate", expiry.toString());
                     opp.put("lotSize", lotSize);
                     opp.put("spotPrice", spot);
                     opp.put("wingWidth", wingWidth * step);
