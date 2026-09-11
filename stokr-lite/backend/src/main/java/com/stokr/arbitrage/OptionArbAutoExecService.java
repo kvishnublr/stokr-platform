@@ -797,7 +797,40 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             return;
         }
 
-for (LivePosition pos : openPositions) {            String broker = pos.getBroker() != null ? pos.getBroker() : "PAPER";            Map<String, Object> settings = getSettings(broker);            boolean autoExitEnabled = Boolean.TRUE.equals(settings.get("autoExitEnabled"));            boolean stopLossEnabled = Boolean.TRUE.equals(settings.get("stopLossEnabled"));            if (!autoExitEnabled && !stopLossEnabled) continue;            double autoExitThresholdPct = ((Number) settings.getOrDefault("autoExitThresholdPct", 90.0)).doubleValue();            boolean isPaper = "PAPER".equalsIgnoreCase(broker);            Long userId = null;            BrokerAccount account = null;            BrokerAdapter adapter = null;            if (!isPaper) {                try {                    List<BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");                    if (accounts.isEmpty()) continue;                    account = accounts.get(0);                    userId = account.getUserId();                    adapter = brokerService.getAdapter(broker);                } catch (Exception e) {                    log.error("Rollover: broker setup failed for {}: {}", broker, e.getMessage());                    continue;                }            }
+for (LivePosition pos : openPositions) {
+            String broker = pos.getBroker() != null ? pos.getBroker() : "PAPER";
+            Map<String, Object> settings = getSettings(broker);
+            boolean autoExitEnabled = Boolean.TRUE.equals(settings.get("autoExitEnabled"));
+            boolean stopLossEnabled = Boolean.TRUE.equals(settings.get("stopLossEnabled"));
+
+            // Check if this position has per-position triggers set (profit exit / loss re-entry)
+            boolean hasPositionTriggers = false;
+            if (pos.getOpportunityId() != null) {
+                OptionArbOpportunity triggerCheck = oppRepo.findById(pos.getOpportunityId()).orElse(null);
+                if (triggerCheck != null && (triggerCheck.getProfitExitTrigger() != null || triggerCheck.getLossReentryTrigger() != null)) {
+                    hasPositionTriggers = true;
+                }
+            }
+
+            if (!autoExitEnabled && !stopLossEnabled && !hasPositionTriggers) continue;
+
+            double autoExitThresholdPct = ((Number) settings.getOrDefault("autoExitThresholdPct", 90.0)).doubleValue();
+            boolean isPaper = "PAPER".equalsIgnoreCase(broker);
+            Long userId = null;
+            BrokerAccount account = null;
+            BrokerAdapter adapter = null;
+            if (!isPaper) {
+                try {
+                    List<BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");
+                    if (accounts.isEmpty()) continue;
+                    account = accounts.get(0);
+                    userId = account.getUserId();
+                    adapter = brokerService.getAdapter(broker);
+                } catch (Exception e) {
+                    log.error("Rollover: broker setup failed for {}: {}", broker, e.getMessage());
+                    continue;
+                }
+            }
 boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
 
