@@ -761,6 +761,7 @@ public class OptionArbitrageController {
                     opp.put("estimatedMargin", estimatedMargin);
 
                     opp.put("type", "IRON_CONDOR");
+                    opp.put("strategyType", "IRON_CONDOR");
                     opp.put("underlying", underlying);
                     opp.put("strike", putSell);
                     opp.put("action", "SELL " + putSell + "PE/" + callSell + "CE | BUY " + putBuy + "PE/" + callBuy + "CE");

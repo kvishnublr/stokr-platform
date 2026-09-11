@@ -431,7 +431,9 @@ public class OptionArbAutoExecService {
                 opp.setUnderlying((String) m.get("underlying"));
                 opp.setStrike(m.get("strike") instanceof Number n ? n.intValue() : null);
                 opp.setAction((String) m.get("action"));
-                opp.setStrategyType((String) m.get("strategyType"));
+                String stratType = (String) m.get("strategyType");
+                if (stratType == null) stratType = (String) m.get("type");
+                opp.setStrategyType(stratType);
                 opp.setType((String) m.get("type"));
                 opp.setLegs((String) m.get("legs"));
                 Object spot = m.get("spotPrice");
