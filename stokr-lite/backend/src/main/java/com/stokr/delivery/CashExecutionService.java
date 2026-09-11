@@ -11,23 +11,21 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Real NSE cash-equity execution for Cash Surge / Cash Swing -- these are plain directional
- * stock buys (no options legs, no futures), so this is intentionally separate from
- * OptionArbAutoExecService's options-shaped executor. PAPER simulates against a live LTP;
- * any other broker places a real NSE CNC (delivery) order, matching these strategies'
- * multi-day hold thesis (not an intraday MIS square-off).
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class CashExecutionService {
 
-    
+    private static final int MAX_OPEN_PAPER = 10;
+    private static final double PAPER_CAPITAL = 10000.0;
+    private static final int MAX_HOLD_DAYS_SURGE = 3;
+    private static final int MAX_HOLD_DAYS_SWING = 5;
+    private static final int SYMBOL_COOLDOWN_HOURS = 24;
 
     private final CashPositionRepository positionRepo;
     private final ZerodhaSpotPriceFetcher spotFetcher;
@@ -85,7 +83,6 @@ public class CashExecutionService {
             return result;
         }
 
-        // Real broker: place an actual NSE cash-market order.
         Long userId;
         BrokerAccount account;
         BrokerAdapter adapter;
@@ -152,7 +149,7 @@ public class CashExecutionService {
     }
 
     public List<Map<String, Object>> getClosedPositions() {
-        return positionRepo.findAllClosed().stream().map(CashPosition::toMap).toList();
+        return positionRepo.findRecentClosed().stream().map(CashPosition::toMap).toList();
     }
 
     public List<Map<String, Object>> getOpenPositionsWithLivePnl() {
@@ -163,15 +160,19 @@ public class CashExecutionService {
                 double ltp = spotFetcher.getSpotPrice("NSE:" + p.getSymbol());
                 if (ltp > 0 && p.getEntryPrice() != null && p.getQuantity() != null) {
                     double pnl = (ltp - p.getEntryPrice().doubleValue()) * p.getQuantity();
+                    double pnlPct = (ltp - p.getEntryPrice().doubleValue()) / p.getEntryPrice().doubleValue() * 100.0;
                     m.put("currentPrice", ltp);
                     m.put("currentPnl", Math.round(pnl));
+                    m.put("pnlPct", Math.round(pnlPct * 100.0) / 100.0);
+                    long holdDays = p.getEnteredAt() != null ? ChronoUnit.DAYS.between(p.getEnteredAt().toLocalDate(), LocalDateTime.now().toLocalDate()) : 0;
+                    m.put("holdDays", holdDays);
                 }
             } catch (Exception ignored) {}
             return m;
         }).toList();
     }
 
-    /** Square off on target hit or stop-loss breach. Checked every 30s during market hours. */
+    /** Square off on target hit, stop-loss breach, or max holding period exceeded. Checked every 30s. */
     @Scheduled(fixedDelayString = "30000", initialDelay = 30000)
     public void checkExits() {
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
@@ -193,7 +194,14 @@ public class CashExecutionService {
             double stopLoss = pos.getStopLossPrice() != null ? pos.getStopLossPrice().doubleValue() : 0;
             boolean hitTarget = target > 0 && ltp >= target;
             boolean hitStop = stopLoss > 0 && ltp <= stopLoss;
-            if (!hitTarget && !hitStop) continue;
+
+            int maxHoldDays = "CASH_SURGE".equals(pos.getStrategyType()) ? MAX_HOLD_DAYS_SURGE : MAX_HOLD_DAYS_SWING;
+            long holdDays = pos.getEnteredAt() != null ? ChronoUnit.DAYS.between(pos.getEnteredAt().toLocalDate(), LocalDateTime.now().toLocalDate()) : 0;
+            boolean holdExpired = holdDays >= maxHoldDays;
+
+            if (!hitTarget && !hitStop && !holdExpired) continue;
+
+            String exitReason = hitTarget ? "TARGET_HIT" : hitStop ? "STOP_LOSS" : "MAX_HOLD_" + maxHoldDays + "D";
 
             boolean isPaper = pos.getOrderId() != null && pos.getOrderId().startsWith("PAPER");
             boolean squaredOff = true;
@@ -233,9 +241,10 @@ public class CashExecutionService {
             pos.setExitedAt(LocalDateTime.now());
             pos.setExitPrice(BigDecimal.valueOf(ltp));
             pos.setCurrentPnl(BigDecimal.valueOf(pnl));
+            pos.setErrorMessage(exitReason);
             positionRepo.save(pos);
-            log.info("{}: {} {} squared off @ {} -- P&L Rs{}", hitTarget ? "TARGET_HIT" : "STOP_LOSS",
-                    pos.getSymbol(), pos.getQuantity(), ltp, Math.round(pnl));
+            log.info("{}: {} {} squared off @ {} -- P&L Rs{} (held {}d)", exitReason,
+                    pos.getSymbol(), pos.getQuantity(), ltp, Math.round(pnl), holdDays);
         }
     }
 
@@ -245,44 +254,50 @@ public class CashExecutionService {
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
         if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
 
-        List<CashPosition> openPositions = positionRepo.findAllOpen();
+        List<CashPosition> allPositions = positionRepo.findAllByOrderByEnteredAtDesc();
+        List<CashPosition> openPositions = allPositions.stream().filter(p -> "OPEN".equals(p.getStatus())).toList();
         long openPaperCount = openPositions.stream().filter(p -> "PAPER".equals(p.getBroker())).count();
-        if (openPaperCount >= 10) return;
+        if (openPaperCount >= MAX_OPEN_PAPER) return;
 
-        List<String> openPaperSymbols = new java.util.ArrayList<>(openPositions.stream()
+        java.util.Set<String> openPaperSymbols = openPositions.stream()
                 .filter(p -> "PAPER".equals(p.getBroker()))
                 .map(CashPosition::getSymbol)
-                .toList());
+                .collect(java.util.stream.Collectors.toSet());
+
+        LocalDateTime cooldownCutoff = LocalDateTime.now().minusHours(SYMBOL_COOLDOWN_HOURS);
+        java.util.Set<String> recentlyClosedSymbols = allPositions.stream()
+                .filter(p -> "CLOSED".equals(p.getStatus()) && "PAPER".equals(p.getBroker()))
+                .filter(p -> p.getExitedAt() != null && p.getExitedAt().isAfter(cooldownCutoff))
+                .map(CashPosition::getSymbol)
+                .collect(java.util.stream.Collectors.toSet());
 
         try {
             List<Map<String, Object>> surgeOpps = cashScannerService.scanCashSurge();
             List<Map<String, Object>> swingOpps = cashScannerService.scanCashSwing();
-            
+
             for (Map<String, Object> opp : surgeOpps) {
-                if (openPaperCount >= 10) break;
+                if (openPaperCount >= MAX_OPEN_PAPER) break;
                 String symbol = (String) opp.get("symbol");
-                if (!openPaperSymbols.contains(symbol)) {
-                    double target = opp.get("targetPrice") instanceof Number n ? n.doubleValue() : 0;
-                    double sl = opp.get("stopLossPrice") instanceof Number n ? n.doubleValue() : 0;
-                    execute(symbol, "CASH_SURGE", target, sl, "PAPER", 10000.0);
-                    openPaperCount++;
-                    openPaperSymbols.add(symbol); // prevent duplicate in same run
-                }
+                if (openPaperSymbols.contains(symbol) || recentlyClosedSymbols.contains(symbol)) continue;
+                double target = opp.get("targetPrice") instanceof Number n ? n.doubleValue() : 0;
+                double sl = opp.get("stopLossPrice") instanceof Number n ? n.doubleValue() : 0;
+                execute(symbol, "CASH_SURGE", target, sl, "PAPER", PAPER_CAPITAL);
+                openPaperCount++;
+                openPaperSymbols.add(symbol);
             }
-            
+
             for (Map<String, Object> opp : swingOpps) {
-                if (openPaperCount >= 10) break;
+                if (openPaperCount >= MAX_OPEN_PAPER) break;
                 String symbol = (String) opp.get("symbol");
-                if (!openPaperSymbols.contains(symbol)) {
-                    double target = opp.get("targetPrice") instanceof Number n ? n.doubleValue() : 0;
-                    double sl = opp.get("stopLossPrice") instanceof Number n ? n.doubleValue() : 0;
-                    execute(symbol, "CASH_SWING", target, sl, "PAPER", 10000.0);
-                    openPaperCount++;
-                    openPaperSymbols.add(symbol);
-                }
+                if (openPaperSymbols.contains(symbol) || recentlyClosedSymbols.contains(symbol)) continue;
+                double target = opp.get("targetPrice") instanceof Number n ? n.doubleValue() : 0;
+                double sl = opp.get("stopLossPrice") instanceof Number n ? n.doubleValue() : 0;
+                execute(symbol, "CASH_SWING", target, sl, "PAPER", PAPER_CAPITAL);
+                openPaperCount++;
+                openPaperSymbols.add(symbol);
             }
-            
-        } catch(Exception e) {
+
+        } catch (Exception e) {
             log.error("Auto paper trade failed: {}", e.getMessage());
         }
     }

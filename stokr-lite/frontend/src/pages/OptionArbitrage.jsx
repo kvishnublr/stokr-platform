@@ -1832,21 +1832,19 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
 
 
 function CashPositionsSection() {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const { data, refetch } = useQuery({
     queryKey: ['cashPositions'],
     queryFn: async () => {
       const res = await client.get('/option-arbitrage/cash-positions');
       return res.data;
     },
-    refetchInterval: 1000,
-    staleTime: 2000,
+    refetchInterval: 10000,
+    staleTime: 8000,
   });
 
   const positions = data?.positions || [];
   if (positions.length === 0) return null;
-
-
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1872,32 +1870,42 @@ function CashPositionsSection() {
           <table className="w-full text-[11px] text-left">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold">
               <tr>
-                <th className="px-3 py-2">Time</th>
                 <th className="px-3 py-2">Symbol</th>
                 <th className="px-3 py-2">Strategy</th>
+                <th className="px-3 py-2 text-center">Days</th>
                 <th className="px-3 py-2 text-right">Qty</th>
                 <th className="px-3 py-2 text-right">Entry</th>
                 <th className="px-3 py-2 text-right">Current</th>
                 <th className="px-3 py-2 text-right">Target</th>
                 <th className="px-3 py-2 text-right">Stop Loss</th>
-                <th className="px-3 py-2 text-right">Live P&amp;L</th>
+                <th className="px-3 py-2 text-right">P&amp;L</th>
+                <th className="px-3 py-2 text-right">P&amp;L %</th>
                 <th className="px-3 py-2 text-center">Broker</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {positions.map(p => {
-                const pnl = p.currentPnl != null ? Number(p.currentPnl) : null;
+                const pnl = p.currentPnl != null ? Number(p.currentPnl) : 0;
+                const pnlPct = p.pnlPct != null ? Number(p.pnlPct) : 0;
+                const holdDays = p.holdDays != null ? Number(p.holdDays) : 0;
+                const maxDays = p.strategyType === 'CASH_SURGE' ? 3 : 5;
+                const isStale = holdDays >= maxDays;
                 return (
-                  <tr key={p.id} className="hover:bg-slate-50">
-                    <td className="px-3 py-2 font-mono text-[10px] text-slate-600">{fmtTime(p.enteredAt)}</td>
+                  <tr key={p.id} className={`hover:bg-slate-50 ${isStale ? 'bg-amber-50' : ''}`}>
                     <td className="px-3 py-2 font-bold text-slate-800">{p.symbol}</td>
-                    <td className="px-3 py-2 text-slate-500 text-[10px]">{p.strategyType}</td>
+                    <td className="px-3 py-2">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${p.strategyType === 'CASH_SURGE' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {p.strategyType === 'CASH_SURGE' ? 'SURGE' : 'SWING'}
+                      </span>
+                    </td>
+                    <td className={`px-3 py-2 text-center font-bold text-[10px] ${isStale ? 'text-amber-600' : 'text-slate-500'}`}>{holdDays}d{isStale ? ' ⚠' : ''}</td>
                     <td className="px-3 py-2 text-right font-bold">{p.quantity}</td>
                     <td className="px-3 py-2 text-right font-mono">₹{Number(p.entryPrice || 0).toFixed(1)}</td>
-                    <td className="px-3 py-2 text-right font-mono">₹{Number(p.currentPrice || 0).toFixed(1)}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold">₹{Number(p.currentPrice || 0).toFixed(1)}</td>
                     <td className="px-3 py-2 text-right font-mono text-emerald-600">₹{Number(p.targetPrice || 0).toFixed(1)}</td>
                     <td className="px-3 py-2 text-right font-mono text-red-500">₹{Number(p.stopLossPrice || 0).toFixed(1)}</td>
                     <td className={`px-3 py-2 text-right font-mono font-bold ${pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>₹{Math.round(pnl).toLocaleString('en-IN')}</td>
+                    <td className={`px-3 py-2 text-right font-mono font-bold text-[10px] ${pnlPct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%</td>
                     <td className="px-3 py-2 text-center text-[10px] text-slate-500">{p.broker}</td>
                   </tr>
                 );
