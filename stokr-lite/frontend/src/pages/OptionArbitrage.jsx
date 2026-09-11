@@ -1161,6 +1161,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
         case 'strategy': va = a.strategyType || ''; vb = b.strategyType || ''; break;
         case 'underlying': va = a.underlying || ''; vb = b.underlying || ''; break;
         case 'strike': va = a.strike || 0; vb = b.strike || 0; break;
+        case 'expiry': va = a.expiryDate || ''; vb = b.expiryDate || ''; break;
         case 'edge': va = a.targetEdge || 0; vb = b.targetEdge || 0; break;
         case 'edgeProgress': va = a.edgeCaptured || 0; vb = b.edgeCaptured || 0; break;
         case 'pnl': va = a.currentPnl != null ? Number(a.currentPnl) : 0; vb = b.currentPnl != null ? Number(b.currentPnl) : 0; break;
@@ -1302,6 +1303,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                   <SortTh col="strategy">Strategy</SortTh>
                   <SortTh col="underlying">Symbol</SortTh>
                   <SortTh col="strike" className="text-right">Strike</SortTh>
+                  <SortTh col="expiry">Expiry</SortTh>
                   <th className="px-2 py-2.5 text-center">Legs / Entry</th>
                   <SortTh col="edge" className="text-right">Edge</SortTh>
                   <SortTh col="edgeProgress" className="text-center">Progress</SortTh>
@@ -1339,6 +1341,9 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                       </td>
                       <td className="px-2 py-2.5 font-black text-slate-800 text-xs">{p.underlying}</td>
                       <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-700">{p.strike}</td>
+                      <td className="px-2 py-2.5 text-[10px] font-mono text-slate-500 whitespace-nowrap">
+                        {p.expiryDate ? new Date(p.expiryDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '--'}
+                      </td>
                       <td className="px-2 py-2.5">
                         {p.isMultiLeg ? (
                           <div className="flex flex-wrap gap-1">
@@ -1410,7 +1415,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                     </tr>
                     {isExpanded && canShowPayoff && (
                       <tr className="bg-indigo-50/30 border-b border-indigo-100">
-                        <td colSpan={13} className="p-3">
+                        <td colSpan={14} className="p-3">
                           <DetailedOpportunityExpandedRow item={p} executionBroker={executionBroker} title={`Open Position — ${p.underlying} ${p.action}`} />
                           {p.status === 'OPEN' && p.opportunityId && (
                             <PositionTriggersPanel positionId={p.opportunityId} />
@@ -1420,7 +1425,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                     )}
                     {goLiveResult && goLiveResult.posId === p.id && (
                       <tr className={goLiveResult.type === 'success' ? 'bg-emerald-50' : 'bg-red-50'}>
-                        <td colSpan={13} className="px-4 py-2.5">
+                        <td colSpan={14} className="px-4 py-2.5">
                           <div className="flex items-start gap-2">
                             <span className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-black ${goLiveResult.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`}>
                               {goLiveResult.type === 'success' ? '✓' : '✕'}
@@ -4633,7 +4638,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
 
     return (
       <tr>
-        <td colSpan={13} className="p-0">
+        <td colSpan={14} className="p-0">
           <div className="bg-gradient-to-br from-white via-amber-50/30 to-indigo-50/30 border-t-2 border-amber-200 p-4 space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               <div className="bg-white rounded-xl border border-slate-200 p-2 text-center">
