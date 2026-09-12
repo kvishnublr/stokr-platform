@@ -33,7 +33,7 @@ public class VolSurfaceService {
                 return surface;
             }
 
-            LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
+            LocalDate expiry = optionChainService.getNearestExpiry(underlying);
             if (expiry == null) {
                 surface.put("rows", rows);
                 surface.put("count", 0);

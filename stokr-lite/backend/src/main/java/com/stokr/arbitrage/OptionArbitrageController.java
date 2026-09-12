@@ -683,7 +683,7 @@ public class OptionArbitrageController {
 
         // Scan both weekly (NIFTY only) and monthly expiries
         List<LocalDate> expiries = java.util.stream.Stream.of(
-                optionChainService.getWeeklyExpiryDate(underlying),
+                optionChainService.getNearestExpiry(underlying),
                 optionChainService.getMonthlyExpiryDate(underlying)
             ).filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.toList());
         if (expiries.isEmpty()) return results;
@@ -2425,7 +2425,7 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                 Number spotPrice = (Number) body.getOrDefault("spotPrice", 0);
                 Number futPrice = (Number) body.getOrDefault("futuresPrice", 0);
 
-                LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
+                LocalDate expiry = optionChainService.getNearestExpiry(underlying);
                 int lotSize = getLotSize(underlying);
 
                 opp = OptionArbOpportunity.builder()
@@ -3047,7 +3047,7 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
     public ResponseEntity<List<String>> getAvailableExpiries(
             @RequestParam(defaultValue = "NIFTY") String underlying) {
         java.util.TreeSet<String> expiries = new java.util.TreeSet<>();
-        LocalDate weekly = optionChainService.getWeeklyExpiryDate(underlying);
+        LocalDate weekly = optionChainService.getNearestExpiry(underlying);
         LocalDate monthly = optionChainService.getMonthlyExpiryDate(underlying);
         if (underlying.equalsIgnoreCase("NIFTY") && weekly != null) {
             LocalDate w = weekly;
@@ -3074,8 +3074,7 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
             @RequestParam(defaultValue = "NIFTY") String underlying,
             @RequestParam(required = false) String expiry) {
         try {
-            LocalDate expiryDate = expiry != null ? LocalDate.parse(expiry) : optionChainService.getWeeklyExpiryDate(underlying);
-            if (expiryDate == null) expiryDate = optionChainService.getMonthlyExpiryDate(underlying);
+            LocalDate expiryDate = expiry != null ? LocalDate.parse(expiry) : optionChainService.getNearestExpiry(underlying);
             int step = OptionChainService.getStrikeStep(underlying);
             
             // Get spot price — map underlying to Zerodha quote symbol

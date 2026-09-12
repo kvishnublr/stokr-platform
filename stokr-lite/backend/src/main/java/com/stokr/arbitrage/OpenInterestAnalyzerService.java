@@ -35,7 +35,7 @@ public class OpenInterestAnalyzerService {
             }
 
             int atmStrike = OptionChainService.getATMStrike(underlying, spotPrice);
-            LocalDate expiryDate = optionChainService.getWeeklyExpiryDate(underlying);
+            LocalDate expiryDate = optionChainService.getNearestExpiry(underlying);
 
             List<Integer> strikes = new ArrayList<>();
             int step = OptionChainService.getStrikeStep(underlying);

@@ -10,10 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
@@ -24,6 +21,7 @@ public class OptionArbExecutionService {
 
     private final ZerodhaAdapter zerodhaAdapter;
     private final ZerodhaTokenManager tokenManager;
+    private final OptionChainService optionChainService;
 
     private static final double MIN_MARGIN_BUFFER = 1.15;
 
@@ -94,7 +92,7 @@ public class OptionArbExecutionService {
             return result;
         }
 
-        LocalDate expiry = getWeeklyExpiryDate(underlying);
+        LocalDate expiry = optionChainService.getNearestExpiry(underlying);
         String ceSymbol = buildNfoSymbol(underlying, expiry, strike, "CE");
         String peSymbol = buildNfoSymbol(underlying, expiry, strike, "PE");
         String futSymbol = buildNfoFutSymbol(underlying, expiry);
@@ -236,44 +234,11 @@ public class OptionArbExecutionService {
         }
     }
 
-    private LocalDate getWeeklyExpiryDate(String underlying) {
-        LocalDate today = LocalDate.now();
-        if ("NIFTY".equals(underlying)) {
-            LocalDate next = today;
-            while (next.getDayOfWeek() != DayOfWeek.TUESDAY) {
-                next = next.plusDays(1);
-            }
-            if (next.equals(today)) {
-                java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-                if (nowIST.isAfter(java.time.LocalTime.of(15, 0))) {
-                    next = next.plusWeeks(1);
-                }
-            }
-            return next;
-        }
-        return getMonthlyExpiryDate();
-    }
-
-    private LocalDate getMonthlyExpiryDate() {
-        LocalDate today = LocalDate.now();
-        LocalDate lastTuesday = today.withDayOfMonth(today.lengthOfMonth());
-        while (lastTuesday.getDayOfWeek() != DayOfWeek.TUESDAY) {
-            lastTuesday = lastTuesday.minusDays(1);
-        }
-        if (lastTuesday.isBefore(today)) {
-            lastTuesday = lastTuesday.plusMonths(1).withDayOfMonth(lastTuesday.plusMonths(1).lengthOfMonth());
-            while (lastTuesday.getDayOfWeek() != DayOfWeek.TUESDAY) {
-                lastTuesday = lastTuesday.minusDays(1);
-            }
-        }
-        return lastTuesday;
-    }
-
     private String buildNfoSymbol(String underlying, LocalDate expiry, int strike, String type) {
         String clean = underlying.replace(" ", "");
         int yy = expiry.getYear() % 100;
         boolean hasWeekly = "NIFTY".equals(clean);
-        LocalDate monthly = getMonthlyExpiryDate();
+        LocalDate monthly = optionChainService.getMonthlyExpiryDate(clean);
 
         if (!hasWeekly || expiry.equals(monthly)) {
             String mon = expiry.getMonth().name().substring(0, 3);

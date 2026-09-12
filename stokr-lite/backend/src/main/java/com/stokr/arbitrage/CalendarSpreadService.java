@@ -70,7 +70,7 @@ public class CalendarSpreadService {
         double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
         if (spot <= 0) return results;
 
-        LocalDate nearExpiry = optionChainService.getWeeklyExpiryDate(underlying);
+        LocalDate nearExpiry = optionChainService.getNearestExpiry(underlying);
         // Next week expiry = current expiry + 7 days, then find next expiry day
         LocalDate farExpiry = nearExpiry.plusWeeks(1);
         // Validate: far must be after near

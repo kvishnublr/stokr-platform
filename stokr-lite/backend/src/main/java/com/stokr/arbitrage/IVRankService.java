@@ -67,7 +67,7 @@ public class IVRankService {
 
         int step = OptionChainService.getStrikeStep(underlying);
         int atmStrike = (int) (Math.round(spot / step) * step);
-        LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
+        LocalDate expiry = optionChainService.getNearestExpiry(underlying);
         double yearsToExpiry = Math.max(
             Duration.between(LocalDate.now().atStartOfDay(), expiry.atStartOfDay()).toDays(), 0.5) / 365.0;
 

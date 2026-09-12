@@ -124,7 +124,7 @@ public class VerticalSpreadService {
                 int lotSize = OptionChainService.getLotSize(u);
 
                 for (java.time.LocalDate monthlyExpiry : java.util.stream.Stream.of(
-                optionChainService.getWeeklyExpiryDate(u),
+                optionChainService.getNearestExpiry(u),
                 optionChainService.getMonthlyExpiryDate(u)
             ).filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.toList())) {
 
@@ -264,7 +264,7 @@ public class VerticalSpreadService {
             int lotSize = OptionChainService.getLotSize(underlying);
 
             for (java.time.LocalDate monthlyExpiry : java.util.stream.Stream.of(
-                optionChainService.getWeeklyExpiryDate(underlying),
+                optionChainService.getNearestExpiry(underlying),
                 optionChainService.getMonthlyExpiryDate(underlying)
             ).filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.toList())) {
 

@@ -255,7 +255,7 @@ public class AutoRollService {
             int k1 = k2 - width;
             int k3 = k2 + width;
 
-            LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
+            LocalDate expiry = optionChainService.getNearestExpiry(underlying);
             if (expiry == null) return null;
 
             String s1 = optionChainService.buildNfoSymbol(underlying, expiry, k1, optionType);

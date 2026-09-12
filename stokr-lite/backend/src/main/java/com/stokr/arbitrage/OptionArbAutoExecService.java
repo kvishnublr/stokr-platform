@@ -445,7 +445,7 @@ public class OptionArbAutoExecService {
                 opp.setExpiryDate(m.get("expiryDate") instanceof String s ? LocalDate.parse(s) : null);
                 if (opp.getExpiryDate() == null && opp.getUnderlying() != null) {
                     try {
-                        opp.setExpiryDate(optionChainService.getWeeklyExpiryDate(opp.getUnderlying()));
+                        opp.setExpiryDate(optionChainService.getNearestExpiry(opp.getUnderlying()));
                     } catch (Exception ignored) {}
                 }
                 Object eac = m.get("edgeAfterCosts");

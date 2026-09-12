@@ -60,7 +60,7 @@ public class SyntheticFuturesArbService {
         int step = OptionChainService.getStrikeStep(underlying);
         int atmStrike = (int) (Math.round(spot / step) * step);
         int lotSize = OptionChainService.getLotSize(underlying);
-        LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
+        LocalDate expiry = optionChainService.getNearestExpiry(underlying);
 
         // Scan ATM +/- 5 strikes
         List<Integer> strikes = new ArrayList<>();
