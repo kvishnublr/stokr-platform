@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -99,13 +100,13 @@ public class TradePerformanceService {
         report.put("streaks", computeStreaks(pnls));
 
         // Today's stats
-        report.put("todayStats", computeDayStats(allClosed, LocalDate.now()));
+        report.put("todayStats", computeDayStats(allClosed, LocalDate.now(ZoneId.of("Asia/Kolkata"))));
 
         return report;
     }
 
     public Map<String, Object> getDailyPerformance(int days) {
-        LocalDateTime cutoff = LocalDate.now().minusDays(days).atStartOfDay();
+        LocalDateTime cutoff = LocalDate.now(ZoneId.of("Asia/Kolkata")).minusDays(days).atStartOfDay();
         List<LivePosition> recent = positionRepo.findAll().stream()
             .filter(p -> "CLOSED".equals(p.getStatus()) || "EXITED".equals(p.getStatus()))
             .filter(p -> SMART_TYPES.contains(p.getStrategyType()))
@@ -118,7 +119,7 @@ public class TradePerformanceService {
         List<Map<String, Object>> dailyData = new ArrayList<>();
         double cumPnl = 0;
         for (int i = days; i >= 0; i--) {
-            LocalDate date = LocalDate.now().minusDays(i);
+            LocalDate date = LocalDate.now(ZoneId.of("Asia/Kolkata")).minusDays(i);
             List<LivePosition> dayTrades = byDay.getOrDefault(date, List.of());
             double dayPnl = dayTrades.stream()
                 .mapToDouble(p -> p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0)
@@ -181,10 +182,10 @@ public class TradePerformanceService {
     }
 
     private Map<String, Object> computeStreaks(List<Double> pnls) {
-        int currentWin = 0, currentLoss = 0, maxWin = 0, maxLoss = 0;
+        int maxWin = 0, maxLoss = 0;
         int tempWin = 0, tempLoss = 0;
-        for (int i = pnls.size() - 1; i >= 0; i--) {
-            if (pnls.get(i) > 0) {
+        for (double pnl : pnls) {
+            if (pnl > 0) {
                 tempWin++;
                 tempLoss = 0;
             } else {
@@ -194,13 +195,14 @@ public class TradePerformanceService {
             maxWin = Math.max(maxWin, tempWin);
             maxLoss = Math.max(maxLoss, tempLoss);
         }
-        // Current streak from most recent
-        for (int i = 0; i < pnls.size(); i++) {
-            if (pnls.get(i) > 0) { if (i == 0 || pnls.get(i-1) > 0 || i == 0) currentWin++; else break; }
+        int currentWin = 0, currentLoss = 0;
+        for (double pnl : pnls) {
+            if (pnl > 0) currentWin++;
             else break;
         }
-        for (int i = 0; i < pnls.size(); i++) {
-            if (pnls.get(i) <= 0) { currentLoss++; } else break;
+        for (double pnl : pnls) {
+            if (pnl <= 0) currentLoss++;
+            else break;
         }
         Map<String, Object> streaks = new LinkedHashMap<>();
         streaks.put("currentWin", currentWin);

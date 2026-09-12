@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 
 @Slf4j
@@ -145,7 +146,7 @@ public class PortfolioRiskManager {
     }
 
     private double getTodayRealizedPnl() {
-        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+        LocalDateTime startOfDay = LocalDate.now(ZoneId.of("Asia/Kolkata")).atStartOfDay();
         return positionRepo.findAll().stream()
             .filter(p -> "CLOSED".equals(p.getStatus()))
             .filter(p -> p.getExitedAt() != null && p.getExitedAt().isAfter(startOfDay))

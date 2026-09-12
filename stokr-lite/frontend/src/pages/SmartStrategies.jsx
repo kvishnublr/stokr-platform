@@ -1272,28 +1272,38 @@ function MarketRegimePanel() {
   const { data } = useQuery({ queryKey: ['regime'], queryFn: () => client.get('/smart-strategies/regime').then(r => r.data), refetchInterval: 300000 });
   if (!data || Object.keys(data).length === 0) return null;
 
-  const regimeColors = { TRENDING_UP: 'text-green-400', TRENDING_DOWN: 'text-red-400', SIDEWAYS: 'text-yellow-400', HIGH_VOLATILE: 'text-purple-400' };
+  const regimeColors = { TRENDING_UP: 'text-emerald-600', TRENDING_DOWN: 'text-red-500', SIDEWAYS: 'text-amber-600', HIGH_VOLATILE: 'text-purple-600' };
+  const regimeBgs = { TRENDING_UP: 'bg-emerald-50 border-emerald-200', TRENDING_DOWN: 'bg-red-50 border-red-200', SIDEWAYS: 'bg-amber-50 border-amber-200', HIGH_VOLATILE: 'bg-purple-50 border-purple-200' };
   const regimeIcons = { TRENDING_UP: '📈', TRENDING_DOWN: '📉', SIDEWAYS: '➡️', HIGH_VOLATILE: '🌊' };
   const regimeLabels = { TRENDING_UP: 'Trending Up', TRENDING_DOWN: 'Trending Down', SIDEWAYS: 'Sideways', HIGH_VOLATILE: 'High Volatile' };
 
   return (
-    <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4">
-      <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">🌡️ Market Regime</h3>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+      <div className="px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-purple-50 to-indigo-50 flex items-center gap-2.5">
+        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-sm shadow-sm">🌡️</div>
+        <span className="text-xs font-black text-slate-700">Market Regime</span>
+      </div>
+      <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
         {Object.entries(data).map(([und, info]) => (
-          <div key={und} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700/30">
-            <div className="text-xs text-gray-400 font-medium">{und}</div>
-            <div className={`text-sm font-bold mt-1 ${regimeColors[info.regime] || 'text-gray-300'}`}>
-              {regimeIcons[info.regime] || '❓'} {regimeLabels[info.regime] || info.regime}
+          <div key={und} className={`rounded-xl p-3.5 border ${regimeBgs[info.regime] || 'bg-slate-50 border-slate-200'}`}>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">{und}</span>
+              <span className="text-lg">{regimeIcons[info.regime] || '❓'}</span>
             </div>
-            <div className="flex items-center gap-2 mt-1.5">
-              <span className="text-[10px] text-gray-500">IV Rank</span>
-              <div className="flex-1 bg-gray-700 rounded-full h-1.5">
-                <div className={`h-1.5 rounded-full ${info.ivRank > 60 ? 'bg-red-400' : info.ivRank > 30 ? 'bg-yellow-400' : 'bg-green-400'}`} style={{ width: `${Math.min(100, info.ivRank)}%` }} />
+            <div className={`text-sm font-black mt-1 ${regimeColors[info.regime] || 'text-slate-600'}`}>
+              {regimeLabels[info.regime] || info.regime}
+            </div>
+            <div className="flex items-center gap-2 mt-2.5">
+              <span className="text-[10px] text-slate-400 font-semibold">IV Rank</span>
+              <div className="flex-1 bg-slate-200 rounded-full h-1.5">
+                <div className={`h-1.5 rounded-full transition-all ${info.ivRank > 60 ? 'bg-red-400' : info.ivRank > 30 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${Math.min(100, info.ivRank)}%` }} />
               </div>
-              <span className="text-[10px] text-gray-400 font-mono">{info.ivRank?.toFixed?.(0) || 0}%</span>
+              <span className="text-[10px] text-slate-500 font-mono font-bold">{info.ivRank?.toFixed?.(0) || 0}%</span>
             </div>
-            <div className="text-[10px] text-gray-500 mt-1">ATM IV: {info.atmIV?.toFixed?.(1) || '-'}%</div>
+            <div className="flex items-center justify-between mt-1.5">
+              <span className="text-[10px] text-slate-400">ATM IV: <span className="font-mono font-bold text-slate-600">{info.atmIV?.toFixed?.(1) || '-'}%</span></span>
+              <span className="text-[10px] text-slate-400">Spot: <span className="font-mono font-bold text-slate-600">{info.spotPrice ? Math.round(info.spotPrice).toLocaleString() : '-'}</span></span>
+            </div>
           </div>
         ))}
       </div>
@@ -1307,55 +1317,57 @@ function PerformanceReportCard() {
   const { data } = useQuery({ queryKey: ['performance'], queryFn: () => client.get('/smart-strategies/performance').then(r => r.data), refetchInterval: 60000 });
   if (!data || data.totalTrades === 0) return null;
 
-  const pnlColor = data.totalPnl >= 0 ? 'text-green-400' : 'text-red-400';
-  const winRateColor = data.winRate >= 60 ? 'text-green-400' : data.winRate >= 40 ? 'text-yellow-400' : 'text-red-400';
+  const pnlColor = data.totalPnl >= 0 ? 'text-emerald-600' : 'text-red-500';
+  const winRateColor = data.winRate >= 60 ? 'text-emerald-600' : data.winRate >= 40 ? 'text-amber-600' : 'text-red-500';
 
   return (
-    <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-300 flex items-center gap-2">📊 Performance Report Card</h3>
-        <button onClick={() => setExpanded(!expanded)} className="text-xs text-blue-400 hover:text-blue-300">
-          {expanded ? 'Collapse' : 'Details'}
+    <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+      <div className="px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-sky-50 to-blue-50 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-500 to-blue-500 flex items-center justify-center text-sm shadow-sm">📊</div>
+          <span className="text-xs font-black text-slate-700">Performance Report</span>
+          <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px] font-bold">{data.totalTrades} trades</span>
+        </div>
+        <button onClick={() => setExpanded(!expanded)} className="text-[11px] font-bold text-sky-600 hover:text-sky-800 transition-colors">
+          {expanded ? 'Collapse' : 'Details ▼'}
         </button>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-        <StatBox label="Total Trades" value={data.totalTrades} />
-        <StatBox label="Win Rate" value={`${data.winRate}%`} color={winRateColor} />
-        <StatBox label="Total P&L" value={`₹${data.totalPnl?.toLocaleString?.() || 0}`} color={pnlColor} />
-        <StatBox label="Avg Win" value={`₹${data.avgWin?.toLocaleString?.() || 0}`} color="text-green-400" />
-        <StatBox label="Avg Loss" value={`₹${data.avgLoss?.toLocaleString?.() || 0}`} color="text-red-400" />
-        <StatBox label="Profit Factor" value={data.profitFactor} color={data.profitFactor >= 1.5 ? 'text-green-400' : 'text-yellow-400'} />
+      <div className="p-4 grid grid-cols-2 md:grid-cols-6 gap-3">
+        <Stat label="Total Trades" value={data.totalTrades} icon="📈" />
+        <Stat label="Win Rate" value={`${data.winRate}%`} color={winRateColor} icon="🎯" />
+        <Stat label="Total P&L" value={`₹${data.totalPnl?.toLocaleString?.() || 0}`} color={pnlColor} icon="💰" />
+        <Stat label="Avg Win" value={`₹${data.avgWin?.toLocaleString?.() || 0}`} color="text-emerald-600" icon="✅" />
+        <Stat label="Avg Loss" value={`₹${data.avgLoss?.toLocaleString?.() || 0}`} color="text-red-500" icon="❌" />
+        <Stat label="Profit Factor" value={data.profitFactor} color={data.profitFactor >= 1.5 ? 'text-emerald-600' : 'text-amber-600'} icon="⚖️" />
       </div>
 
       {expanded && (
-        <div className="mt-4 space-y-3">
-          {/* Per-strategy breakdown */}
+        <div className="px-4 pb-4 space-y-4">
           {data.byStrategy && Object.keys(data.byStrategy).length > 0 && (
             <div>
-              <h4 className="text-xs text-gray-400 font-medium mb-2">Per Strategy</h4>
+              <h4 className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Per Strategy</h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {Object.entries(data.byStrategy).map(([strat, stats]) => (
-                  <div key={strat} className="bg-gray-900/50 rounded-lg p-2 border border-gray-700/30">
-                    <div className="text-[10px] text-gray-400">{STRAT_LABELS[strat] || strat}</div>
-                    <div className="text-sm font-bold text-gray-200">{stats.winRate}% win</div>
-                    <div className={`text-xs ${stats.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>₹{stats.totalPnl?.toLocaleString?.()}</div>
-                    <div className="text-[10px] text-gray-500">{stats.trades} trades</div>
+                  <div key={strat} className="rounded-xl p-3 bg-slate-50 border border-slate-100">
+                    <div className="text-[10px] text-slate-400 font-semibold">{STRAT_LABELS[strat] || strat}</div>
+                    <div className="text-sm font-black text-slate-700 mt-0.5">{stats.winRate}% win</div>
+                    <div className={`text-xs font-bold ${stats.totalPnl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>₹{stats.totalPnl?.toLocaleString?.()}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">{stats.trades} trades</div>
                   </div>
                 ))}
               </div>
             </div>
           )}
-          {/* Recent trades */}
           {data.recentTrades?.length > 0 && (
             <div>
-              <h4 className="text-xs text-gray-400 font-medium mb-2">Recent Trades</h4>
-              <div className="max-h-40 overflow-y-auto space-y-1">
+              <h4 className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Recent Trades</h4>
+              <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-100 divide-y divide-slate-50">
                 {data.recentTrades.slice(0, 10).map((t, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs bg-gray-900/30 rounded px-2 py-1">
-                    <span className="text-gray-400">{STRAT_LABELS[t.strategyType] || t.strategyType}</span>
-                    <span className="text-gray-500">{t.underlying}</span>
-                    <span className="text-gray-500">{t.exitReason}</span>
-                    <span className={t.pnl >= 0 ? 'text-green-400 font-medium' : 'text-red-400 font-medium'}>
+                  <div key={i} className="flex items-center justify-between text-xs px-3 py-2 hover:bg-slate-50 transition-colors">
+                    <span className="px-2 py-0.5 rounded-md bg-violet-50 text-violet-700 text-[9px] font-black border border-violet-200">{STRAT_LABELS[t.strategyType] || t.strategyType}</span>
+                    <span className="text-slate-500 font-bold">{t.underlying}</span>
+                    <span className="text-slate-400 text-[10px]">{t.exitReason || '-'}</span>
+                    <span className={`font-mono font-bold ${t.pnl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                       {t.pnl >= 0 ? '+' : ''}₹{Math.round(t.pnl)}
                     </span>
                   </div>
@@ -1363,11 +1375,10 @@ function PerformanceReportCard() {
               </div>
             </div>
           )}
-          {/* Streaks */}
           {data.streaks && (
-            <div className="flex gap-4 text-xs text-gray-400">
-              <span>Win Streak: <b className="text-green-400">{data.streaks.currentWin}</b> (max {data.streaks.maxWin})</span>
-              <span>Loss Streak: <b className="text-red-400">{data.streaks.currentLoss}</b> (max {data.streaks.maxLoss})</span>
+            <div className="flex gap-6 text-xs text-slate-500 px-1">
+              <span>Win Streak: <b className="text-emerald-600">{data.streaks.currentWin}</b> <span className="text-slate-300">(max {data.streaks.maxWin})</span></span>
+              <span>Loss Streak: <b className="text-red-500">{data.streaks.currentLoss}</b> <span className="text-slate-300">(max {data.streaks.maxLoss})</span></span>
             </div>
           )}
         </div>
@@ -1376,14 +1387,6 @@ function PerformanceReportCard() {
   );
 }
 
-function StatBox({ label, value, color = 'text-gray-200' }) {
-  return (
-    <div className="bg-gray-900/50 rounded-lg p-2 border border-gray-700/30 text-center">
-      <div className="text-[10px] text-gray-500">{label}</div>
-      <div className={`text-sm font-bold ${color}`}>{value}</div>
-    </div>
-  );
-}
 
 function AutoEntryPanel() {
   const queryClient = useQueryClient();
@@ -1642,8 +1645,11 @@ function EnterTradeModal({ opp, onClose }) {
   });
 
   const stratType = opp.strategyType || opp.strategy || 'UNKNOWN';
-  const maxLoss = (opp.maxLoss || 0) * lots;
-  const maxProfit = (opp.maxProfit || opp.netEdgeRs || 0) * lots;
+  const perLotLoss = opp.maxLoss || opp.maxLossDown || 0;
+  const perLotProfit = opp.maxProfit || opp.creditRs || opp.netEdgeRs || opp.edgeAfterCosts || 0;
+  const maxLoss = perLotLoss * lots;
+  const maxProfit = perLotProfit * lots;
+  const tabData = TABS.find(t => (t.id === 'condor' && stratType === 'IRON_CONDOR') || (t.id === 'jade' && stratType === 'JADE_LIZARD') || (t.id === 'ratio' && stratType === 'RATIO_BUTTERFLY') || (t.id === 'bwb' && stratType === 'BROKEN_WING_BUTTERFLY') || (t.id === 'skew' && stratType === 'SKEW_HARVEST') || (t.id === 'box' && stratType === 'BOX_SPREAD_ARB') || (t.id === 'theta' && stratType === 'EXPIRY_THETA_CRUSH') || (t.id === 'calendar' && stratType === 'CALENDAR_SPREAD_EDGE')) || TABS[0];
 
   const handleSubmit = () => {
     enterMutation.mutate({
@@ -1656,8 +1662,8 @@ function EnterTradeModal({ opp, onClose }) {
       slPct: slEnabled ? slPct : null,
       targetPct: targetEnabled ? targetPct : null,
       timeExitMinutes: timeEnabled ? timeExit : null,
-      maxLoss: opp.maxLoss || 0,
-      maxProfit: opp.maxProfit || opp.netEdgeRs || 0,
+      maxLoss: perLotLoss,
+      maxProfit: perLotProfit,
       legList: opp.legList,
     });
   };
@@ -1716,15 +1722,34 @@ function EnterTradeModal({ opp, onClose }) {
               </div>
             )}
 
+            {/* Payoff Chart */}
+            {opp.legList && opp.legList.length > 0 && (
+              <div className="rounded-xl border border-slate-100 overflow-hidden">
+                <PayoffChart
+                  legs={opp.legList}
+                  lotSize={opp.lotSize || 75}
+                  spot={opp.spotPrice || opp.legList[0]?.strike || 24000}
+                  accentColor={tabData?.accent || '#6366f1'}
+                />
+              </div>
+            )}
+
             {/* P&L summary */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="p-3 rounded-xl bg-red-50 border border-red-100 text-center">
-                <div className="text-[9px] text-red-400 font-semibold uppercase">Max Risk (per lot)</div>
-                <div className="text-sm font-black text-red-600 mt-0.5">₹{Math.round(opp.maxLoss || 0).toLocaleString()}</div>
+                <div className="text-[9px] text-red-400 font-semibold uppercase">Max Risk</div>
+                <div className="text-sm font-black text-red-600 mt-0.5">₹{Math.round(perLotLoss).toLocaleString()}</div>
+                <div className="text-[9px] text-red-300 mt-0.5">per lot</div>
               </div>
               <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 text-center">
-                <div className="text-[9px] text-emerald-400 font-semibold uppercase">Max Reward (per lot)</div>
-                <div className="text-sm font-black text-emerald-600 mt-0.5">₹{Math.round(opp.maxProfit || opp.netEdgeRs || 0).toLocaleString()}</div>
+                <div className="text-[9px] text-emerald-400 font-semibold uppercase">Max Reward</div>
+                <div className="text-sm font-black text-emerald-600 mt-0.5">₹{Math.round(perLotProfit).toLocaleString()}</div>
+                <div className="text-[9px] text-emerald-300 mt-0.5">per lot</div>
+              </div>
+              <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-100 text-center">
+                <div className="text-[9px] text-indigo-400 font-semibold uppercase">R:R Ratio</div>
+                <div className="text-sm font-black text-indigo-600 mt-0.5">{perLotLoss > 0 ? formatRR(perLotProfit / perLotLoss) : '--'}</div>
+                <div className="text-[9px] text-indigo-300 mt-0.5">reward / risk</div>
               </div>
             </div>
 

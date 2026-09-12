@@ -41,16 +41,28 @@ public class StrategyScoreEngine {
     public List<Map<String, Object>> rankAndFilter(List<Map<String, Object>> opportunities, double minScore) {
         List<Map<String, Object>> scored = new ArrayList<>();
         for (Map<String, Object> opp : opportunities) {
-            double s = score(opp);
+            double edgeScore = scoreEdgeQuality(opp);
+            double winScore = scoreWinProbability(opp);
+            double liquidityScore = scoreLiquidity(opp);
+            double riskScore = scoreRiskReward(opp);
+            double timeScore = scoreTimeValue(opp);
+            double ivScore = scoreIVCondition(opp);
+
+            double composite = edgeScore * 0.20 + winScore * 0.20 + liquidityScore * 0.10
+                + riskScore * 0.20 + timeScore * 0.15 + ivScore * 0.15;
+            double regimeMultiplier = getRegimeMultiplier(opp);
+            composite = Math.min(100, composite * regimeMultiplier);
+            double s = Math.round(composite * 100.0) / 100.0;
+
             Map<String, Object> enriched = new LinkedHashMap<>(opp);
             enriched.put("compositeScore", s);
             enriched.put("scoreBreakdown", Map.of(
-                "edge", scoreEdgeQuality(opp),
-                "win", scoreWinProbability(opp),
-                "liquidity", scoreLiquidity(opp),
-                "risk", scoreRiskReward(opp),
-                "time", scoreTimeValue(opp),
-                "iv", scoreIVCondition(opp)
+                "edge", edgeScore,
+                "win", winScore,
+                "liquidity", liquidityScore,
+                "risk", riskScore,
+                "time", timeScore,
+                "iv", ivScore
             ));
             String underlying = (String) opp.getOrDefault("underlying", "");
             if (regimeDetector != null && !underlying.isEmpty()) {
