@@ -7,6 +7,9 @@ const TABS = [
   { id: 'bwb', label: 'Broken Wing', icon: '🔥', desc: 'Credit entry, zero risk one side', gradient: 'from-amber-500 via-orange-500 to-red-400', lightBg: 'from-amber-50 to-orange-50', text: 'amber' },
   { id: 'skew', label: 'Skew Harvest', icon: '📊', desc: 'Sell overpriced puts, buy cheap calls', gradient: 'from-cyan-500 via-blue-500 to-indigo-500', lightBg: 'from-cyan-50 to-blue-50', text: 'cyan' },
   { id: 'theta', label: 'Theta Crush', icon: '⏰', desc: 'Expiry day theta decay capture', gradient: 'from-emerald-500 via-teal-500 to-cyan-500', lightBg: 'from-emerald-50 to-teal-50', text: 'emerald' },
+  { id: 'box', label: 'Box Spread', icon: '📦', desc: 'Zero-risk arbitrage, guaranteed profit', gradient: 'from-rose-500 via-pink-500 to-fuchsia-500', lightBg: 'from-rose-50 to-pink-50', text: 'rose' },
+  { id: 'jade', label: 'Jade Lizard', icon: '🦎', desc: 'Zero upside risk, 70-80% win rate', gradient: 'from-lime-500 via-green-500 to-emerald-500', lightBg: 'from-lime-50 to-green-50', text: 'green' },
+  { id: 'calendar', label: 'Calendar Edge', icon: '📅', desc: 'Time decay differential, low risk', gradient: 'from-sky-500 via-blue-500 to-indigo-500', lightBg: 'from-sky-50 to-blue-50', text: 'sky' },
 ];
 
 const SCAN_URLS = {
@@ -14,6 +17,9 @@ const SCAN_URLS = {
   bwb: '/smart-strategies/broken-wing-butterfly/scan',
   skew: '/smart-strategies/skew-harvest/scan',
   theta: '/smart-strategies/theta-crush/scan',
+  box: '/smart-strategies/box-spread/scan',
+  jade: '/smart-strategies/jade-lizard/scan',
+  calendar: '/smart-strategies/calendar-spread/scan',
 };
 
 const STRATEGY_INFO = {
@@ -21,6 +27,9 @@ const STRATEGY_INFO = {
   bwb: { structure: 'BUY Wing | SELL 2x Body | BUY Far Wing (Asymmetric)', detail: 'Credit entry with zero risk on one side. 60-65% win rate. Ideal for directional bias with protection.', emptyMsg: 'No broken wing butterfly setups found. Requires credit > 0 with valid asymmetric wing structure.' },
   skew: { structure: 'SELL OTM Put Spread (overpriced) + BUY OTM Call Spread (cheap)', detail: 'Exploits structural IV skew. Near-zero cost. Profits when market stays flat or moves up.', emptyMsg: 'No IV skew opportunities. Requires put-call IV difference >= 2%. More common in volatile/fearful markets.' },
   theta: { structure: 'SELL ATM Straddle + BUY Wings (Iron Butterfly)', detail: 'Capture 70% theta decay in last 90 minutes of expiry. 90-95% win rate in optimal window (post 1:30 PM).', emptyMsg: 'Theta crush shows only on expiry day or 1-2 days before. Most effective on expiry day after 1:30 PM.' },
+  box: { structure: 'Bull Call Spread + Bear Put Spread (Same Strikes)', detail: 'Zero-risk arbitrage. Box value at expiry = strike width (guaranteed). Profit when market misprices the box below theoretical value after transaction costs.', emptyMsg: 'No box spread arbitrage found. Requires market mispricing where box cost < theoretical value minus transaction costs. Very rare in efficient markets.' },
+  jade: { structure: 'SELL OTM Put + SELL OTM Call + BUY Further OTM Call', detail: 'Short put + bear call spread. Zero upside risk when credit >= call spread width. 70-80% estimated win rate with defined risk.', emptyMsg: 'No jade lizard setups found. Requires credit > 40% of call spread width. Best in moderate IV environments with slight bullish bias.' },
+  calendar: { structure: 'SELL Near-Expiry + BUY Far-Expiry (Same Strike, Same Type)', detail: 'Exploits faster time decay of near-term options. Profits from theta differential and IV term structure. Low risk, defined max loss.', emptyMsg: 'No calendar spread edge found. Requires meaningful theta differential between near and far expiry. Best when near-term IV > far-term IV.' },
 };
 
 // Theoretical payoff legs for empty state diagrams (representative example strikes)
@@ -46,6 +55,21 @@ const THEORETICAL_LEGS = {
     { strike: atm, optionType: 'PE', side: 'SELL', qty: 1, price: 120 },
     { strike: atm + 300, optionType: 'CE', side: 'BUY', qty: 1, price: 30 },
     { strike: atm - 300, optionType: 'PE', side: 'BUY', qty: 1, price: 30 },
+  ],
+  box: (atm) => [
+    { strike: atm, optionType: 'CE', side: 'BUY', qty: 1, price: 180 },
+    { strike: atm + 200, optionType: 'CE', side: 'SELL', qty: 1, price: 90 },
+    { strike: atm, optionType: 'PE', side: 'SELL', qty: 1, price: 80 },
+    { strike: atm + 200, optionType: 'PE', side: 'BUY', qty: 1, price: 110 },
+  ],
+  jade: (atm) => [
+    { strike: atm - 200, optionType: 'PE', side: 'SELL', qty: 1, price: 50 },
+    { strike: atm + 200, optionType: 'CE', side: 'SELL', qty: 1, price: 45 },
+    { strike: atm + 400, optionType: 'CE', side: 'BUY', qty: 1, price: 15 },
+  ],
+  calendar: (atm) => [
+    { strike: atm, optionType: 'CE', side: 'SELL', qty: 1, price: 80 },
+    { strike: atm, optionType: 'CE', side: 'BUY', qty: 1, price: 140 },
   ],
 };
 
@@ -89,12 +113,12 @@ export default function SmartStrategies() {
 
       {/* ──── TAB CARDS ──── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 -mt-6 relative z-10">
-        <div className="grid grid-cols-4 gap-4">
+        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
           {TABS.map(t => {
             const isActive = activeTab === t.id;
             return (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
-                className={`group relative rounded-2xl p-5 transition-all duration-300 overflow-hidden ${
+                className={`group relative rounded-2xl p-5 transition-all duration-300 overflow-hidden flex-1 min-w-[160px] ${
                   isActive
                     ? 'shadow-xl scale-[1.02]'
                     : 'bg-white border border-slate-200 shadow-sm hover:shadow-lg hover:-translate-y-0.5'
@@ -272,7 +296,7 @@ function EmptyState({ tab, marketOpen, lastScannedAt }) {
           </div>
           <div className="p-4">
             <PayoffChart legs={theoreticalLegs} lotSize={75} spot={theoreticalAtm} accentColor={
-              tab === 'ratio' ? '#7c3aed' : tab === 'bwb' ? '#f59e0b' : tab === 'skew' ? '#0891b2' : '#10b981'
+              { ratio: '#7c3aed', bwb: '#f59e0b', skew: '#0891b2', theta: '#10b981', box: '#e11d48', jade: '#16a34a', calendar: '#0284c7' }[tab] || '#7c3aed'
             } />
           </div>
         </div>
@@ -583,6 +607,9 @@ function TabContent({ tab, underlying, tabInfo }) {
       case 'bwb': return <BWBContent opps={opps} />;
       case 'skew': return <SkewContent opps={opps} />;
       case 'theta': return <ThetaContent opps={opps} />;
+      case 'box': return <BoxContent opps={opps} />;
+      case 'jade': return <JadeContent opps={opps} />;
+      case 'calendar': return <CalendarContent opps={opps} />;
       default: return null;
     }
   })();
@@ -808,6 +835,184 @@ function ThetaContent({ opps }) {
               }
             </td>
             <td className="px-4 py-3 text-center text-[11px] font-bold text-slate-600">{o.winRate || '--'}</td>
+          </>)}
+        />
+      </TableShell>
+    </div>
+  );
+}
+
+/* ──────── BOX SPREAD ARBITRAGE ──────── */
+function BoxContent({ opps }) {
+  const sort = useSort('netEdgeRs');
+  const b = opps[0];
+  const sorted = sort.sorted(opps);
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Stat label="Best Edge" value={`₹${Math.round(b.netEdgeRs).toLocaleString()}`} color="text-emerald-600" icon="💎" />
+        <Stat label="Return" value={`${b.returnPct}%`} color="text-emerald-600" icon="📈" />
+        <Stat label="Annualized" value={`${b.annualizedReturn}%`} color="text-blue-600" icon="🚀" />
+        <Stat label="Risk Level" value={b.riskLevel} color="text-emerald-600" icon="🛡️" />
+        <Stat label="Signals" value={opps.length} sub={b.expiry} color="text-rose-600" icon="📡" />
+      </div>
+      <TableShell tab="box" count={opps.length} headerContent={
+        <tr>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <SortTh field="boxType" label="Type" sort={sort} className="text-left" />
+          <th className="px-4 py-3 text-left">Strikes</th>
+          <SortTh field="theoreticalValue" label="Theo Value" sort={sort} className="text-right" />
+          <SortTh field="boxCost" label="Box Cost" sort={sort} className="text-right" />
+          <SortTh field="netEdgeRs" label="Edge ₹" sort={sort} className="text-right" />
+          <SortTh field="txnCostRs" label="Txn Cost" sort={sort} className="text-right" />
+          <SortTh field="returnPct" label="Return %" sort={sort} className="text-right" />
+          <SortTh field="annualizedReturn" label="Annual %" sort={sort} className="text-right" />
+          <th className="px-4 py-3 text-left">Expiry</th>
+          <th className="px-2 py-3 text-center w-8"></th>
+        </tr>
+      }>
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#e11d48"
+          getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+          renderRow={(o, i) => (<>
+            <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
+            <td className="px-4 py-3">
+              <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border ${
+                o.boxType === 'LONG_BOX' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'
+              }`}>{o.boxType === 'LONG_BOX' ? 'LONG' : 'SHORT'}</span>
+            </td>
+            <td className="px-4 py-3 font-mono text-slate-600">{o.lowerStrike} — {o.upperStrike}</td>
+            <td className="px-4 py-3 text-right font-mono text-slate-600">₹{o.theoreticalValue}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-slate-800">₹{Math.round(Math.abs(o.boxCost)).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.netEdgeRs).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono text-red-400">₹{Math.round(o.txnCostRs).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">{o.returnPct}%</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-blue-600">{o.annualizedReturn}%</td>
+            <td className="px-4 py-3 text-slate-400 text-[10px]">{o.expiry}</td>
+          </>)}
+        />
+      </TableShell>
+    </div>
+  );
+}
+
+/* ──────── JADE LIZARD ──────── */
+function JadeContent({ opps }) {
+  const sort = useSort('creditRs');
+  const b = opps[0];
+  const sorted = sort.sorted(opps);
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Stat label="Best Credit" value={`₹${Math.round(b.creditRs).toLocaleString()}`} color="text-emerald-600" icon="💵" />
+        <Stat label="Upside Risk" value={b.zeroUpsideRisk ? 'ZERO' : 'LIMITED'} color={b.zeroUpsideRisk ? 'text-emerald-600' : 'text-amber-600'} icon={b.zeroUpsideRisk ? '🛡️' : '⚠️'} />
+        <Stat label="Win Rate" value={`${Math.round(b.estimatedWinRate)}%`} color="text-blue-600" icon="🎯" />
+        <Stat label="Break Even" value={Math.round(b.breakEvenDown).toLocaleString()} sub="Downside" color="text-red-500" icon="📉" />
+        <Stat label="Signals" value={opps.length} sub={b.expiry} color="text-green-600" icon="📡" />
+      </div>
+      <TableShell tab="jade" count={opps.length} headerContent={
+        <tr>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <th className="px-4 py-3 text-left">Sell Put</th>
+          <th className="px-4 py-3 text-left">Sell Call</th>
+          <th className="px-4 py-3 text-left">Buy Call</th>
+          <SortTh field="creditRs" label="Credit ₹" sort={sort} className="text-right" />
+          <SortTh field="zeroUpsideRisk" label="Upside" sort={sort} className="text-center" />
+          <SortTh field="estimatedWinRate" label="Win %" sort={sort} className="text-right" />
+          <SortTh field="scenarioFlat" label="Flat P&L" sort={sort} className="text-right" />
+          <SortTh field="scenarioUp" label="Up P&L" sort={sort} className="text-right" />
+          <SortTh field="scenarioDown" label="Down P&L" sort={sort} className="text-right" />
+          <th className="px-2 py-3 text-center w-8"></th>
+        </tr>
+      }>
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#16a34a"
+          getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+          renderRow={(o, i) => (<>
+            <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
+            <td className="px-4 py-3 font-mono text-red-600 font-bold">{o.putSellStrike} <span className="text-red-300">@</span> ₹{o.putPrice}</td>
+            <td className="px-4 py-3 font-mono text-red-600 font-bold">{o.callSellStrike} <span className="text-red-300">@</span> ₹{o.callSellPrice}</td>
+            <td className="px-4 py-3 font-mono text-slate-600">{o.callBuyStrike} <span className="text-slate-300">@</span> ₹{o.callBuyPrice}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.creditRs).toLocaleString()}</td>
+            <td className="px-4 py-3 text-center">
+              <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border ${
+                o.zeroUpsideRisk ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+              }`}>{o.zeroUpsideRisk ? 'ZERO RISK' : 'LIMITED'}</span>
+            </td>
+            <td className="px-4 py-3 text-right font-mono text-slate-600">{Math.round(o.estimatedWinRate)}%</td>
+            <td className="px-4 py-3 text-right font-mono text-emerald-600">₹{Math.round(o.scenarioFlat).toLocaleString()}</td>
+            <td className={`px-4 py-3 text-right font-mono font-bold ${o.scenarioUp >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+              {o.scenarioUp >= 0 ? '+' : ''}₹{Math.round(o.scenarioUp).toLocaleString()}
+            </td>
+            <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.scenarioDown).toLocaleString()}</td>
+          </>)}
+        />
+      </TableShell>
+    </div>
+  );
+}
+
+/* ──────── CALENDAR SPREAD EDGE ──────── */
+function CalendarContent({ opps }) {
+  const sort = useSort('ivEdge');
+  const b = opps[0];
+  const sorted = sort.sorted(opps);
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Stat label="IV Edge" value={`${b.ivEdge}%`} color="text-sky-600" icon="📊" />
+        <Stat label="Daily Theta" value={`₹${Math.round(b.dailyThetaEdgeRs).toLocaleString()}`} sub="Per lot/day" color="text-emerald-600" icon="⏰" />
+        <Stat label="Expected P&L" value={`₹${Math.round(b.expectedProfitRs).toLocaleString()}`} color="text-emerald-600" icon="💰" />
+        <Stat label="Max Loss" value={`₹${Math.round(b.maxLoss).toLocaleString()}`} sub="Debit paid" color="text-red-500" icon="🛡️" />
+        <Stat label="Signals" value={opps.length} sub={`${b.nearExpiry} → ${b.farExpiry}`} color="text-sky-600" icon="📡" />
+      </div>
+
+      {b.ivBackwardation && (
+        <div className="bg-gradient-to-r from-sky-50 to-blue-50 rounded-2xl border border-sky-200/60 p-5 flex items-start gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-sky-400 to-blue-500 flex items-center justify-center shrink-0 shadow-lg shadow-sky-400/20">
+            <span className="text-xl">🔥</span>
+          </div>
+          <div>
+            <div className="text-sm font-black text-sky-800">IV Backwardation Detected</div>
+            <div className="text-xs text-sky-600/80 mt-1 leading-relaxed">Near-term IV is higher than far-term IV — this amplifies the calendar spread edge as near-term options are relatively overpriced. Sell the expensive near-term, buy the cheap far-term.</div>
+          </div>
+        </div>
+      )}
+
+      <TableShell tab="calendar" count={opps.length} headerContent={
+        <tr>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <SortTh field="optionType" label="Type" sort={sort} className="text-left" />
+          <SortTh field="strike" label="Strike" sort={sort} className="text-right" />
+          <th className="px-4 py-3 text-left">Near Expiry</th>
+          <th className="px-4 py-3 text-left">Far Expiry</th>
+          <SortTh field="nearIV" label="Near IV" sort={sort} className="text-right" />
+          <SortTh field="farIV" label="Far IV" sort={sort} className="text-right" />
+          <SortTh field="ivEdge" label="IV Edge" sort={sort} className="text-right" />
+          <SortTh field="dailyThetaEdgeRs" label="Daily θ ₹" sort={sort} className="text-right" />
+          <SortTh field="expectedProfitRs" label="Exp. P&L" sort={sort} className="text-right" />
+          <th className="px-2 py-3 text-center w-8"></th>
+        </tr>
+      }>
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#0284c7"
+          getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+          renderRow={(o, i) => (<>
+            <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
+            <td className="px-4 py-3"><TypeBadge type={o.optionType} /></td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-slate-800">{o.strike}</td>
+            <td className="px-4 py-3 text-slate-500 text-[11px]">
+              <span className="font-mono text-red-500 font-bold">SELL</span> {o.nearExpiry} <span className="text-slate-300">@</span> ₹{o.nearPrice}
+            </td>
+            <td className="px-4 py-3 text-slate-500 text-[11px]">
+              <span className="font-mono text-emerald-500 font-bold">BUY</span> {o.farExpiry} <span className="text-slate-300">@</span> ₹{o.farPrice}
+            </td>
+            <td className="px-4 py-3 text-right font-mono text-slate-600">{o.nearIV}%</td>
+            <td className="px-4 py-3 text-right font-mono text-slate-600">{o.farIV}%</td>
+            <td className="px-4 py-3 text-right">
+              <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border ${
+                o.ivEdge > 0 ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-slate-50 text-slate-600 border-slate-200'
+              }`}>{o.ivEdge > 0 ? '+' : ''}{o.ivEdge}%</span>
+            </td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.dailyThetaEdgeRs).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.expectedProfitRs).toLocaleString()}</td>
           </>)}
         />
       </TableShell>

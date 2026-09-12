@@ -23,6 +23,9 @@ public class SmartStrategiesController {
     private final BrokenWingButterflyScanner bwbScanner;
     private final SkewHarvestScanner skewHarvestScanner;
     private final ExpiryThetaCrushScanner thetaCrushScanner;
+    private final BoxSpreadArbScanner boxSpreadScanner;
+    private final JadeLizardScanner jadeLizardScanner;
+    private final CalendarSpreadEdgeScanner calendarSpreadScanner;
     private final OptionArbAutoExecService autoExecService;
 
     private final ConcurrentHashMap<String, CachedResult> cache = new ConcurrentHashMap<>();
@@ -31,11 +34,17 @@ public class SmartStrategiesController {
                                       BrokenWingButterflyScanner bwbScanner,
                                       SkewHarvestScanner skewHarvestScanner,
                                       ExpiryThetaCrushScanner thetaCrushScanner,
+                                      BoxSpreadArbScanner boxSpreadScanner,
+                                      JadeLizardScanner jadeLizardScanner,
+                                      CalendarSpreadEdgeScanner calendarSpreadScanner,
                                       OptionArbAutoExecService autoExecService) {
         this.ratioButterflyScanner = ratioButterflyScanner;
         this.bwbScanner = bwbScanner;
         this.skewHarvestScanner = skewHarvestScanner;
         this.thetaCrushScanner = thetaCrushScanner;
+        this.boxSpreadScanner = boxSpreadScanner;
+        this.jadeLizardScanner = jadeLizardScanner;
+        this.calendarSpreadScanner = calendarSpreadScanner;
         this.autoExecService = autoExecService;
     }
 
@@ -75,6 +84,33 @@ public class SmartStrategiesController {
         });
     }
 
+    @GetMapping("/box-spread/scan")
+    public ResponseEntity<Map<String, Object>> scanBoxSpread(@RequestParam(defaultValue = "ALL") String underlying) {
+        return cachedScan("box-spread:" + underlying, () -> {
+            List<Map<String, Object>> opps = boxSpreadScanner.scan(underlying);
+            tryAutoExec(opps);
+            return wrapResponse(opps, "BOX_SPREAD_ARB", underlying);
+        });
+    }
+
+    @GetMapping("/jade-lizard/scan")
+    public ResponseEntity<Map<String, Object>> scanJadeLizard(@RequestParam(defaultValue = "ALL") String underlying) {
+        return cachedScan("jade-lizard:" + underlying, () -> {
+            List<Map<String, Object>> opps = jadeLizardScanner.scan(underlying);
+            tryAutoExec(opps);
+            return wrapResponse(opps, "JADE_LIZARD", underlying);
+        });
+    }
+
+    @GetMapping("/calendar-spread/scan")
+    public ResponseEntity<Map<String, Object>> scanCalendarSpread(@RequestParam(defaultValue = "ALL") String underlying) {
+        return cachedScan("calendar-spread:" + underlying, () -> {
+            List<Map<String, Object>> opps = calendarSpreadScanner.scan(underlying);
+            tryAutoExec(opps);
+            return wrapResponse(opps, "CALENDAR_SPREAD_EDGE", underlying);
+        });
+    }
+
     @GetMapping("/all/scan")
     public ResponseEntity<Map<String, Object>> scanAll(@RequestParam(defaultValue = "ALL") String underlying) {
         Map<String, Object> resp = new LinkedHashMap<>();
@@ -84,21 +120,20 @@ public class SmartStrategiesController {
         resp.put("lastScannedAt", ZonedDateTime.now(ZoneId.of("Asia/Kolkata"))
             .format(DateTimeFormatter.ofPattern("hh:mm:ss a")));
 
-        try {
-            resp.put("ratioButterfly", ratioButterflyScanner.scan(underlying));
-        } catch (Exception e) { resp.put("ratioButterfly", List.of()); }
-
-        try {
-            resp.put("brokenWingButterfly", bwbScanner.scan(underlying));
-        } catch (Exception e) { resp.put("brokenWingButterfly", List.of()); }
-
-        try {
-            resp.put("skewHarvest", skewHarvestScanner.scan(underlying));
-        } catch (Exception e) { resp.put("skewHarvest", List.of()); }
-
-        try {
-            resp.put("thetaCrush", thetaCrushScanner.scan(underlying));
-        } catch (Exception e) { resp.put("thetaCrush", List.of()); }
+        try { resp.put("ratioButterfly", ratioButterflyScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("ratioButterfly", List.of()); }
+        try { resp.put("brokenWingButterfly", bwbScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("brokenWingButterfly", List.of()); }
+        try { resp.put("skewHarvest", skewHarvestScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("skewHarvest", List.of()); }
+        try { resp.put("thetaCrush", thetaCrushScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("thetaCrush", List.of()); }
+        try { resp.put("boxSpread", boxSpreadScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("boxSpread", List.of()); }
+        try { resp.put("jadeLizard", jadeLizardScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("jadeLizard", List.of()); }
+        try { resp.put("calendarSpread", calendarSpreadScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("calendarSpread", List.of()); }
 
         return ResponseEntity.ok(resp);
     }
