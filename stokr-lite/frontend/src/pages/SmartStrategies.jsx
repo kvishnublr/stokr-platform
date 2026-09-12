@@ -693,53 +693,84 @@ function RatioContent({ opps }) {
 
 /* ──────── BROKEN WING BUTTERFLY ──────── */
 function BWBContent({ opps }) {
+  const [bwbType, setBwbType] = useState('PE');
+  const putOpps = opps.filter(o => o.optionType === 'PE');
+  const callOpps = opps.filter(o => o.optionType === 'CE');
+  const filtered = bwbType === 'PE' ? putOpps : callOpps;
   const sort = useSort('creditRs');
-  const b = opps[0];
-  const sorted = sort.sorted(opps);
+  const sorted = sort.sorted(filtered);
+  const b = filtered[0];
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <Stat label="Best Credit" value={`₹${Math.round(b.creditRs).toLocaleString()}`} color="text-emerald-600" icon="💵" />
-        <Stat label="Zero Risk Side" value={b.zeroRiskSide} color="text-blue-600" icon="🛡️" />
-        <Stat label="Max Profit" value={`₹${Math.round(b.maxProfit).toLocaleString()}`} color="text-emerald-600" icon="💰" />
-        <Stat label="Max Loss" value={`₹${Math.round(b.maxLoss).toLocaleString()}`} color="text-red-500" icon="⚠️" />
-        <Stat label="Signals" value={opps.length} sub={b.expiry} color="text-amber-600" icon="📡" />
+      <div className="flex items-center gap-2 mb-1">
+        <button onClick={() => setBwbType('PE')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            bwbType === 'PE'
+              ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-200'
+              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+          }`}>
+          <span>🛡️</span> PUT BWB <span className="ml-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-white/20">{putOpps.length}</span>
+          <span className={`text-[9px] font-medium ${bwbType === 'PE' ? 'text-emerald-100' : 'text-slate-400'}`}>Zero risk if market goes UP</span>
+        </button>
+        <button onClick={() => setBwbType('CE')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            bwbType === 'CE'
+              ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-200'
+              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+          }`}>
+          <span>🛡️</span> CALL BWB <span className="ml-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-white/20">{callOpps.length}</span>
+          <span className={`text-[9px] font-medium ${bwbType === 'CE' ? 'text-blue-100' : 'text-slate-400'}`}>Zero risk if market goes DOWN</span>
+        </button>
       </div>
-      <TableShell tab="bwb" count={opps.length} headerContent={
-        <tr>
-          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
-          <SortTh field="optionType" label="Type" sort={sort} className="text-left" />
-          <th className="px-4 py-3 text-left">Near Wing</th>
-          <th className="px-4 py-3 text-left">Body (2x Sell)</th>
-          <th className="px-4 py-3 text-left">Far Wing</th>
-          <SortTh field="creditRs" label="Credit" sort={sort} className="text-right" />
-          <SortTh field="maxProfit" label="Max Profit" sort={sort} className="text-right" />
-          <SortTh field="maxLoss" label="Max Loss" sort={sort} className="text-right" />
-          <SortTh field="zeroRiskSide" label="Zero Risk" sort={sort} className="text-center" />
-          <th className="px-4 py-3 text-left">Expiry</th>
-          <th className="px-2 py-3 text-center w-8"></th>
-        </tr>
-      }>
-        <ExpandableRows opps={sorted} colSpan={10} accentColor="#f59e0b"
-          getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
-          renderRow={(o, i) => (<>
-            <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
-            <td className="px-4 py-3"><TypeBadge type={o.optionType} /></td>
-            <td className="px-4 py-3 font-mono text-slate-600">{o.nearWingStrike} <span className="text-slate-300">@</span> ₹{o.nearWingPrice}</td>
-            <td className="px-4 py-3 font-mono font-bold text-red-600">{o.bodyStrike} <span className="text-red-300">@</span> ₹{o.bodyPrice}</td>
-            <td className="px-4 py-3 font-mono text-slate-600">{o.farWingStrike} <span className="text-slate-300">@</span> ₹{o.farWingPrice}</td>
-            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.creditRs).toLocaleString()}</td>
-            <td className="px-4 py-3 text-right font-mono text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</td>
-            <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</td>
-            <td className="px-4 py-3 text-center">
-              <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border ${
-                o.zeroRiskSide === 'UPSIDE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'
-              }`}>{o.zeroRiskSide}</span>
-            </td>
-            <td className="px-4 py-3 text-slate-400 text-[10px]">{o.expiry}</td>
-          </>)}
-        />
-      </TableShell>
+      {filtered.length === 0 ? (
+        <div className="text-center py-10 text-slate-400 text-sm">No {bwbType === 'PE' ? 'PUT' : 'CALL'} BWB opportunities right now</div>
+      ) : (<>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <Stat label="Best Credit" value={`₹${Math.round(b.creditRs).toLocaleString()}`} color="text-emerald-600" icon="💵" />
+          <Stat label="Zero Risk Side" value={b.zeroRiskSide} color={bwbType === 'PE' ? 'text-emerald-600' : 'text-blue-600'} icon="🛡️" />
+          <Stat label="Max Profit" value={`₹${Math.round(b.maxProfit).toLocaleString()}`} color="text-emerald-600" icon="💰" />
+          <Stat label="Max Loss" value={`₹${Math.round(b.maxLoss).toLocaleString()}`} color="text-red-500" icon="⚠️" />
+          <Stat label="Signals" value={filtered.length} sub={b.expiry} color="text-amber-600" icon="📡" />
+        </div>
+        <div className={`px-4 py-2.5 rounded-xl text-[11px] font-medium border ${
+          bwbType === 'PE'
+            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            : 'bg-blue-50 text-blue-700 border-blue-200'
+        }`}>
+          {bwbType === 'PE'
+            ? '📈 PUT BWB — Safe if market rallies. Risk only on the downside. Ideal when you expect market to stay flat or go up.'
+            : '📉 CALL BWB — Safe if market drops. Risk only on the upside. Ideal when you expect market to stay flat or go down.'}
+        </div>
+        <TableShell tab="bwb" count={filtered.length} headerContent={
+          <tr>
+            <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+            <th className="px-4 py-3 text-left">Near Wing</th>
+            <th className="px-4 py-3 text-left">Body (2x Sell)</th>
+            <th className="px-4 py-3 text-left">Far Wing</th>
+            <SortTh field="creditRs" label="Credit" sort={sort} className="text-right" />
+            <SortTh field="maxProfit" label="Max Profit" sort={sort} className="text-right" />
+            <SortTh field="maxLoss" label="Max Loss" sort={sort} className="text-right" />
+            <SortTh field="riskReward" label="R:R" sort={sort} className="text-right" />
+            <th className="px-4 py-3 text-left">Expiry</th>
+            <th className="px-2 py-3 text-center w-8"></th>
+          </tr>
+        }>
+          <ExpandableRows opps={sorted} colSpan={10} accentColor={bwbType === 'PE' ? '#10b981' : '#3b82f6'}
+            getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+            renderRow={(o, i) => (<>
+              <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
+              <td className="px-4 py-3 font-mono text-slate-600">{o.nearWingStrike} <span className="text-slate-300">@</span> ₹{o.nearWingPrice}</td>
+              <td className="px-4 py-3 font-mono font-bold text-red-600">{o.bodyStrike} <span className="text-red-300">@</span> ₹{o.bodyPrice}</td>
+              <td className="px-4 py-3 font-mono text-slate-600">{o.farWingStrike} <span className="text-slate-300">@</span> ₹{o.farWingPrice}</td>
+              <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.creditRs).toLocaleString()}</td>
+              <td className="px-4 py-3 text-right font-mono text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</td>
+              <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</td>
+              <td className="px-4 py-3 text-right font-mono font-bold text-slate-700">{o.riskReward?.toFixed(2)}</td>
+              <td className="px-4 py-3 text-slate-400 text-[10px]">{o.expiry}</td>
+            </>)}
+          />
+        </TableShell>
+      </>)}
     </div>
   );
 }
