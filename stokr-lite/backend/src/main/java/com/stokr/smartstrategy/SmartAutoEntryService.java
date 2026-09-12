@@ -1,6 +1,5 @@
 package com.stokr.smartstrategy;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -15,7 +14,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class SmartAutoEntryService {
 
     private final RatioButterflyScanner ratioButterflyScanner;
@@ -30,11 +28,37 @@ public class SmartAutoEntryService {
     private final PortfolioRiskManager riskManager;
     private final SmartStrategyExecutionService executionService;
 
-    private final AtomicBoolean enabled = new AtomicBoolean(false);
-    private final ConcurrentHashMap<String, Long> recentEntries = new ConcurrentHashMap<>();
+    private final AtomicBoolean enabled;
+    private final ConcurrentHashMap<String, Long> recentEntries;
     private static final long COOLDOWN_MS = 5 * 60 * 1000;
     private static final double MIN_SCORE = 55.0;
     private volatile String lastScanResult = "Not started";
+
+    public SmartAutoEntryService(RatioButterflyScanner ratioButterflyScanner,
+                                  BrokenWingButterflyScanner bwbScanner,
+                                  SkewHarvestScanner skewHarvestScanner,
+                                  ExpiryThetaCrushScanner thetaCrushScanner,
+                                  BoxSpreadArbScanner boxSpreadScanner,
+                                  JadeLizardScanner jadeLizardScanner,
+                                  CalendarSpreadEdgeScanner calendarSpreadScanner,
+                                  IronCondorScanner ironCondorScanner,
+                                  StrategyScoreEngine scoreEngine,
+                                  PortfolioRiskManager riskManager,
+                                  SmartStrategyExecutionService executionService) {
+        this.ratioButterflyScanner = ratioButterflyScanner;
+        this.bwbScanner = bwbScanner;
+        this.skewHarvestScanner = skewHarvestScanner;
+        this.thetaCrushScanner = thetaCrushScanner;
+        this.boxSpreadScanner = boxSpreadScanner;
+        this.jadeLizardScanner = jadeLizardScanner;
+        this.calendarSpreadScanner = calendarSpreadScanner;
+        this.ironCondorScanner = ironCondorScanner;
+        this.scoreEngine = scoreEngine;
+        this.riskManager = riskManager;
+        this.executionService = executionService;
+        this.enabled = new AtomicBoolean(false);
+        this.recentEntries = new ConcurrentHashMap<>();
+    }
 
     public void setEnabled(boolean on) {
         enabled.set(on);
