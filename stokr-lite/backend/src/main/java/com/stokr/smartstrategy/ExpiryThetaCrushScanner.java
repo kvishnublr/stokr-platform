@@ -40,7 +40,7 @@ public class ExpiryThetaCrushScanner {
 
         for (String u : targets) {
             try {
-                LocalDate expiry = optionChainService.getWeeklyExpiryDate(u);
+                LocalDate expiry = optionChainService.getNearestExpiry(u);
                 boolean isExpiryDay = today.equals(expiry);
                 long dte = Duration.between(today.atStartOfDay(), expiry.atStartOfDay()).toDays();
 
@@ -67,7 +67,7 @@ public class ExpiryThetaCrushScanner {
         double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
         if (spot <= 0) return results;
 
-        LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
+        LocalDate expiry = optionChainService.getNearestExpiry(underlying);
         int step = OptionChainService.getStrikeStep(underlying);
         int lotSize = OptionChainService.getLotSize(underlying);
         int atmStrike = (int) (Math.round(spot / step) * step);

@@ -303,6 +303,11 @@ public class OptionChainService {
         }
         return expiryDay;
     }
+    public LocalDate getNearestExpiry(String underlying) {
+        LocalDate weekly = getWeeklyExpiryDate(underlying);
+        return weekly != null ? weekly : getMonthlyExpiryDate(underlying);
+    }
+
     public LocalDate getWeeklyExpiryDate(String underlying) {
         // SEBI 2025 rule: Only NIFTY has weekly expiries on NSE.
         if (!underlying.toUpperCase().equals("NIFTY")) return null;

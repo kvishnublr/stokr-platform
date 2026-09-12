@@ -51,7 +51,7 @@ public class SkewHarvestScanner {
         double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
         if (spot <= 0) return results;
 
-        LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
+        LocalDate expiry = optionChainService.getNearestExpiry(underlying);
         long dte = Math.max(1, Duration.between(LocalDate.now().atStartOfDay(), expiry.atStartOfDay()).toDays());
         double years = dte / 365.0;
         int step = OptionChainService.getStrikeStep(underlying);
