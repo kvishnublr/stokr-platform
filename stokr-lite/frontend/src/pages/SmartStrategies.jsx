@@ -151,9 +151,10 @@ export default function SmartStrategies() {
         </div>
       </div>
 
-      {/* ──── AUTO-ENTRY + ACTIVE POSITIONS ──── */}
+      {/* ──── AUTO-ENTRY + TOP PICKS + ACTIVE POSITIONS ──── */}
       <div className="max-w-[1400px] mx-auto px-6 pt-5 space-y-3">
         <AutoEntryPanel />
+        <TopPicksPanel underlying={underlying} onEnter={setEntryModal} />
         <ActivePositionsPanel />
       </div>
 
@@ -1108,81 +1109,148 @@ function CalendarContent({ opps, onEnter }) {
 }
 
 /* ──────── IRON CONDOR ──────── */
+function RankBadge({ rank }) {
+  if (rank === 1) return <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 text-white text-[11px] font-black shadow-lg shadow-amber-400/30 ring-2 ring-amber-300/40">#1</span>;
+  if (rank === 2) return <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-slate-300 to-slate-400 text-white text-[11px] font-black shadow-md">#2</span>;
+  if (rank === 3) return <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-amber-600 to-orange-700 text-white text-[11px] font-black shadow-md">#3</span>;
+  if (rank <= 10) return <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold">#{rank}</span>;
+  return <span className="text-[10px] text-slate-400 font-mono">#{rank}</span>;
+}
+
+function formatRR(ratio) {
+  if (ratio >= 10) return `${Math.round(ratio)}:1`;
+  if (ratio >= 1) return `${ratio.toFixed(1)}:1`;
+  return `1:${(1/ratio).toFixed(1)}`;
+}
+
+function ScoreMeter({ score }) {
+  const pct = Math.min(100, score);
+  const color = score >= 75 ? 'from-emerald-400 to-emerald-500' : score >= 60 ? 'from-amber-400 to-orange-500' : 'from-slate-300 to-slate-400';
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-14 h-2 rounded-full bg-slate-100 overflow-hidden">
+        <div className={`h-full rounded-full bg-gradient-to-r ${color} transition-all`} style={{width: `${pct}%`}} />
+      </div>
+      <span className={`text-[11px] font-black ${score >= 75 ? 'text-emerald-600' : score >= 60 ? 'text-amber-600' : 'text-slate-500'}`}>{score}</span>
+    </div>
+  );
+}
+
 function IronCondorContent({ opps, onEnter }) {
   const sort = useSort('score');
   const b = opps[0];
   const sorted = sort.sorted(opps);
+  const top3 = sorted.slice(0, 3);
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <Stat label="Score" value={b.score} sub="Composite" color="text-indigo-600" icon="⭐" />
-        <Stat label="Credit" value={`₹${Math.round(b.creditRs).toLocaleString()}`} sub={`${b.credit} pts`} color="text-emerald-600" icon="💰" />
-        <Stat label="Max Loss" value={`₹${Math.round(b.maxLoss).toLocaleString()}`} sub={`Wing: ${b.wingWidth} pts`} color="text-red-500" icon="🛡️" />
-        <Stat label="R:R" value={`${(b.rewardRiskRatio * 100).toFixed(0)}%`} sub="Credit / Risk" color="text-violet-600" icon="📊" />
-        <Stat label="Win Rate" value={`${Math.round(b.estimatedWinRate)}%`} sub={`BE: ${Math.round(b.breakEvenDown)}-${Math.round(b.breakEvenUp)}`} color="text-emerald-600" icon="🎯" />
+      {/* Top 3 Picks Showcase */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {top3.map((t, i) => (
+          <div key={i} className={`relative rounded-2xl p-4 border overflow-hidden ${
+            i === 0 ? 'bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-amber-200/60 shadow-lg shadow-amber-100/50'
+            : i === 1 ? 'bg-gradient-to-br from-slate-50 to-gray-50 border-slate-200/60 shadow-md'
+            : 'bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200/40 shadow-sm'
+          }`}>
+            <div className="flex items-center justify-between mb-2">
+              <RankBadge rank={i + 1} />
+              <span className="text-[10px] font-bold text-slate-500 uppercase">{t.underlying}</span>
+            </div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="px-2 py-0.5 rounded-md text-[9px] font-black bg-indigo-100 text-indigo-700">{t.putSellStrike} — {t.callSellStrike}</span>
+              <span className="text-[9px] text-slate-400">profit zone</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div>
+                <div className="text-[9px] text-slate-400 font-semibold">Credit</div>
+                <div className="text-sm font-black text-emerald-600">₹{Math.round(t.creditRs).toLocaleString()}</div>
+              </div>
+              <div>
+                <div className="text-[9px] text-slate-400 font-semibold">Max Loss</div>
+                <div className="text-sm font-black text-red-500">₹{Math.round(t.maxLoss).toLocaleString()}</div>
+              </div>
+              <div>
+                <div className="text-[9px] text-slate-400 font-semibold">R:R</div>
+                <div className="text-sm font-black text-violet-600">{formatRR(t.rewardRiskRatio)}</div>
+              </div>
+            </div>
+            <div className="mt-2 flex items-center justify-between">
+              <ScoreMeter score={t.score} />
+              <span className="text-[10px] font-bold text-emerald-600">{Math.round(t.estimatedWinRate)}% win</span>
+            </div>
+          </div>
+        ))}
       </div>
 
+      {/* Summary Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Stat label="Best Score" value={b.score} sub="Rank #1" color="text-indigo-600" icon="⭐" />
+        <Stat label="Top Credit" value={`₹${Math.round(b.creditRs).toLocaleString()}`} sub={`${b.credit} pts`} color="text-emerald-600" icon="💰" />
+        <Stat label="Lowest Risk" value={`₹${Math.round(Math.min(...opps.map(o => o.maxLoss))).toLocaleString()}`} sub="Best case" color="text-red-500" icon="🛡️" />
+        <Stat label="Best R:R" value={formatRR(Math.max(...opps.map(o => o.rewardRiskRatio)))} sub="Credit / Risk" color="text-violet-600" icon="📊" />
+        <Stat label="Signals" value={opps.length} sub={`${opps.filter(o => o.score >= 70).length} high-quality`} color="text-sky-600" icon="📡" />
+      </div>
+
+      {/* Info Banner */}
       <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-200/60 p-5 flex items-start gap-4">
         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-400/20">
           <span className="text-xl">🦅</span>
         </div>
         <div>
           <div className="text-sm font-black text-indigo-800">Range-Bound Profit Zone</div>
-          <div className="text-xs text-indigo-600/80 mt-1 leading-relaxed">Profit when {b.underlying} stays between {Math.round(b.breakEvenDown)} and {Math.round(b.breakEvenUp)} ({b.breakEvenRangePct}% range). Both sides protected with defined max loss.</div>
+          <div className="text-xs text-indigo-600/80 mt-1 leading-relaxed">Profit when {b.underlying} stays between {Math.round(b.breakEvenDown)} and {Math.round(b.breakEvenUp)} ({b.breakEvenRangePct}% range). Both sides protected — max loss is always defined.</div>
         </div>
       </div>
 
+      {/* Full Table */}
       <TableShell tab="condor" count={opps.length} headerContent={
         <tr>
+          <th className="px-2 py-3 text-center w-10">Rank</th>
           <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
-          <th className="px-4 py-3 text-center">Put Wing</th>
-          <th className="px-4 py-3 text-center">Short Strikes</th>
-          <th className="px-4 py-3 text-center">Call Wing</th>
-          <SortTh field="credit" label="Credit" sort={sort} className="text-right" />
+          <th className="px-3 py-3 text-center">Structure</th>
+          <SortTh field="creditRs" label="Credit" sort={sort} className="text-right" />
           <SortTh field="maxLoss" label="Max Loss" sort={sort} className="text-right" />
-          <SortTh field="rewardRiskRatio" label="R:R" sort={sort} className="text-right" />
-          <SortTh field="breakEvenRangePct" label="BE Range" sort={sort} className="text-right" />
-          <SortTh field="score" label="Score" sort={sort} className="text-right" />
-          <SortTh field="estimatedWinRate" label="Win%" sort={sort} className="text-right" />
+          <SortTh field="rewardRiskRatio" label="R:R" sort={sort} className="text-center" />
+          <SortTh field="breakEvenRangePct" label="BE Range" sort={sort} className="text-center" />
+          <SortTh field="score" label="Score" sort={sort} className="text-center" />
+          <SortTh field="estimatedWinRate" label="Win%" sort={sort} className="text-center" />
           <th className="px-2 py-3 text-center w-8"></th>
           <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={10} accentColor="#6366f1" onEnter={onEnter}
+        <ExpandableRows opps={sorted} colSpan={9} accentColor="#6366f1" onEnter={onEnter}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
-            <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
-            <td className="px-4 py-3 text-center text-[11px]">
-              <span className="font-mono text-emerald-500 font-bold">B</span> {o.putBuyStrike}PE
-              <span className="mx-1 text-slate-300">|</span>
-              <span className="font-mono text-red-500 font-bold">S</span> {o.putSellStrike}PE
+            <td className="px-2 py-3 text-center"><RankBadge rank={i + 1} /></td>
+            <td className="px-3 py-3 font-bold text-slate-800">{o.underlying}</td>
+            <td className="px-3 py-3">
+              <div className="flex flex-col items-center gap-0.5">
+                <div className="text-[10px]">
+                  <span className="font-mono text-emerald-500 font-bold">B</span><span className="text-slate-500"> {o.putBuyStrike}PE</span>
+                  <span className="mx-0.5 text-slate-300">/</span>
+                  <span className="font-mono text-red-500 font-bold">S</span><span className="text-slate-500"> {o.putSellStrike}PE</span>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[9px] font-black bg-indigo-100/80 text-indigo-700">{o.putSellStrike} — {o.callSellStrike}</span>
+                <div className="text-[10px]">
+                  <span className="font-mono text-red-500 font-bold">S</span><span className="text-slate-500"> {o.callSellStrike}CE</span>
+                  <span className="mx-0.5 text-slate-300">/</span>
+                  <span className="font-mono text-emerald-500 font-bold">B</span><span className="text-slate-500"> {o.callBuyStrike}CE</span>
+                </div>
+              </div>
             </td>
-            <td className="px-4 py-3 text-center">
-              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
-                {o.putSellStrike} — {o.callSellStrike}
-              </span>
-            </td>
-            <td className="px-4 py-3 text-center text-[11px]">
-              <span className="font-mono text-red-500 font-bold">S</span> {o.callSellStrike}CE
-              <span className="mx-1 text-slate-300">|</span>
-              <span className="font-mono text-emerald-500 font-bold">B</span> {o.callBuyStrike}CE
-            </td>
-            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.creditRs).toLocaleString()}</td>
-            <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</td>
-            <td className="px-4 py-3 text-right">
+            <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.creditRs).toLocaleString()}</td>
+            <td className="px-3 py-3 text-right font-mono text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</td>
+            <td className="px-3 py-3 text-center">
               <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${
-                o.rewardRiskRatio >= 0.5 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-              }`}>{(o.rewardRiskRatio * 100).toFixed(0)}%</span>
+                o.rewardRiskRatio >= 5 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                o.rewardRiskRatio >= 1 ? 'bg-sky-50 text-sky-700 border-sky-200' :
+                'bg-amber-50 text-amber-700 border-amber-200'
+              }`}>{formatRR(o.rewardRiskRatio)}</span>
             </td>
-            <td className="px-4 py-3 text-right font-mono text-indigo-600">{o.breakEvenRangePct}%</td>
-            <td className="px-4 py-3 text-right">
-              <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border ${
-                o.score >= 70 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                o.score >= 50 ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                'bg-slate-50 text-slate-600 border-slate-200'
-              }`}>{o.score}</span>
+            <td className="px-3 py-3 text-center">
+              <span className="text-[11px] font-bold text-indigo-600">{o.breakEvenRangePct}%</span>
             </td>
-            <td className="px-4 py-3 text-right font-mono text-emerald-600">{Math.round(o.estimatedWinRate)}%</td>
+            <td className="px-3 py-3 text-center"><ScoreMeter score={o.score} /></td>
+            <td className="px-3 py-3 text-center font-mono font-bold text-emerald-600">{Math.round(o.estimatedWinRate)}%</td>
           </>)}
         />
       </TableShell>
@@ -1251,6 +1319,82 @@ function AutoEntryPanel() {
           <span className="text-[10px] text-slate-400 font-semibold uppercase">Status</span>
           <div className="font-bold text-slate-500 text-[10px] leading-tight mt-0.5">{status.lastScanResult}</div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ──────── TOP PICKS ACROSS ALL STRATEGIES ──────── */
+function TopPicksPanel({ underlying, onEnter }) {
+  const { data } = useQuery({
+    queryKey: ['top-picks', underlying],
+    queryFn: async () => { const r = await client.get('/smart-strategies/top-picks', { params: { underlying } }); return r.data; },
+    refetchInterval: 30000,
+    staleTime: 20000,
+  });
+
+  if (!data || !data.picks || data.picks.length === 0) return null;
+
+  const STRAT_ICONS = {
+    IRON_CONDOR: '🦅', JADE_LIZARD: '🦎', BROKEN_WING_BUTTERFLY: '🔥', RATIO_BUTTERFLY: '🦋',
+    SKEW_HARVEST: '📊', BOX_SPREAD_ARB: '📦', EXPIRY_THETA_CRUSH: '⏰', CALENDAR_SPREAD_EDGE: '📅',
+  };
+  const STRAT_SHORT = {
+    IRON_CONDOR: 'Condor', JADE_LIZARD: 'Jade', BROKEN_WING_BUTTERFLY: 'BWB', RATIO_BUTTERFLY: 'Ratio',
+    SKEW_HARVEST: 'Skew', BOX_SPREAD_ARB: 'Box', EXPIRY_THETA_CRUSH: 'Theta', CALENDAR_SPREAD_EDGE: 'Calendar',
+  };
+  const STRAT_COLORS = {
+    IRON_CONDOR: 'from-indigo-500 to-purple-500', JADE_LIZARD: 'from-lime-500 to-green-500',
+    BROKEN_WING_BUTTERFLY: 'from-amber-500 to-orange-500', RATIO_BUTTERFLY: 'from-violet-500 to-fuchsia-500',
+    SKEW_HARVEST: 'from-cyan-500 to-blue-500', BOX_SPREAD_ARB: 'from-rose-500 to-pink-500',
+    EXPIRY_THETA_CRUSH: 'from-emerald-500 to-teal-500', CALENDAR_SPREAD_EDGE: 'from-sky-500 to-blue-500',
+  };
+
+  const top5 = data.picks.slice(0, 5);
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+      <div className="px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-amber-50 via-yellow-50 to-orange-50 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center text-sm shadow-sm">⭐</div>
+          <span className="text-xs font-black text-slate-700">Top Picks — Best Trades Right Now</span>
+          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">{data.totalScanned} scanned</span>
+        </div>
+      </div>
+      <div className="p-4 grid grid-cols-1 sm:grid-cols-5 gap-3">
+        {top5.map((p, i) => {
+          const st = p.strategyType;
+          const credit = p.creditRs || p.edgeAfterCosts || 0;
+          const maxLoss = p.maxLoss || p.maxLossDown || 0;
+          const score = p.compositeScore || 0;
+          return (
+            <div key={i} onClick={() => onEnter?.(p)}
+              className={`relative cursor-pointer rounded-xl p-3.5 border transition-all hover:shadow-lg hover:-translate-y-0.5 ${
+                i === 0 ? 'bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-amber-200 shadow-md ring-1 ring-amber-200/50'
+                : 'bg-white border-slate-200/60 shadow-sm hover:border-slate-300'
+              }`}>
+              {i === 0 && <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center text-white text-[10px] font-black shadow-lg">#1</div>}
+              {i > 0 && <div className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 text-[9px] font-bold">#{i+1}</div>}
+              <div className="flex items-center gap-2 mb-2">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black text-white bg-gradient-to-r ${STRAT_COLORS[st] || 'from-slate-400 to-slate-500'}`}>
+                  {STRAT_ICONS[st]} {STRAT_SHORT[st] || st}
+                </span>
+                <span className="text-[10px] font-bold text-slate-500">{p.underlying}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] mt-1">
+                <div><span className="text-slate-400">Credit</span> <span className="font-bold text-emerald-600">₹{Math.round(credit).toLocaleString()}</span></div>
+                <div><span className="text-slate-400">Risk</span> <span className="font-bold text-red-500">₹{Math.round(maxLoss).toLocaleString()}</span></div>
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <ScoreMeter score={score} />
+                <button onClick={e => { e.stopPropagation(); onEnter?.(p); }}
+                  className="px-2 py-1 rounded-md bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-[9px] font-bold shadow-sm hover:shadow-md">
+                  Enter
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

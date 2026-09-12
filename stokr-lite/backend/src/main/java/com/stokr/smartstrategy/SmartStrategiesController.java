@@ -204,6 +204,29 @@ public class SmartStrategiesController {
         return ResponseEntity.ok(result);
     }
 
+    @GetMapping("/top-picks")
+    public ResponseEntity<Map<String, Object>> topPicks(@RequestParam(defaultValue = "ALL") String underlying) {
+        List<Map<String, Object>> all = new ArrayList<>();
+        try { all.addAll(ironCondorScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(jadeLizardScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(bwbScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(ratioButterflyScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(skewHarvestScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(boxSpreadScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(thetaCrushScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(calendarSpreadScanner.scan(underlying)); } catch (Exception e) {}
+
+        List<Map<String, Object>> ranked = scoreEngine.rankAndFilter(all, 40.0);
+        List<Map<String, Object>> top = ranked.size() > 10 ? ranked.subList(0, 10) : ranked;
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("picks", top);
+        result.put("totalScanned", all.size());
+        result.put("aboveThreshold", ranked.size());
+        result.put("marketOpen", isMarketOpen());
+        return ResponseEntity.ok(result);
+    }
+
     private void tryAutoExec(List<Map<String, Object>> opps) {
         if (opps == null || opps.isEmpty()) return;
         List<Map<String, Object>> actionable = opps.stream()
