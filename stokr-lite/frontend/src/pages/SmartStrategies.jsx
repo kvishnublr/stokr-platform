@@ -35,6 +35,12 @@ const STRATEGY_INFO = {
   condor: { structure: 'BUY OTM Put + SELL OTM Put + SELL OTM Call + BUY OTM Call', detail: 'Defined-risk range-bound strategy. Max profit = net credit when price stays between short strikes. 70-80% win rate. Both sides protected by long wings.', emptyMsg: 'No iron condor setups found. Requires net credit > 30% of wing width. Best in sideways/range-bound markets with moderate IV.' },
 };
 
+const STRAT_LABELS = {
+  BROKEN_WING_BUTTERFLY: 'BWB', RATIO_BUTTERFLY: 'Ratio', SKEW_HARVEST: 'Skew',
+  EXPIRY_THETA_CRUSH: 'Theta', BOX_SPREAD_ARB: 'Box', JADE_LIZARD: 'Jade',
+  CALENDAR_SPREAD_EDGE: 'Calendar', IRON_CONDOR: 'Condor',
+};
+
 // Theoretical payoff legs for empty state diagrams (representative example strikes)
 const THEORETICAL_LEGS = {
   ratio: (atm) => [
@@ -154,6 +160,8 @@ export default function SmartStrategies() {
       {/* ──── AUTO-ENTRY + TOP PICKS + ACTIVE POSITIONS ──── */}
       <div className="max-w-[1400px] mx-auto px-6 pt-5 space-y-3">
         <AutoEntryPanel />
+        <MarketRegimePanel />
+        <PerformanceReportCard />
         <TopPicksPanel underlying={underlying} onEnter={setEntryModal} />
         <ActivePositionsPanel />
       </div>
@@ -1259,6 +1267,124 @@ function IronCondorContent({ opps, onEnter }) {
 }
 
 /* ──────── AUTO-ENTRY PANEL ──────── */
+// ──── MARKET REGIME PANEL ────
+function MarketRegimePanel() {
+  const { data } = useQuery({ queryKey: ['regime'], queryFn: () => client.get('/smart-strategies/regime').then(r => r.data), refetchInterval: 300000 });
+  if (!data || Object.keys(data).length === 0) return null;
+
+  const regimeColors = { TRENDING_UP: 'text-green-400', TRENDING_DOWN: 'text-red-400', SIDEWAYS: 'text-yellow-400', HIGH_VOLATILE: 'text-purple-400' };
+  const regimeIcons = { TRENDING_UP: '📈', TRENDING_DOWN: '📉', SIDEWAYS: '➡️', HIGH_VOLATILE: '🌊' };
+  const regimeLabels = { TRENDING_UP: 'Trending Up', TRENDING_DOWN: 'Trending Down', SIDEWAYS: 'Sideways', HIGH_VOLATILE: 'High Volatile' };
+
+  return (
+    <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4">
+      <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">🌡️ Market Regime</h3>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {Object.entries(data).map(([und, info]) => (
+          <div key={und} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700/30">
+            <div className="text-xs text-gray-400 font-medium">{und}</div>
+            <div className={`text-sm font-bold mt-1 ${regimeColors[info.regime] || 'text-gray-300'}`}>
+              {regimeIcons[info.regime] || '❓'} {regimeLabels[info.regime] || info.regime}
+            </div>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className="text-[10px] text-gray-500">IV Rank</span>
+              <div className="flex-1 bg-gray-700 rounded-full h-1.5">
+                <div className={`h-1.5 rounded-full ${info.ivRank > 60 ? 'bg-red-400' : info.ivRank > 30 ? 'bg-yellow-400' : 'bg-green-400'}`} style={{ width: `${Math.min(100, info.ivRank)}%` }} />
+              </div>
+              <span className="text-[10px] text-gray-400 font-mono">{info.ivRank?.toFixed?.(0) || 0}%</span>
+            </div>
+            <div className="text-[10px] text-gray-500 mt-1">ATM IV: {info.atmIV?.toFixed?.(1) || '-'}%</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ──── PERFORMANCE REPORT CARD ────
+function PerformanceReportCard() {
+  const [expanded, setExpanded] = useState(false);
+  const { data } = useQuery({ queryKey: ['performance'], queryFn: () => client.get('/smart-strategies/performance').then(r => r.data), refetchInterval: 60000 });
+  if (!data || data.totalTrades === 0) return null;
+
+  const pnlColor = data.totalPnl >= 0 ? 'text-green-400' : 'text-red-400';
+  const winRateColor = data.winRate >= 60 ? 'text-green-400' : data.winRate >= 40 ? 'text-yellow-400' : 'text-red-400';
+
+  return (
+    <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-gray-300 flex items-center gap-2">📊 Performance Report Card</h3>
+        <button onClick={() => setExpanded(!expanded)} className="text-xs text-blue-400 hover:text-blue-300">
+          {expanded ? 'Collapse' : 'Details'}
+        </button>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+        <StatBox label="Total Trades" value={data.totalTrades} />
+        <StatBox label="Win Rate" value={`${data.winRate}%`} color={winRateColor} />
+        <StatBox label="Total P&L" value={`₹${data.totalPnl?.toLocaleString?.() || 0}`} color={pnlColor} />
+        <StatBox label="Avg Win" value={`₹${data.avgWin?.toLocaleString?.() || 0}`} color="text-green-400" />
+        <StatBox label="Avg Loss" value={`₹${data.avgLoss?.toLocaleString?.() || 0}`} color="text-red-400" />
+        <StatBox label="Profit Factor" value={data.profitFactor} color={data.profitFactor >= 1.5 ? 'text-green-400' : 'text-yellow-400'} />
+      </div>
+
+      {expanded && (
+        <div className="mt-4 space-y-3">
+          {/* Per-strategy breakdown */}
+          {data.byStrategy && Object.keys(data.byStrategy).length > 0 && (
+            <div>
+              <h4 className="text-xs text-gray-400 font-medium mb-2">Per Strategy</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {Object.entries(data.byStrategy).map(([strat, stats]) => (
+                  <div key={strat} className="bg-gray-900/50 rounded-lg p-2 border border-gray-700/30">
+                    <div className="text-[10px] text-gray-400">{STRAT_LABELS[strat] || strat}</div>
+                    <div className="text-sm font-bold text-gray-200">{stats.winRate}% win</div>
+                    <div className={`text-xs ${stats.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>₹{stats.totalPnl?.toLocaleString?.()}</div>
+                    <div className="text-[10px] text-gray-500">{stats.trades} trades</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Recent trades */}
+          {data.recentTrades?.length > 0 && (
+            <div>
+              <h4 className="text-xs text-gray-400 font-medium mb-2">Recent Trades</h4>
+              <div className="max-h-40 overflow-y-auto space-y-1">
+                {data.recentTrades.slice(0, 10).map((t, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs bg-gray-900/30 rounded px-2 py-1">
+                    <span className="text-gray-400">{STRAT_LABELS[t.strategyType] || t.strategyType}</span>
+                    <span className="text-gray-500">{t.underlying}</span>
+                    <span className="text-gray-500">{t.exitReason}</span>
+                    <span className={t.pnl >= 0 ? 'text-green-400 font-medium' : 'text-red-400 font-medium'}>
+                      {t.pnl >= 0 ? '+' : ''}₹{Math.round(t.pnl)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Streaks */}
+          {data.streaks && (
+            <div className="flex gap-4 text-xs text-gray-400">
+              <span>Win Streak: <b className="text-green-400">{data.streaks.currentWin}</b> (max {data.streaks.maxWin})</span>
+              <span>Loss Streak: <b className="text-red-400">{data.streaks.currentLoss}</b> (max {data.streaks.maxLoss})</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatBox({ label, value, color = 'text-gray-200' }) {
+  return (
+    <div className="bg-gray-900/50 rounded-lg p-2 border border-gray-700/30 text-center">
+      <div className="text-[10px] text-gray-500">{label}</div>
+      <div className={`text-sm font-bold ${color}`}>{value}</div>
+    </div>
+  );
+}
+
 function AutoEntryPanel() {
   const queryClient = useQueryClient();
   const { data: status } = useQuery({
@@ -1296,7 +1422,7 @@ function AutoEntryPanel() {
           {status.enabled ? 'Stop Auto-Entry' : 'Start Auto-Entry'}
         </button>
       </div>
-      <div className="px-5 py-3 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+      <div className="px-5 py-3 grid grid-cols-2 sm:grid-cols-6 gap-3 text-xs">
         <div>
           <span className="text-[10px] text-slate-400 font-semibold uppercase">Open</span>
           <div className="font-black text-slate-800">{status.openPositions}/{status.maxPositions}</div>
@@ -1314,6 +1440,13 @@ function AutoEntryPanel() {
         <div>
           <span className="text-[10px] text-slate-400 font-semibold uppercase">Min Score</span>
           <div className="font-black text-indigo-600">{status.minScore}</div>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-400 font-semibold uppercase">Timing</span>
+          <div className={`font-bold text-[10px] leading-tight mt-0.5 ${
+            status.timingActive ? 'text-emerald-600' : 'text-amber-500'
+          }`}>{status.timingPhase || '-'}</div>
+          <div className="text-[9px] text-slate-400 mt-0.5">{status.timingNote || ''}</div>
         </div>
         <div>
           <span className="text-[10px] text-slate-400 font-semibold uppercase">Status</span>
@@ -1416,12 +1549,6 @@ function ActivePositionsPanel() {
   });
 
   if (!positions || positions.length === 0) return null;
-
-  const STRAT_LABELS = {
-    BROKEN_WING_BUTTERFLY: 'BWB', RATIO_BUTTERFLY: 'Ratio', SKEW_HARVEST: 'Skew',
-    EXPIRY_THETA_CRUSH: 'Theta', BOX_SPREAD_ARB: 'Box', JADE_LIZARD: 'Jade', CALENDAR_SPREAD_EDGE: 'Calendar',
-    IRON_CONDOR: 'Condor',
-  };
 
   return (
     <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden mb-1">

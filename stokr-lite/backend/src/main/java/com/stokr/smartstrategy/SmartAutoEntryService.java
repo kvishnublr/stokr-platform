@@ -33,6 +33,7 @@ public class SmartAutoEntryService {
     private static final long COOLDOWN_MS = 5 * 60 * 1000;
     private static final double MIN_SCORE = 55.0;
     private volatile String lastScanResult = "Not started";
+    private volatile String timingNote = "";
 
     public SmartAutoEntryService(RatioButterflyScanner ratioButterflyScanner,
                                   BrokenWingButterflyScanner bwbScanner,
@@ -60,6 +61,33 @@ public class SmartAutoEntryService {
         this.recentEntries = new ConcurrentHashMap<>();
     }
 
+    private TimingWindow getTimingWindow() {
+        LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        // Opening volatility: avoid 9:15-9:30
+        if (now.isBefore(LocalTime.of(9, 30))) {
+            return new TimingWindow("OPENING_AVOID", 0, "Waiting for opening volatility to settle");
+        }
+        // Prime entry: 9:30-10:30 — trend established, good OI buildup
+        if (now.isBefore(LocalTime.of(10, 30))) {
+            return new TimingWindow("PRIME", 1.1, "Prime entry window — trend established");
+        }
+        // Mid-day: 10:30-13:30 — normal
+        if (now.isBefore(LocalTime.of(13, 30))) {
+            return new TimingWindow("MIDDAY", 1.0, "Mid-day — normal conditions");
+        }
+        // Theta boost: 13:30-14:45 — theta decay accelerates, great for sellers
+        if (now.isBefore(LocalTime.of(14, 45))) {
+            return new TimingWindow("THETA_BOOST", 1.15, "Theta boost zone — accelerated decay");
+        }
+        // Late entry avoid: 14:45-15:15 — gamma risk, avoid new positions
+        if (now.isBefore(LocalTime.of(15, 15))) {
+            return new TimingWindow("LATE_AVOID", 0, "Too close to market close — avoid new entries");
+        }
+        return new TimingWindow("CLOSED", 0, "Market closed");
+    }
+
+    record TimingWindow(String phase, double scoreMultiplier, String note) {}
+
     public void setEnabled(boolean on) {
         enabled.set(on);
         log.info("SMART_AUTO_ENTRY: {}", on ? "ENABLED" : "DISABLED");
@@ -74,6 +102,10 @@ public class SmartAutoEntryService {
         status.put("cooldownMinutes", COOLDOWN_MS / 60000);
         status.put("lastScanResult", lastScanResult);
         status.put("recentEntries", recentEntries.size());
+        TimingWindow timing = getTimingWindow();
+        status.put("timingPhase", timing.phase);
+        status.put("timingNote", timing.note);
+        status.put("timingActive", timing.scoreMultiplier > 0);
         status.putAll(riskManager.getPortfolioSummary());
         return status;
     }
@@ -82,6 +114,14 @@ public class SmartAutoEntryService {
     public void autoScan() {
         if (!enabled.get()) return;
         if (!isMarketHours()) return;
+
+        // Intraday Timing Engine — skip entry during risky windows
+        TimingWindow timing = getTimingWindow();
+        timingNote = timing.note;
+        if (timing.scoreMultiplier <= 0) {
+            lastScanResult = "Timing block: " + timing.note + " — " + now();
+            return;
+        }
 
         try {
             List<Map<String, Object>> allOpportunities = new ArrayList<>();
@@ -187,10 +227,17 @@ public class SmartAutoEntryService {
         req.put("maxLoss", maxLoss);
         req.put("maxProfit", maxProfit);
 
-        // Default exit rules: 50% SL, 60% target, 5min before close
-        req.put("slPct", 50.0);
-        req.put("targetPct", 60.0);
-        req.put("timeExitMinutes", 5);
+        // Timing-adaptive exit rules
+        TimingWindow timing = getTimingWindow();
+        if ("THETA_BOOST".equals(timing.phase)) {
+            req.put("slPct", 40.0);
+            req.put("targetPct", 50.0);
+            req.put("timeExitMinutes", 5);
+        } else {
+            req.put("slPct", 50.0);
+            req.put("targetPct", 60.0);
+            req.put("timeExitMinutes", 5);
+        }
 
         return req;
     }

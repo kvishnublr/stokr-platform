@@ -32,6 +32,8 @@ public class SmartStrategiesController {
     private final SmartAutoEntryService autoEntryService;
     private final PortfolioRiskManager riskManager;
     private final StrategyScoreEngine scoreEngine;
+    private final TradePerformanceService performanceService;
+    private final MarketRegimeDetector regimeDetector;
 
     private final ConcurrentHashMap<String, CachedResult> cache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Map<String, Object>> lastGoodCache = new ConcurrentHashMap<>();
@@ -48,7 +50,9 @@ public class SmartStrategiesController {
                                       IronCondorScanner ironCondorScanner,
                                       SmartAutoEntryService autoEntryService,
                                       PortfolioRiskManager riskManager,
-                                      StrategyScoreEngine scoreEngine) {
+                                      StrategyScoreEngine scoreEngine,
+                                      TradePerformanceService performanceService,
+                                      MarketRegimeDetector regimeDetector) {
         this.ratioButterflyScanner = ratioButterflyScanner;
         this.bwbScanner = bwbScanner;
         this.skewHarvestScanner = skewHarvestScanner;
@@ -62,6 +66,10 @@ public class SmartStrategiesController {
         this.autoEntryService = autoEntryService;
         this.riskManager = riskManager;
         this.scoreEngine = scoreEngine;
+        this.performanceService = performanceService;
+        this.regimeDetector = regimeDetector;
+        // Wire regime detector into score engine for IV-aware scoring
+        scoreEngine.setRegimeDetector(regimeDetector);
     }
 
     @GetMapping("/ratio-butterfly/scan")
@@ -224,6 +232,35 @@ public class SmartStrategiesController {
         result.put("totalScanned", all.size());
         result.put("aboveThreshold", ranked.size());
         result.put("marketOpen", isMarketOpen());
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/performance")
+    public ResponseEntity<Map<String, Object>> performance() {
+        return ResponseEntity.ok(performanceService.getPerformanceReport());
+    }
+
+    @GetMapping("/performance/daily")
+    public ResponseEntity<Map<String, Object>> dailyPerformance(@RequestParam(defaultValue = "30") int days) {
+        return ResponseEntity.ok(performanceService.getDailyPerformance(days));
+    }
+
+    @GetMapping("/regime")
+    public ResponseEntity<Map<String, Object>> marketRegime(@RequestParam(defaultValue = "ALL") String underlying) {
+        if ("ALL".equals(underlying)) {
+            return ResponseEntity.ok(regimeDetector.getAllRegimes());
+        }
+        var regime = regimeDetector.getRegime(underlying);
+        if (regime == null) {
+            return ResponseEntity.ok(Map.of("error", "No regime data for " + underlying));
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("underlying", underlying);
+        result.put("regime", regime.regime().name());
+        result.put("spotPrice", regime.spotPrice());
+        result.put("ivRank", regime.ivRank());
+        result.put("atmIV", regime.atmIV());
+        result.put("strategyWeights", regime.strategyWeights());
         return ResponseEntity.ok(result);
     }
 

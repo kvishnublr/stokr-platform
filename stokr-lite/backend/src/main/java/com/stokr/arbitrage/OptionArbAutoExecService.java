@@ -993,6 +993,60 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 }
             }
 
+            // Trailing stop loss (Smart Strategies) — ratchet SL upward as profit grows
+            if (!shouldExit && pos.getMaxProfitAmount() != null && pos.getMaxProfitAmount() > 0 && pos.getTargetPct() != null) {
+                double maxProfit = pos.getMaxProfitAmount();
+                double targetThreshold = maxProfit * pos.getTargetPct() / 100.0;
+                double peakPnl = pos.getPeakPnl() != null ? pos.getPeakPnl() : 0;
+
+                if (pnl > peakPnl) {
+                    pos.setPeakPnl(pnl);
+                    peakPnl = pnl;
+                }
+
+                double pctOfTarget = targetThreshold > 0 ? pnl / targetThreshold * 100 : 0;
+
+                Double currentTrailingSl = pos.getTrailingSlLevel();
+                Double newTrailingSl = currentTrailingSl;
+
+                // At 30% of target: move SL to breakeven (0)
+                if (pctOfTarget >= 30 && (currentTrailingSl == null || currentTrailingSl < 0)) {
+                    newTrailingSl = 0.0;
+                }
+                // At 60% of target: lock in 30% of peak profit
+                if (pctOfTarget >= 60 && peakPnl > 0) {
+                    double lockedLevel = peakPnl * 0.30;
+                    if (newTrailingSl == null || lockedLevel > newTrailingSl) {
+                        newTrailingSl = lockedLevel;
+                    }
+                }
+                // At 80% of target: lock in 50% of peak profit
+                if (pctOfTarget >= 80 && peakPnl > 0) {
+                    double lockedLevel = peakPnl * 0.50;
+                    if (newTrailingSl == null || lockedLevel > newTrailingSl) {
+                        newTrailingSl = lockedLevel;
+                    }
+                }
+
+                if (newTrailingSl != null && (currentTrailingSl == null || newTrailingSl > currentTrailingSl)) {
+                    pos.setTrailingSlLevel(newTrailingSl);
+                    positionRepo.save(pos);
+                    log.info("TRAILING_SL: {} {} — SL ratcheted to ₹{} (pnl ₹{}, peak ₹{}, {}% of target)",
+                        pos.getUnderlying(), pos.getStrategyType(), String.format("%.0f", newTrailingSl),
+                        String.format("%.0f", pnl), String.format("%.0f", peakPnl), String.format("%.0f", pctOfTarget));
+                }
+
+                // Check if price has fallen below trailing SL
+                if (pos.getTrailingSlLevel() != null && pnl < pos.getTrailingSlLevel()) {
+                    shouldExit = true;
+                    exitReason = "TRAILING_SL";
+                    log.info("TRAILING_SL_HIT: {} {} — pnl ₹{} below trailing SL ₹{}", pos.getUnderlying(),
+                        pos.getStrategyType(), String.format("%.0f", pnl), String.format("%.0f", pos.getTrailingSlLevel()));
+                    addLog("TRAILING_SL", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrategyType()
+                        + " — pnl ₹" + String.format("%.0f", pnl) + " below trailing SL ₹" + String.format("%.0f", pos.getTrailingSlLevel()));
+                }
+            }
+
             // Per-position time exit (Smart Strategies) — exit N minutes before market close
             if (!shouldExit && pos.getTimeExitMinutes() != null && pos.getTimeExitMinutes() > 0) {
                 LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));

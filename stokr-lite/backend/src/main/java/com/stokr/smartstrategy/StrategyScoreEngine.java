@@ -11,6 +11,12 @@ public class StrategyScoreEngine {
 
     private static final Logger log = LoggerFactory.getLogger(StrategyScoreEngine.class);
 
+    private MarketRegimeDetector regimeDetector;
+
+    public void setRegimeDetector(MarketRegimeDetector regimeDetector) {
+        this.regimeDetector = regimeDetector;
+    }
+
     public double score(Map<String, Object> opportunity) {
         String type = (String) opportunity.getOrDefault("strategyType", "");
 
@@ -19,10 +25,15 @@ public class StrategyScoreEngine {
         double liquidityScore = scoreLiquidity(opportunity);
         double riskScore = scoreRiskReward(opportunity);
         double timeScore = scoreTimeValue(opportunity);
+        double ivScore = scoreIVCondition(opportunity);
 
-        // Weighted composite — edge and win matter most
-        double composite = edgeScore * 0.25 + winScore * 0.25 + liquidityScore * 0.15
-            + riskScore * 0.20 + timeScore * 0.15;
+        // Weighted composite — edge and win matter most, IV adds alpha
+        double composite = edgeScore * 0.20 + winScore * 0.20 + liquidityScore * 0.10
+            + riskScore * 0.20 + timeScore * 0.15 + ivScore * 0.15;
+
+        // Apply regime-based strategy weight multiplier
+        double regimeMultiplier = getRegimeMultiplier(opportunity);
+        composite = Math.min(100, composite * regimeMultiplier);
 
         return Math.round(composite * 100.0) / 100.0;
     }
@@ -38,8 +49,17 @@ public class StrategyScoreEngine {
                 "win", scoreWinProbability(opp),
                 "liquidity", scoreLiquidity(opp),
                 "risk", scoreRiskReward(opp),
-                "time", scoreTimeValue(opp)
+                "time", scoreTimeValue(opp),
+                "iv", scoreIVCondition(opp)
             ));
+            String underlying = (String) opp.getOrDefault("underlying", "");
+            if (regimeDetector != null && !underlying.isEmpty()) {
+                var regime = regimeDetector.getRegime(underlying);
+                if (regime != null) {
+                    enriched.put("marketRegime", regime.regime().name());
+                    enriched.put("ivRank", regime.ivRank());
+                }
+            }
             if (s >= minScore) {
                 scored.add(enriched);
             }
@@ -48,6 +68,44 @@ public class StrategyScoreEngine {
             ((Number) b.get("compositeScore")).doubleValue(),
             ((Number) a.get("compositeScore")).doubleValue()));
         return scored;
+    }
+
+    private double scoreIVCondition(Map<String, Object> opp) {
+        String underlying = (String) opp.getOrDefault("underlying", "");
+        if (regimeDetector == null || underlying.isEmpty()) return 50;
+
+        var regime = regimeDetector.getRegime(underlying);
+        if (regime == null) return 50;
+
+        double ivRank = regime.ivRank();
+        String strategyType = (String) opp.getOrDefault("strategyType", "");
+
+        // High IV rank favors premium-selling strategies
+        boolean isSeller = strategyType.contains("IRON_CONDOR") || strategyType.contains("JADE_LIZARD")
+            || strategyType.contains("BUTTERFLY") || strategyType.contains("SKEW");
+
+        if (isSeller) {
+            // IV rank > 60 is great for sellers
+            if (ivRank > 70) return 95;
+            if (ivRank > 50) return 75;
+            if (ivRank > 30) return 55;
+            return 30;
+        } else {
+            // Lower IV benefits buyers and arb strategies
+            if (ivRank < 30) return 80;
+            if (ivRank < 50) return 65;
+            return 45;
+        }
+    }
+
+    private double getRegimeMultiplier(Map<String, Object> opp) {
+        if (regimeDetector == null) return 1.0;
+        String underlying = (String) opp.getOrDefault("underlying", "");
+        String strategyType = (String) opp.getOrDefault("strategyType", "");
+        if (underlying.isEmpty() || strategyType.isEmpty()) return 1.0;
+
+        Map<String, Double> weights = regimeDetector.getStrategyWeights(underlying);
+        return weights.getOrDefault(strategyType, 1.0);
     }
 
     private double scoreEdgeQuality(Map<String, Object> opp) {

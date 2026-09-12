@@ -23,6 +23,11 @@ public class PortfolioRiskManager {
     private static final int MAX_PER_UNDERLYING = 2;
     private static final int MAX_SAME_STRATEGY = 1;
 
+    // Correlated underlying groups — ~85% correlation within each group
+    private static final List<Set<String>> CORRELATION_GROUPS = List.of(
+        Set.of("NIFTY", "BANKNIFTY", "FINNIFTY")
+    );
+
     public record RiskCheck(boolean allowed, String reason) {}
 
     public RiskCheck canEnterTrade(Map<String, Object> opportunity) {
@@ -69,7 +74,23 @@ public class PortfolioRiskManager {
             }
         }
 
-        // 6. Max risk exposure check
+        // 6. Correlation check — block same-direction if correlated underlying already open
+        if (newDirection != null && !"NEUTRAL".equals(newDirection)) {
+            Set<String> correlatedGroup = getCorrelationGroup(underlying);
+            if (correlatedGroup != null) {
+                for (LivePosition p : openPositions) {
+                    if (correlatedGroup.contains(p.getUnderlying()) && !underlying.equals(p.getUnderlying())) {
+                        String posDir = inferPositionDirection(p);
+                        if (newDirection.equals(posDir)) {
+                            return new RiskCheck(false, "Correlated position: " + p.getUnderlying()
+                                + " already has " + posDir + " position (correlation risk with " + underlying + ")");
+                        }
+                    }
+                }
+            }
+        }
+
+        // 7. Max risk exposure check
         double totalOpenRisk = openPositions.stream()
             .mapToDouble(p -> p.getMaxLossAmount() != null ? p.getMaxLossAmount() : 0)
             .sum();
@@ -146,6 +167,13 @@ public class PortfolioRiskManager {
         if (sellPuts > sellCalls) return "BULLISH";
         if (sellCalls > sellPuts) return "BEARISH";
         return "NEUTRAL";
+    }
+
+    private Set<String> getCorrelationGroup(String underlying) {
+        for (Set<String> group : CORRELATION_GROUPS) {
+            if (group.contains(underlying)) return group;
+        }
+        return null;
     }
 
     private String inferPositionDirection(LivePosition pos) {

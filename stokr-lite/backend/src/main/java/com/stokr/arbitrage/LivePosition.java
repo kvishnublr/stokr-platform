@@ -89,6 +89,8 @@ public class LivePosition {
     private Double maxLossAmount;
     private Double maxProfitAmount;
     private String exitReason;
+    private Double trailingSlLevel;
+    private Double peakPnl;
 
     private LocalDateTime enteredAt;
     private LocalDateTime exitedAt;
@@ -151,6 +153,8 @@ public class LivePosition {
         map.put("maxLossAmount", maxLossAmount);
         map.put("maxProfitAmount", maxProfitAmount);
         map.put("exitReason", exitReason);
+        map.put("trailingSlLevel", trailingSlLevel);
+        map.put("peakPnl", peakPnl);
         map.put("enteredAt", enteredAt != null ? enteredAt.toString() : null);
         map.put("exitedAt", exitedAt != null ? exitedAt.toString() : null);
         map.put("createdAt", createdAt != null ? createdAt.toString() : null);
