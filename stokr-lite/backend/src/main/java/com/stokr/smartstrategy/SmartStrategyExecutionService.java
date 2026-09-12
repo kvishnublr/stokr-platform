@@ -219,7 +219,8 @@ public class SmartStrategyExecutionService {
     public List<Map<String, Object>> getActivePositions() {
         List<String> smartTypes = List.of(
             "BROKEN_WING_BUTTERFLY", "RATIO_BUTTERFLY", "SKEW_HARVEST",
-            "EXPIRY_THETA_CRUSH", "BOX_SPREAD_ARB", "JADE_LIZARD", "CALENDAR_SPREAD_EDGE"
+            "EXPIRY_THETA_CRUSH", "BOX_SPREAD_ARB", "JADE_LIZARD", "CALENDAR_SPREAD_EDGE",
+            "IRON_CONDOR"
         );
         return positionRepo.findAllOpen().stream()
             .filter(p -> "OPEN".equals(p.getStatus()) && smartTypes.contains(p.getStrategyType()))

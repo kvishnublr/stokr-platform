@@ -10,6 +10,7 @@ const TABS = [
   { id: 'box', label: 'Box Spread', shortLabel: 'Box', icon: '📦', risk: 'ZERO', desc: 'Risk-free arbitrage profit', gradient: 'from-rose-500 via-pink-500 to-fuchsia-500', lightBg: 'from-rose-50 to-pink-50', text: 'rose', accent: '#e11d48', ring: 'ring-rose-500/30' },
   { id: 'jade', label: 'Jade Lizard', shortLabel: 'Jade', icon: '🦎', risk: 'LOW', desc: 'Zero upside risk, 70%+ win', gradient: 'from-lime-500 via-green-500 to-emerald-500', lightBg: 'from-lime-50 to-green-50', text: 'green', accent: '#16a34a', ring: 'ring-green-500/30' },
   { id: 'calendar', label: 'Calendar Edge', shortLabel: 'Calendar', icon: '📅', risk: 'LOW', desc: 'Time decay differential', gradient: 'from-sky-500 via-blue-500 to-indigo-500', lightBg: 'from-sky-50 to-blue-50', text: 'sky', accent: '#0284c7', ring: 'ring-sky-500/30' },
+  { id: 'condor', label: 'Iron Condor', shortLabel: 'Condor', icon: '🦅', risk: 'LOW', desc: 'Range-bound, 70-80% win', gradient: 'from-indigo-500 via-purple-500 to-pink-500', lightBg: 'from-indigo-50 to-purple-50', text: 'indigo', accent: '#6366f1', ring: 'ring-indigo-500/30' },
 ];
 
 const SCAN_URLS = {
@@ -20,6 +21,7 @@ const SCAN_URLS = {
   box: '/smart-strategies/box-spread/scan',
   jade: '/smart-strategies/jade-lizard/scan',
   calendar: '/smart-strategies/calendar-spread/scan',
+  condor: '/smart-strategies/iron-condor/scan',
 };
 
 const STRATEGY_INFO = {
@@ -30,6 +32,7 @@ const STRATEGY_INFO = {
   box: { structure: 'Bull Call Spread + Bear Put Spread (Same Strikes)', detail: 'Zero-risk arbitrage. Box value at expiry = strike width (guaranteed). Profit when market misprices the box below theoretical value after transaction costs.', emptyMsg: 'No box spread arbitrage found. Requires market mispricing where box cost < theoretical value minus transaction costs. Very rare in efficient markets.' },
   jade: { structure: 'SELL OTM Put + SELL OTM Call + BUY Further OTM Call', detail: 'Short put + bear call spread. Zero upside risk when credit >= call spread width. 70-80% estimated win rate with defined risk.', emptyMsg: 'No jade lizard setups found. Requires credit > 40% of call spread width. Best in moderate IV environments with slight bullish bias.' },
   calendar: { structure: 'SELL Near-Expiry + BUY Far-Expiry (Same Strike, Same Type)', detail: 'Exploits faster time decay of near-term options. Profits from theta differential and IV term structure. Low risk, defined max loss.', emptyMsg: 'No calendar spread edge found. Requires meaningful theta differential between near and far expiry. Best when near-term IV > far-term IV.' },
+  condor: { structure: 'BUY OTM Put + SELL OTM Put + SELL OTM Call + BUY OTM Call', detail: 'Defined-risk range-bound strategy. Max profit = net credit when price stays between short strikes. 70-80% win rate. Both sides protected by long wings.', emptyMsg: 'No iron condor setups found. Requires net credit > 30% of wing width. Best in sideways/range-bound markets with moderate IV.' },
 };
 
 // Theoretical payoff legs for empty state diagrams (representative example strikes)
@@ -71,6 +74,12 @@ const THEORETICAL_LEGS = {
     { strike: atm, optionType: 'CE', side: 'SELL', qty: 1, price: 80 },
     { strike: atm, optionType: 'CE', side: 'BUY', qty: 1, price: 140 },
   ],
+  condor: (atm) => [
+    { strike: atm - 400, optionType: 'PE', side: 'BUY', qty: 1, price: 15 },
+    { strike: atm - 200, optionType: 'PE', side: 'SELL', qty: 1, price: 40 },
+    { strike: atm + 200, optionType: 'CE', side: 'SELL', qty: 1, price: 40 },
+    { strike: atm + 400, optionType: 'CE', side: 'BUY', qty: 1, price: 15 },
+  ],
 };
 
 export default function SmartStrategies() {
@@ -93,7 +102,7 @@ export default function SmartStrategies() {
               </div>
               <div>
                 <h1 className="text-lg font-black text-white tracking-tight leading-none">Smart Strategies</h1>
-                <p className="text-[11px] text-slate-500 mt-0.5 font-medium">7 advanced strategies with real-time scanning</p>
+                <p className="text-[11px] text-slate-500 mt-0.5 font-medium">8 advanced strategies with real-time scanning</p>
               </div>
             </div>
             <div className="flex items-center gap-1.5 bg-white/[0.06] backdrop-blur-sm rounded-lg p-1 border border-white/[0.08]">
@@ -113,7 +122,7 @@ export default function SmartStrategies() {
       {/* ──── STRATEGY NAV ──── */}
       <div className="sticky top-0 z-30 border-b border-slate-200/50" style={{background: 'linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(248,250,252,0.98) 100%)', backdropFilter: 'blur(20px) saturate(180%)'}}>
         <div className="max-w-[1400px] mx-auto px-6 py-3">
-          <div className="grid grid-cols-7 gap-2">
+          <div className="grid grid-cols-8 gap-2">
             {TABS.map(t => {
               const isActive = activeTab === t.id;
               return (
@@ -142,8 +151,9 @@ export default function SmartStrategies() {
         </div>
       </div>
 
-      {/* ──── ACTIVE POSITIONS ──── */}
-      <div className="max-w-[1400px] mx-auto px-6 pt-5">
+      {/* ──── AUTO-ENTRY + ACTIVE POSITIONS ──── */}
+      <div className="max-w-[1400px] mx-auto px-6 pt-5 space-y-3">
+        <AutoEntryPanel />
         <ActivePositionsPanel />
       </div>
 
@@ -630,6 +640,7 @@ function TabContent({ tab, underlying, tabInfo, onEnter }) {
       case 'box': return <BoxContent opps={opps} onEnter={onEnter} />;
       case 'jade': return <JadeContent opps={opps} onEnter={onEnter} />;
       case 'calendar': return <CalendarContent opps={opps} onEnter={onEnter} />;
+      case 'condor': return <IronCondorContent opps={opps} onEnter={onEnter} />;
       default: return null;
     }
   })();
@@ -1096,6 +1107,155 @@ function CalendarContent({ opps, onEnter }) {
   );
 }
 
+/* ──────── IRON CONDOR ──────── */
+function IronCondorContent({ opps, onEnter }) {
+  const sort = useSort('score');
+  const b = opps[0];
+  const sorted = sort.sorted(opps);
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Stat label="Score" value={b.score} sub="Composite" color="text-indigo-600" icon="⭐" />
+        <Stat label="Credit" value={`₹${Math.round(b.creditRs).toLocaleString()}`} sub={`${b.credit} pts`} color="text-emerald-600" icon="💰" />
+        <Stat label="Max Loss" value={`₹${Math.round(b.maxLoss).toLocaleString()}`} sub={`Wing: ${b.wingWidth} pts`} color="text-red-500" icon="🛡️" />
+        <Stat label="R:R" value={`${(b.rewardRiskRatio * 100).toFixed(0)}%`} sub="Credit / Risk" color="text-violet-600" icon="📊" />
+        <Stat label="Win Rate" value={`${Math.round(b.estimatedWinRate)}%`} sub={`BE: ${Math.round(b.breakEvenDown)}-${Math.round(b.breakEvenUp)}`} color="text-emerald-600" icon="🎯" />
+      </div>
+
+      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-200/60 p-5 flex items-start gap-4">
+        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-400/20">
+          <span className="text-xl">🦅</span>
+        </div>
+        <div>
+          <div className="text-sm font-black text-indigo-800">Range-Bound Profit Zone</div>
+          <div className="text-xs text-indigo-600/80 mt-1 leading-relaxed">Profit when {b.underlying} stays between {Math.round(b.breakEvenDown)} and {Math.round(b.breakEvenUp)} ({b.breakEvenRangePct}% range). Both sides protected with defined max loss.</div>
+        </div>
+      </div>
+
+      <TableShell tab="condor" count={opps.length} headerContent={
+        <tr>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <th className="px-4 py-3 text-center">Put Wing</th>
+          <th className="px-4 py-3 text-center">Short Strikes</th>
+          <th className="px-4 py-3 text-center">Call Wing</th>
+          <SortTh field="credit" label="Credit" sort={sort} className="text-right" />
+          <SortTh field="maxLoss" label="Max Loss" sort={sort} className="text-right" />
+          <SortTh field="rewardRiskRatio" label="R:R" sort={sort} className="text-right" />
+          <SortTh field="breakEvenRangePct" label="BE Range" sort={sort} className="text-right" />
+          <SortTh field="score" label="Score" sort={sort} className="text-right" />
+          <SortTh field="estimatedWinRate" label="Win%" sort={sort} className="text-right" />
+          <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
+        </tr>
+      }>
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#6366f1" onEnter={onEnter}
+          getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+          renderRow={(o, i) => (<>
+            <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
+            <td className="px-4 py-3 text-center text-[11px]">
+              <span className="font-mono text-emerald-500 font-bold">B</span> {o.putBuyStrike}PE
+              <span className="mx-1 text-slate-300">|</span>
+              <span className="font-mono text-red-500 font-bold">S</span> {o.putSellStrike}PE
+            </td>
+            <td className="px-4 py-3 text-center">
+              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
+                {o.putSellStrike} — {o.callSellStrike}
+              </span>
+            </td>
+            <td className="px-4 py-3 text-center text-[11px]">
+              <span className="font-mono text-red-500 font-bold">S</span> {o.callSellStrike}CE
+              <span className="mx-1 text-slate-300">|</span>
+              <span className="font-mono text-emerald-500 font-bold">B</span> {o.callBuyStrike}CE
+            </td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.creditRs).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right">
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${
+                o.rewardRiskRatio >= 0.5 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+              }`}>{(o.rewardRiskRatio * 100).toFixed(0)}%</span>
+            </td>
+            <td className="px-4 py-3 text-right font-mono text-indigo-600">{o.breakEvenRangePct}%</td>
+            <td className="px-4 py-3 text-right">
+              <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border ${
+                o.score >= 70 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                o.score >= 50 ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                'bg-slate-50 text-slate-600 border-slate-200'
+              }`}>{o.score}</span>
+            </td>
+            <td className="px-4 py-3 text-right font-mono text-emerald-600">{Math.round(o.estimatedWinRate)}%</td>
+          </>)}
+        />
+      </TableShell>
+    </div>
+  );
+}
+
+/* ──────── AUTO-ENTRY PANEL ──────── */
+function AutoEntryPanel() {
+  const queryClient = useQueryClient();
+  const { data: status } = useQuery({
+    queryKey: ['auto-entry-status'],
+    queryFn: async () => { const r = await client.get('/smart-strategies/auto-entry/status'); return r.data; },
+    refetchInterval: 15000,
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: (enabled) => client.post('/smart-strategies/auto-entry/toggle', { enabled }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['auto-entry-status'] }),
+  });
+
+  if (!status) return null;
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden mb-1">
+      <div className="px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-cyan-50 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center text-sm shadow-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+          <span className="text-xs font-black text-slate-700">Smart Auto-Entry</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            status.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+          }`}>{status.enabled ? 'ACTIVE' : 'OFF'}</span>
+        </div>
+        <button
+          onClick={() => toggleMutation.mutate(!status.enabled)}
+          className={`px-4 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+            status.enabled
+              ? 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100'
+              : 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-sm hover:shadow-md'
+          }`}>
+          {status.enabled ? 'Stop Auto-Entry' : 'Start Auto-Entry'}
+        </button>
+      </div>
+      <div className="px-5 py-3 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+        <div>
+          <span className="text-[10px] text-slate-400 font-semibold uppercase">Open</span>
+          <div className="font-black text-slate-800">{status.openPositions}/{status.maxPositions}</div>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-400 font-semibold uppercase">Today P&L</span>
+          <div className={`font-black ${status.todayRealizedPnl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+            ₹{Math.round(status.todayRealizedPnl || 0).toLocaleString()}
+          </div>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-400 font-semibold uppercase">Daily Limit</span>
+          <div className="font-black text-slate-600">₹{Math.round(status.dailyLossLimit || 0).toLocaleString()}</div>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-400 font-semibold uppercase">Min Score</span>
+          <div className="font-black text-indigo-600">{status.minScore}</div>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-400 font-semibold uppercase">Status</span>
+          <div className="font-bold text-slate-500 text-[10px] leading-tight mt-0.5">{status.lastScanResult}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ──────── ACTIVE POSITIONS PANEL ──────── */
 function ActivePositionsPanel() {
   const queryClient = useQueryClient();
@@ -1116,6 +1276,7 @@ function ActivePositionsPanel() {
   const STRAT_LABELS = {
     BROKEN_WING_BUTTERFLY: 'BWB', RATIO_BUTTERFLY: 'Ratio', SKEW_HARVEST: 'Skew',
     EXPIRY_THETA_CRUSH: 'Theta', BOX_SPREAD_ARB: 'Box', JADE_LIZARD: 'Jade', CALENDAR_SPREAD_EDGE: 'Calendar',
+    IRON_CONDOR: 'Condor',
   };
 
   return (

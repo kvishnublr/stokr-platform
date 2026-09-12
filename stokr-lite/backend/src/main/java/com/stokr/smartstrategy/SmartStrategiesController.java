@@ -28,6 +28,10 @@ public class SmartStrategiesController {
     private final CalendarSpreadEdgeScanner calendarSpreadScanner;
     private final OptionArbAutoExecService autoExecService;
     private final SmartStrategyExecutionService executionService;
+    private final IronCondorScanner ironCondorScanner;
+    private final SmartAutoEntryService autoEntryService;
+    private final PortfolioRiskManager riskManager;
+    private final StrategyScoreEngine scoreEngine;
 
     private final ConcurrentHashMap<String, CachedResult> cache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Map<String, Object>> lastGoodCache = new ConcurrentHashMap<>();
@@ -40,7 +44,11 @@ public class SmartStrategiesController {
                                       JadeLizardScanner jadeLizardScanner,
                                       CalendarSpreadEdgeScanner calendarSpreadScanner,
                                       OptionArbAutoExecService autoExecService,
-                                      SmartStrategyExecutionService executionService) {
+                                      SmartStrategyExecutionService executionService,
+                                      IronCondorScanner ironCondorScanner,
+                                      SmartAutoEntryService autoEntryService,
+                                      PortfolioRiskManager riskManager,
+                                      StrategyScoreEngine scoreEngine) {
         this.ratioButterflyScanner = ratioButterflyScanner;
         this.bwbScanner = bwbScanner;
         this.skewHarvestScanner = skewHarvestScanner;
@@ -50,6 +58,10 @@ public class SmartStrategiesController {
         this.calendarSpreadScanner = calendarSpreadScanner;
         this.autoExecService = autoExecService;
         this.executionService = executionService;
+        this.ironCondorScanner = ironCondorScanner;
+        this.autoEntryService = autoEntryService;
+        this.riskManager = riskManager;
+        this.scoreEngine = scoreEngine;
     }
 
     @GetMapping("/ratio-butterfly/scan")
@@ -115,6 +127,14 @@ public class SmartStrategiesController {
         });
     }
 
+    @GetMapping("/iron-condor/scan")
+    public ResponseEntity<Map<String, Object>> scanIronCondor(@RequestParam(defaultValue = "ALL") String underlying) {
+        return cachedScan("iron-condor:" + underlying, () -> {
+            List<Map<String, Object>> opps = ironCondorScanner.scan(underlying);
+            return wrapResponse(opps, "IRON_CONDOR", underlying);
+        });
+    }
+
     @GetMapping("/all/scan")
     public ResponseEntity<Map<String, Object>> scanAll(@RequestParam(defaultValue = "ALL") String underlying) {
         Map<String, Object> resp = new LinkedHashMap<>();
@@ -138,6 +158,8 @@ public class SmartStrategiesController {
         catch (Exception e) { resp.put("jadeLizard", List.of()); }
         try { resp.put("calendarSpread", calendarSpreadScanner.scan(underlying)); }
         catch (Exception e) { resp.put("calendarSpread", List.of()); }
+        try { resp.put("ironCondor", ironCondorScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("ironCondor", List.of()); }
 
         return ResponseEntity.ok(resp);
     }
@@ -155,6 +177,31 @@ public class SmartStrategiesController {
     @PostMapping("/exit/{positionId}")
     public ResponseEntity<Map<String, Object>> exitPosition(@PathVariable Long positionId) {
         return ResponseEntity.ok(executionService.exitPosition(positionId));
+    }
+
+    @PostMapping("/auto-entry/toggle")
+    public ResponseEntity<Map<String, Object>> toggleAutoEntry(@RequestBody Map<String, Object> body) {
+        boolean enable = Boolean.TRUE.equals(body.get("enabled"));
+        autoEntryService.setEnabled(enable);
+        return ResponseEntity.ok(autoEntryService.getStatus());
+    }
+
+    @GetMapping("/auto-entry/status")
+    public ResponseEntity<Map<String, Object>> autoEntryStatus() {
+        return ResponseEntity.ok(autoEntryService.getStatus());
+    }
+
+    @GetMapping("/portfolio/risk")
+    public ResponseEntity<Map<String, Object>> portfolioRisk() {
+        return ResponseEntity.ok(riskManager.getPortfolioSummary());
+    }
+
+    @PostMapping("/score")
+    public ResponseEntity<Map<String, Object>> scoreOpportunity(@RequestBody Map<String, Object> opportunity) {
+        double score = scoreEngine.score(opportunity);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("score", score);
+        return ResponseEntity.ok(result);
     }
 
     private void tryAutoExec(List<Map<String, Object>> opps) {
