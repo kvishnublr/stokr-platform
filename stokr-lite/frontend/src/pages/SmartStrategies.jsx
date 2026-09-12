@@ -271,10 +271,13 @@ function EmptyState({ tab, marketOpen, lastScannedAt }) {
   const theoreticalAtm = 24500;
   const theoreticalLegs = THEORETICAL_LEGS[tab]?.(theoreticalAtm) || [];
 
+  const isWeekend = new Date().getDay() === 0 || new Date().getDay() === 6;
   const isMarketClosed = marketOpen === false;
-  const emptyTitle = isMarketClosed ? 'Market Closed' : 'No Opportunities Right Now';
-  const emptySubtext = isMarketClosed
-    ? 'NSE hours: 9:15 AM — 3:30 PM IST. Scanner activates automatically.'
+  const emptyTitle = isWeekend ? 'Weekend — Reconnect to See LTP Data'
+    : isMarketClosed ? 'Market Closed' : 'No Opportunities Right Now';
+  const emptySubtext = isWeekend
+    ? 'Scanners work on weekends using last traded prices (LTP). If you see no data, reconnect Zerodha on the Brokers page to refresh the API token.'
+    : isMarketClosed ? 'NSE hours: 9:15 AM — 3:30 PM IST. If token is expired, reconnect on Brokers page.'
     : info.emptyMsg;
 
   return (
@@ -615,6 +618,15 @@ function TabContent({ tab, underlying, tabInfo }) {
 
   return (
     <div>
+      {data?.stale && (
+        <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200/60">
+          <span className="text-lg">⚡</span>
+          <div>
+            <span className="text-[11px] font-bold text-amber-700">Showing cached data (LTP based)</span>
+            <span className="text-[10px] text-amber-500 ml-2">{data.staleReason}</span>
+          </div>
+        </div>
+      )}
       <ScanStatusBar data={data} />
       {content}
     </div>

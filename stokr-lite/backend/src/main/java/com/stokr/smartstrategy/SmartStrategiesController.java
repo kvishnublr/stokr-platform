@@ -29,6 +29,7 @@ public class SmartStrategiesController {
     private final OptionArbAutoExecService autoExecService;
 
     private final ConcurrentHashMap<String, CachedResult> cache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Map<String, Object>> lastGoodCache = new ConcurrentHashMap<>();
 
     public SmartStrategiesController(RatioButterflyScanner ratioButterflyScanner,
                                       BrokenWingButterflyScanner bwbScanner,
@@ -168,9 +169,37 @@ public class SmartStrategiesController {
         if (cached != null && System.currentTimeMillis() - cached.ts < 15000) {
             return ResponseEntity.ok(cached.data);
         }
-        Map<String, Object> result = fn.get();
-        cache.put(key, new CachedResult(result, System.currentTimeMillis()));
-        return ResponseEntity.ok(result);
+        try {
+            Map<String, Object> result = fn.get();
+            cache.put(key, new CachedResult(result, System.currentTimeMillis()));
+            @SuppressWarnings("unchecked")
+            List<?> opps = (List<?>) result.get("opportunities");
+            if (opps != null && !opps.isEmpty()) {
+                lastGoodCache.put(key, result);
+            }
+            if ((opps == null || opps.isEmpty()) && lastGoodCache.containsKey(key)) {
+                Map<String, Object> stale = new LinkedHashMap<>(lastGoodCache.get(key));
+                stale.put("stale", true);
+                stale.put("staleReason", "No fresh data — showing last known opportunities (LTP based)");
+                stale.put("lastScannedAt", ZonedDateTime.now(ZoneId.of("Asia/Kolkata"))
+                    .format(DateTimeFormatter.ofPattern("hh:mm:ss a")));
+                stale.put("marketOpen", isMarketOpen());
+                return ResponseEntity.ok(stale);
+            }
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.warn("Scan failed for {}: {}", key, e.getMessage());
+            if (lastGoodCache.containsKey(key)) {
+                Map<String, Object> stale = new LinkedHashMap<>(lastGoodCache.get(key));
+                stale.put("stale", true);
+                stale.put("staleReason", "Scan error — showing last known opportunities");
+                stale.put("lastScannedAt", ZonedDateTime.now(ZoneId.of("Asia/Kolkata"))
+                    .format(DateTimeFormatter.ofPattern("hh:mm:ss a")));
+                stale.put("marketOpen", isMarketOpen());
+                return ResponseEntity.ok(stale);
+            }
+            throw e;
+        }
     }
 
     private boolean isMarketOpen() {
