@@ -110,26 +110,30 @@ export default function SmartStrategies() {
       </div>
 
       {/* ──── STRATEGY NAV ──── */}
-      <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-200/60">
-        <div className="max-w-[1400px] mx-auto px-6">
-          <div className="flex items-center gap-1 py-2">
+      <div className="sticky top-0 z-30 border-b border-slate-200/50" style={{background: 'linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(248,250,252,0.98) 100%)', backdropFilter: 'blur(20px) saturate(180%)'}}>
+        <div className="max-w-[1400px] mx-auto px-6 py-3">
+          <div className="grid grid-cols-7 gap-2">
             {TABS.map(t => {
               const isActive = activeTab === t.id;
               return (
                 <button key={t.id} onClick={() => setActiveTab(t.id)}
-                  className={`group relative flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all duration-200 ${
+                  className={`group relative rounded-xl px-3 py-3 transition-all duration-300 text-center ${
                     isActive
-                      ? `bg-gradient-to-r ${t.gradient} shadow-lg shadow-${t.text}-500/20 ring-1 ${t.ring}`
-                      : 'hover:bg-slate-50'
+                      ? 'shadow-lg scale-[1.03]'
+                      : 'bg-white border border-slate-100 shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:shadow-md hover:border-slate-200 hover:-translate-y-0.5'
                   }`}>
-                  <span className={`text-base leading-none ${isActive ? '' : 'grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100 transition-all'}`}>{t.icon}</span>
-                  <div className="text-left">
-                    <div className={`text-[12px] font-extrabold leading-none whitespace-nowrap ${isActive ? 'text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{t.label}</div>
-                    <div className={`text-[9px] mt-0.5 leading-none whitespace-nowrap ${isActive ? 'text-white/60' : 'text-slate-400'}`}>{t.desc}</div>
+                  {isActive && <div className={`absolute inset-0 rounded-xl bg-gradient-to-br ${t.gradient}`} />}
+                  <div className="relative flex flex-col items-center gap-1.5">
+                    <span className={`text-xl leading-none ${isActive ? 'drop-shadow-sm' : 'grayscale-[30%] group-hover:grayscale-0 transition-all'}`}>{t.icon}</span>
+                    <div className={`text-[11px] font-bold leading-tight ${isActive ? 'text-white' : 'text-slate-700'}`}>{t.label}</div>
+                    <div className={`text-[9px] leading-tight ${isActive ? 'text-white/50' : 'text-slate-400'}`}>{t.desc}</div>
+                    {t.risk === 'ZERO' && !isActive && (
+                      <span className="mt-0.5 px-1.5 py-0.5 rounded text-[7px] font-black bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase tracking-wider">Zero Risk</span>
+                    )}
+                    {t.risk === 'ZERO' && isActive && (
+                      <span className="mt-0.5 px-1.5 py-0.5 rounded text-[7px] font-black bg-white/20 text-white uppercase tracking-wider">Zero Risk</span>
+                    )}
                   </div>
-                  {t.risk === 'ZERO' && (
-                    <span className={`ml-1 px-1.5 py-0.5 rounded text-[8px] font-black ${isActive ? 'bg-white/25 text-white' : 'bg-emerald-50 text-emerald-600 border border-emerald-200'}`}>0 RISK</span>
-                  )}
                 </button>
               );
             })}
@@ -242,16 +246,21 @@ function LoadingState() {
 }
 
 function ErrorState({ error }) {
-  const msg = error?.response?.status === 401 ? 'Session expired. Please log in again.'
-    : error?.response?.status === 500 ? 'Server error. Check if Zerodha market data feed is connected.'
+  const status = error?.response?.status;
+  const is502 = status === 502 || status === 503;
+  const msg = status === 401 ? 'Zerodha token expired. Reconnect via the Brokers page to resume live scanning.'
+    : is502 ? 'Backend is restarting after a deploy. Please wait 30-60 seconds and it will auto-refresh.'
+    : status === 500 ? 'Server error. Check if Zerodha market data feed is connected.'
     : error?.message || 'Something went wrong';
   return (
-    <div className="flex flex-col items-center justify-center py-24">
-      <div className="w-16 h-16 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mb-4">
-        <span className="text-3xl">⚠️</span>
+    <div className="flex flex-col items-center justify-center py-16">
+      <div className={`w-14 h-14 rounded-xl flex items-center justify-center mb-4 ${
+        is502 ? 'bg-amber-50 border border-amber-100' : 'bg-red-50 border border-red-100'
+      }`}>
+        <span className="text-2xl">{is502 ? '🔄' : '⚠️'}</span>
       </div>
-      <span className="text-red-600 font-bold text-sm">Scan Failed</span>
-      <span className="text-slate-400 text-xs mt-1 max-w-sm text-center">{msg}</span>
+      <span className={`font-bold text-sm ${is502 ? 'text-amber-600' : 'text-red-500'}`}>{is502 ? 'Restarting...' : 'Scan Unavailable'}</span>
+      <span className="text-slate-400 text-[11px] mt-1.5 max-w-md text-center leading-relaxed">{msg}</span>
     </div>
   );
 }
