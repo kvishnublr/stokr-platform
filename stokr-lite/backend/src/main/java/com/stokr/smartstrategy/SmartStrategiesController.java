@@ -174,6 +174,7 @@ public class SmartStrategiesController {
             cache.put(key, new CachedResult(result, System.currentTimeMillis()));
             @SuppressWarnings("unchecked")
             List<?> opps = (List<?>) result.get("opportunities");
+            log.info("Scan [{}]: {} opportunities found", key, opps != null ? opps.size() : 0);
             if (opps != null && !opps.isEmpty()) {
                 lastGoodCache.put(key, result);
             }

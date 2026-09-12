@@ -63,6 +63,8 @@ public class BrokenWingButterflyScanner {
             instruments.addAll(optionChainService.buildNfoSymbolCandidates(underlying, expiry, s, "PE"));
         }
         Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
+        log.info("BWB [{}]: spot={}, atm={}, expiry={}, dte={}, instruments={}, quotes={}",
+            underlying, spot, atmStrike, expiry, dte, instruments.size(), quotes.size());
 
         // PUT BWB: Buy lower put, sell 2x middle put, buy higher put (skip a strike on downside)
         // CALL BWB: Buy higher call, sell 2x middle call, buy lower call (skip a strike on upside)
