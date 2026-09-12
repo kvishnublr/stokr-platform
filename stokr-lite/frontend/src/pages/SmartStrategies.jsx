@@ -627,6 +627,15 @@ function TabContent({ tab, underlying, tabInfo }) {
           </div>
         </div>
       )}
+      {data?.ltpBased && !data?.stale && (
+        <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-50 border border-blue-200/60">
+          <span className="text-lg">📊</span>
+          <div>
+            <span className="text-[11px] font-bold text-blue-700">LTP-based estimates</span>
+            <span className="text-[10px] text-blue-500 ml-2">Market closed — prices based on Last Traded Price. Actual bid/ask may differ when market opens.</span>
+          </div>
+        </div>
+      )}
       <ScanStatusBar data={data} />
       {content}
     </div>
