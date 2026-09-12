@@ -5,8 +5,8 @@ import client from '../api/client';
 const TABS = [
   { id: 'ratio', label: 'Ratio Butterfly', icon: '🦋', desc: 'Near-zero cost, 1:15 reward ratio', gradient: 'from-violet-500 via-purple-500 to-fuchsia-500', lightBg: 'from-violet-50 to-purple-50', text: 'violet' },
   { id: 'bwb', label: 'Broken Wing', icon: '🔥', desc: 'Credit entry, zero risk one side', gradient: 'from-amber-500 via-orange-500 to-red-400', lightBg: 'from-amber-50 to-orange-50', text: 'amber' },
-  { id: 'skew', label: 'Skew Harvest', icon: '📐', desc: 'Sell overpriced puts, buy cheap calls', gradient: 'from-cyan-500 via-blue-500 to-indigo-500', lightBg: 'from-cyan-50 to-blue-50', text: 'cyan' },
-  { id: 'theta', label: 'Theta Crush', icon: '⏱️', desc: 'Expiry day theta decay capture', gradient: 'from-emerald-500 via-teal-500 to-cyan-500', lightBg: 'from-emerald-50 to-teal-50', text: 'emerald' },
+  { id: 'skew', label: 'Skew Harvest', icon: '📊', desc: 'Sell overpriced puts, buy cheap calls', gradient: 'from-cyan-500 via-blue-500 to-indigo-500', lightBg: 'from-cyan-50 to-blue-50', text: 'cyan' },
+  { id: 'theta', label: 'Theta Crush', icon: '⏰', desc: 'Expiry day theta decay capture', gradient: 'from-emerald-500 via-teal-500 to-cyan-500', lightBg: 'from-emerald-50 to-teal-50', text: 'emerald' },
 ];
 
 const SCAN_URLS = {
@@ -21,6 +21,32 @@ const STRATEGY_INFO = {
   bwb: { structure: 'BUY Wing | SELL 2x Body | BUY Far Wing (Asymmetric)', detail: 'Credit entry with zero risk on one side. 60-65% win rate. Ideal for directional bias with protection.', emptyMsg: 'No broken wing butterfly setups found. Requires credit > 0 with valid asymmetric wing structure.' },
   skew: { structure: 'SELL OTM Put Spread (overpriced) + BUY OTM Call Spread (cheap)', detail: 'Exploits structural IV skew. Near-zero cost. Profits when market stays flat or moves up.', emptyMsg: 'No IV skew opportunities. Requires put-call IV difference >= 2%. More common in volatile/fearful markets.' },
   theta: { structure: 'SELL ATM Straddle + BUY Wings (Iron Butterfly)', detail: 'Capture 70% theta decay in last 90 minutes of expiry. 90-95% win rate in optimal window (post 1:30 PM).', emptyMsg: 'Theta crush shows only on expiry day or 1-2 days before. Most effective on expiry day after 1:30 PM.' },
+};
+
+// Theoretical payoff legs for empty state diagrams (representative example strikes)
+const THEORETICAL_LEGS = {
+  ratio: (atm) => [
+    { strike: atm, optionType: 'CE', side: 'BUY', qty: 1, price: 200 },
+    { strike: atm + 200, optionType: 'CE', side: 'SELL', qty: 3, price: 80 },
+    { strike: atm + 400, optionType: 'CE', side: 'BUY', qty: 2, price: 20 },
+  ],
+  bwb: (atm) => [
+    { strike: atm + 100, optionType: 'PE', side: 'BUY', qty: 1, price: 150 },
+    { strike: atm - 100, optionType: 'PE', side: 'SELL', qty: 2, price: 100 },
+    { strike: atm - 400, optionType: 'PE', side: 'BUY', qty: 1, price: 30 },
+  ],
+  skew: (atm) => [
+    { strike: atm - 300, optionType: 'PE', side: 'SELL', qty: 1, price: 60 },
+    { strike: atm - 500, optionType: 'PE', side: 'BUY', qty: 1, price: 25 },
+    { strike: atm + 300, optionType: 'CE', side: 'BUY', qty: 1, price: 40 },
+    { strike: atm + 500, optionType: 'CE', side: 'SELL', qty: 1, price: 15 },
+  ],
+  theta: (atm) => [
+    { strike: atm, optionType: 'CE', side: 'SELL', qty: 1, price: 120 },
+    { strike: atm, optionType: 'PE', side: 'SELL', qty: 1, price: 120 },
+    { strike: atm + 300, optionType: 'CE', side: 'BUY', qty: 1, price: 30 },
+    { strike: atm - 300, optionType: 'PE', side: 'BUY', qty: 1, price: 30 },
+  ],
 };
 
 export default function SmartStrategies() {
@@ -92,7 +118,7 @@ export default function SmartStrategies() {
 
       {/* ──── CONTENT ──── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        <TabContent tab={activeTab} underlying={underlying} tabInfo={tab} />
+        <TabContent tab={activeTab} underlying={underlying} tabInfo={tab} key={activeTab} />
       </div>
     </div>
   );
@@ -207,9 +233,20 @@ function ErrorState({ error }) {
   );
 }
 
-function EmptyState({ tab }) {
+function EmptyState({ tab, marketOpen, lastScannedAt }) {
   const info = STRATEGY_INFO[tab];
   const tabData = TABS.find(t => t.id === tab);
+  const theoreticalAtm = tab === 'ratio' || tab === 'theta' ? 24500 : 24500;
+  const theoreticalLegs = THEORETICAL_LEGS[tab]?.(theoreticalAtm) || [];
+
+  // Determine empty state reason
+  const isMarketClosed = marketOpen === false;
+  const emptyTitle = isMarketClosed ? 'Market Closed' : 'No Opportunities Found';
+  const emptyIcon = isMarketClosed ? '🌙' : '🔍';
+  const emptySubtext = isMarketClosed
+    ? 'NSE market hours: 9:15 AM - 3:30 PM IST. Scanner will activate automatically when the market opens.'
+    : info.emptyMsg;
+
   return (
     <div className="space-y-5">
       {/* Strategy info card even when empty */}
@@ -225,16 +262,42 @@ function EmptyState({ tab }) {
           </div>
         </div>
       </div>
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="flex flex-col items-center justify-center py-16 px-8">
-          <div className="w-20 h-20 rounded-3xl bg-slate-50 border border-slate-100 flex items-center justify-center mb-5">
-            <span className="text-4xl opacity-40">🔍</span>
+
+      {/* Theoretical payoff chart */}
+      {theoreticalLegs.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 bg-slate-50/60 border-b border-slate-100 flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-500">Theoretical Payoff Structure</span>
+            <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md font-medium">Example only — not a live signal</span>
           </div>
-          <span className="text-slate-500 font-bold text-base">No Opportunities Found</span>
-          <span className="text-slate-400 text-xs mt-2 max-w-md text-center leading-relaxed">{info.emptyMsg}</span>
-          <div className="mt-6 flex items-center gap-2 text-[10px] text-slate-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            Auto-refreshing every 30 seconds
+          <div className="p-4">
+            <PayoffChart legs={theoreticalLegs} lotSize={75} spot={theoreticalAtm} accentColor={
+              tab === 'ratio' ? '#7c3aed' : tab === 'bwb' ? '#f59e0b' : tab === 'skew' ? '#0891b2' : '#10b981'
+            } />
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="flex flex-col items-center justify-center py-12 px-8">
+          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 ${
+            isMarketClosed ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'
+          }`}>
+            <span className="text-3xl">{emptyIcon}</span>
+          </div>
+          <span className={`font-bold text-base ${isMarketClosed ? 'text-slate-600' : 'text-slate-500'}`}>{emptyTitle}</span>
+          <span className="text-slate-400 text-xs mt-2 max-w-md text-center leading-relaxed">{emptySubtext}</span>
+          <div className="mt-5 flex items-center gap-4 text-[10px] text-slate-400">
+            {lastScannedAt && (
+              <span className="flex items-center gap-1.5">
+                <span className="text-slate-300">Last scan:</span>
+                <span className="font-mono font-medium text-slate-500">{lastScannedAt}</span>
+              </span>
+            )}
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Auto-refreshing every 30s
+            </span>
           </div>
         </div>
       </div>
@@ -479,20 +542,57 @@ function SortTh({ field, label, sort, className = '' }) {
   );
 }
 
+function ScanStatusBar({ data }) {
+  if (!data) return null;
+  const { lastScannedAt, marketOpen, count } = data;
+  return (
+    <div className="flex items-center justify-between px-1 mb-4">
+      <div className="flex items-center gap-3 text-[11px] text-slate-400">
+        {lastScannedAt && (
+          <span className="flex items-center gap-1.5">
+            <span className="text-slate-300">Scanned at</span>
+            <span className="font-mono font-medium text-slate-500">{lastScannedAt}</span>
+          </span>
+        )}
+        <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold ${
+          marketOpen ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-slate-100 text-slate-500 border border-slate-200'
+        }`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${marketOpen ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'}`}></span>
+          {marketOpen ? 'MARKET OPEN' : 'MARKET CLOSED'}
+        </span>
+      </div>
+      {count > 0 && (
+        <span className="text-[10px] text-slate-400">
+          <span className="font-mono font-bold text-slate-600">{count}</span> opportunities found
+        </span>
+      )}
+    </div>
+  );
+}
+
 function TabContent({ tab, underlying, tabInfo }) {
   const { data, isLoading, error } = useScan(tab, underlying);
   if (isLoading) return <LoadingState />;
   if (error) return <ErrorState error={error} />;
   const opps = data?.opportunities || [];
-  if (opps.length === 0) return <EmptyState tab={tab} />;
+  if (opps.length === 0) return <EmptyState tab={tab} marketOpen={data?.marketOpen} lastScannedAt={data?.lastScannedAt} />;
 
-  switch (tab) {
-    case 'ratio': return <RatioContent opps={opps} />;
-    case 'bwb': return <BWBContent opps={opps} />;
-    case 'skew': return <SkewContent opps={opps} />;
-    case 'theta': return <ThetaContent opps={opps} />;
-    default: return null;
-  }
+  const content = (() => {
+    switch (tab) {
+      case 'ratio': return <RatioContent opps={opps} />;
+      case 'bwb': return <BWBContent opps={opps} />;
+      case 'skew': return <SkewContent opps={opps} />;
+      case 'theta': return <ThetaContent opps={opps} />;
+      default: return null;
+    }
+  })();
+
+  return (
+    <div>
+      <ScanStatusBar data={data} />
+      {content}
+    </div>
+  );
 }
 
 /* ──────── RATIO BUTTERFLY ──────── */

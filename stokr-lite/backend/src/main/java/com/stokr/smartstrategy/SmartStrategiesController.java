@@ -6,6 +6,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -76,6 +80,9 @@ public class SmartStrategiesController {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
+        resp.put("marketOpen", isMarketOpen());
+        resp.put("lastScannedAt", ZonedDateTime.now(ZoneId.of("Asia/Kolkata"))
+            .format(DateTimeFormatter.ofPattern("hh:mm:ss a")));
 
         try {
             resp.put("ratioButterfly", ratioButterflyScanner.scan(underlying));
@@ -115,6 +122,9 @@ public class SmartStrategiesController {
         resp.put("underlying", underlying);
         resp.put("opportunities", opps);
         resp.put("count", opps.size());
+        resp.put("marketOpen", isMarketOpen());
+        resp.put("lastScannedAt", ZonedDateTime.now(ZoneId.of("Asia/Kolkata"))
+            .format(DateTimeFormatter.ofPattern("hh:mm:ss a")));
         return resp;
     }
 
@@ -126,6 +136,13 @@ public class SmartStrategiesController {
         Map<String, Object> result = fn.get();
         cache.put(key, new CachedResult(result, System.currentTimeMillis()));
         return ResponseEntity.ok(result);
+    }
+
+    private boolean isMarketOpen() {
+        LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        LocalTime open = LocalTime.of(9, 15);
+        LocalTime close = LocalTime.of(15, 30);
+        return !now.isBefore(open) && !now.isAfter(close);
     }
 
     private record CachedResult(Map<String, Object> data, long ts) {}
