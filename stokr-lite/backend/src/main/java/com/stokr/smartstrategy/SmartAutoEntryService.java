@@ -31,7 +31,7 @@ public class SmartAutoEntryService {
     private final AtomicBoolean enabled;
     private final ConcurrentHashMap<String, Long> recentEntries;
     private static final long COOLDOWN_MS = 5 * 60 * 1000;
-    private static final double MIN_SCORE = 55.0;
+    private static final double MIN_SCORE = 65.0;
     private volatile String lastScanResult = "Not started";
     private volatile String timingNote = "";
 
@@ -207,15 +207,14 @@ public class SmartAutoEntryService {
 
     private Map<String, Object> buildEntryRequest(Map<String, Object> opp) {
         Map<String, Object> req = new LinkedHashMap<>();
-        req.put("strategyType", opp.get("strategyType"));
+        String strategyType = String.valueOf(opp.get("strategyType"));
+        req.put("strategyType", strategyType);
         req.put("underlying", opp.get("underlying"));
         req.put("expiry", opp.get("expiry"));
-        req.put("lots", 1);
         req.put("broker", "PAPER");
         req.put("legList", opp.get("legList"));
         req.put("action", opp.get("action"));
 
-        // Auto-set exit rules based on strategy characteristics
         double maxLoss = 0;
         if (opp.get("maxLoss") instanceof Number n) maxLoss = n.doubleValue();
         else if (opp.get("maxLossDown") instanceof Number n) maxLoss = n.doubleValue();
@@ -223,20 +222,54 @@ public class SmartAutoEntryService {
         double maxProfit = 0;
         if (opp.get("creditRs") instanceof Number n) maxProfit = n.doubleValue();
         else if (opp.get("edgeAfterCosts") instanceof Number n) maxProfit = n.doubleValue();
+        else if (opp.get("maxProfit") instanceof Number n) maxProfit = n.doubleValue();
 
         req.put("maxLoss", maxLoss);
         req.put("maxProfit", maxProfit);
 
-        // Timing-adaptive exit rules
+        // Score-based lot sizing: higher score = more conviction
+        double score = opp.get("compositeScore") instanceof Number n ? n.doubleValue() : 0;
+        int lots = score >= 80 ? 2 : 1;
+        req.put("lots", lots);
+
+        // Strategy-specific exit rules for maximum gain
         TimingWindow timing = getTimingWindow();
-        if ("THETA_BOOST".equals(timing.phase)) {
-            req.put("slPct", 40.0);
-            req.put("targetPct", 50.0);
-            req.put("timeExitMinutes", 5);
-        } else {
-            req.put("slPct", 50.0);
-            req.put("targetPct", 60.0);
-            req.put("timeExitMinutes", 5);
+        switch (strategyType) {
+            case "BOX_SPREAD_ARB" -> {
+                // Arb — hold to expiry, tight SL, no early exit needed
+                req.put("slPct", 30.0);
+                req.put("targetPct", 90.0);
+                req.put("timeExitMinutes", 2);
+            }
+            case "IRON_CONDOR", "JADE_LIZARD" -> {
+                // Premium sellers — book profit at 50-60% of credit, tight SL
+                req.put("slPct", "THETA_BOOST".equals(timing.phase) ? 35.0 : 45.0);
+                req.put("targetPct", "THETA_BOOST".equals(timing.phase) ? 50.0 : 60.0);
+                req.put("timeExitMinutes", 5);
+            }
+            case "EXPIRY_THETA_CRUSH" -> {
+                // Theta crush — book fast, decay is rapid
+                req.put("slPct", 30.0);
+                req.put("targetPct", 40.0);
+                req.put("timeExitMinutes", 3);
+            }
+            case "RATIO_BUTTERFLY", "BROKEN_WING_BUTTERFLY" -> {
+                // Butterflies — let winners run more, defined risk
+                req.put("slPct", 60.0);
+                req.put("targetPct", 70.0);
+                req.put("timeExitMinutes", 5);
+            }
+            case "SKEW_HARVEST", "CALENDAR_SPREAD_EDGE" -> {
+                // Edge plays — moderate
+                req.put("slPct", 50.0);
+                req.put("targetPct", 60.0);
+                req.put("timeExitMinutes", 5);
+            }
+            default -> {
+                req.put("slPct", 50.0);
+                req.put("targetPct", 60.0);
+                req.put("timeExitMinutes", 5);
+            }
         }
 
         return req;

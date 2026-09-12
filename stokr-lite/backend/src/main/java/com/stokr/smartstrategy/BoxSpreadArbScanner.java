@@ -108,12 +108,13 @@ public class BoxSpreadArbScanner {
                 // shortBoxCredit is negative when there's credit, so flip:
                 double shortEdgeAlt = (Math.abs(shortBoxCredit) - discountedValue) * lotSize - txnCost;
 
-                if (longEdge > 0) {
+                // Only show edges >= ₹500 — smaller edges get eaten by slippage + txn costs
+                if (longEdge >= 500) {
                     results.add(buildOpp(underlying, "LONG_BOX", k1, k2, expiry, dte, lotSize, spot,
                         ce1, ce2, pe1, pe2, longBoxCost, theoreticalValue, discountedValue,
                         longEdge, txnCost, quotes));
                 }
-                if (shortEdgeAlt > 0) {
+                if (shortEdgeAlt >= 500) {
                     results.add(buildOpp(underlying, "SHORT_BOX", k1, k2, expiry, dte, lotSize, spot,
                         ce1, ce2, pe1, pe2, shortBoxCredit, theoreticalValue, discountedValue,
                         shortEdgeAlt, txnCost, quotes));

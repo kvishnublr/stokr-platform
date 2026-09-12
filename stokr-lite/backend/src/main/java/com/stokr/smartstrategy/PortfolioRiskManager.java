@@ -19,10 +19,10 @@ public class PortfolioRiskManager {
 
     private final LivePositionRepository positionRepo;
 
-    private static final int MAX_CONCURRENT_POSITIONS = 3;
-    private static final double MAX_DAILY_LOSS = 10000.0;
+    private static final int MAX_CONCURRENT_POSITIONS = 5;
+    private static final double MAX_DAILY_LOSS = 15000.0;
     private static final int MAX_PER_UNDERLYING = 2;
-    private static final int MAX_SAME_STRATEGY = 1;
+    private static final int MAX_SAME_STRATEGY = 2;
 
     // Correlated underlying groups — ~85% correlation within each group
     private static final List<Set<String>> CORRELATION_GROUPS = List.of(
