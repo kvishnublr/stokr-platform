@@ -348,8 +348,10 @@ function computePayoff(legs, lotSize, spot) {
   const minS = Math.min(...strikes, spot);
   const maxS = Math.max(...strikes, spot);
   const range = maxS - minS || 100;
-  const lo = minS - range * 0.5;
-  const hi = maxS + range * 0.5;
+  const hasNakedShort = legs.some(l => l.side === 'SELL');
+  const mult = hasNakedShort ? 2.5 : 0.5;
+  const lo = minS - range * mult;
+  const hi = maxS + range * mult;
   const step = (hi - lo) / 120;
   const points = [];
   for (let s = lo; s <= hi; s += step) {
