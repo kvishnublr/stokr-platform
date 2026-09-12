@@ -3,13 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
 
 const TABS = [
-  { id: 'ratio', label: 'Ratio Butterfly', icon: '🦋', desc: 'Near-zero cost, 1:15 reward ratio', gradient: 'from-violet-500 via-purple-500 to-fuchsia-500', lightBg: 'from-violet-50 to-purple-50', text: 'violet' },
-  { id: 'bwb', label: 'Broken Wing', icon: '🔥', desc: 'Credit entry, zero risk one side', gradient: 'from-amber-500 via-orange-500 to-red-400', lightBg: 'from-amber-50 to-orange-50', text: 'amber' },
-  { id: 'skew', label: 'Skew Harvest', icon: '📊', desc: 'Sell overpriced puts, buy cheap calls', gradient: 'from-cyan-500 via-blue-500 to-indigo-500', lightBg: 'from-cyan-50 to-blue-50', text: 'cyan' },
-  { id: 'theta', label: 'Theta Crush', icon: '⏰', desc: 'Expiry day theta decay capture', gradient: 'from-emerald-500 via-teal-500 to-cyan-500', lightBg: 'from-emerald-50 to-teal-50', text: 'emerald' },
-  { id: 'box', label: 'Box Spread', icon: '📦', desc: 'Zero-risk arbitrage, guaranteed profit', gradient: 'from-rose-500 via-pink-500 to-fuchsia-500', lightBg: 'from-rose-50 to-pink-50', text: 'rose' },
-  { id: 'jade', label: 'Jade Lizard', icon: '🦎', desc: 'Zero upside risk, 70-80% win rate', gradient: 'from-lime-500 via-green-500 to-emerald-500', lightBg: 'from-lime-50 to-green-50', text: 'green' },
-  { id: 'calendar', label: 'Calendar Edge', icon: '📅', desc: 'Time decay differential, low risk', gradient: 'from-sky-500 via-blue-500 to-indigo-500', lightBg: 'from-sky-50 to-blue-50', text: 'sky' },
+  { id: 'ratio', label: 'Ratio Butterfly', shortLabel: 'Ratio', icon: '🦋', risk: 'LOW', desc: 'Near-zero cost, 1:15 reward', gradient: 'from-violet-500 via-purple-500 to-fuchsia-500', lightBg: 'from-violet-50 to-purple-50', text: 'violet', accent: '#7c3aed', ring: 'ring-violet-500/30' },
+  { id: 'bwb', label: 'Broken Wing', shortLabel: 'BWB', icon: '🔥', risk: 'LOW', desc: 'Credit entry, zero one-side risk', gradient: 'from-amber-500 via-orange-500 to-red-400', lightBg: 'from-amber-50 to-orange-50', text: 'amber', accent: '#f59e0b', ring: 'ring-amber-500/30' },
+  { id: 'skew', label: 'Skew Harvest', shortLabel: 'Skew', icon: '📊', risk: 'LOW', desc: 'Exploit IV skew mispricing', gradient: 'from-cyan-500 via-blue-500 to-indigo-500', lightBg: 'from-cyan-50 to-blue-50', text: 'cyan', accent: '#0891b2', ring: 'ring-cyan-500/30' },
+  { id: 'theta', label: 'Theta Crush', shortLabel: 'Theta', icon: '⏰', risk: 'LOW', desc: 'Expiry day theta capture', gradient: 'from-emerald-500 via-teal-500 to-cyan-500', lightBg: 'from-emerald-50 to-teal-50', text: 'emerald', accent: '#10b981', ring: 'ring-emerald-500/30' },
+  { id: 'box', label: 'Box Spread', shortLabel: 'Box', icon: '📦', risk: 'ZERO', desc: 'Risk-free arbitrage profit', gradient: 'from-rose-500 via-pink-500 to-fuchsia-500', lightBg: 'from-rose-50 to-pink-50', text: 'rose', accent: '#e11d48', ring: 'ring-rose-500/30' },
+  { id: 'jade', label: 'Jade Lizard', shortLabel: 'Jade', icon: '🦎', risk: 'LOW', desc: 'Zero upside risk, 70%+ win', gradient: 'from-lime-500 via-green-500 to-emerald-500', lightBg: 'from-lime-50 to-green-50', text: 'green', accent: '#16a34a', ring: 'ring-green-500/30' },
+  { id: 'calendar', label: 'Calendar Edge', shortLabel: 'Calendar', icon: '📅', risk: 'LOW', desc: 'Time decay differential', gradient: 'from-sky-500 via-blue-500 to-indigo-500', lightBg: 'from-sky-50 to-blue-50', text: 'sky', accent: '#0284c7', ring: 'ring-sky-500/30' },
 ];
 
 const SCAN_URLS = {
@@ -79,31 +79,29 @@ export default function SmartStrategies() {
   const tab = TABS.find(t => t.id === activeTab);
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* ──── HERO HEADER ──── */}
+    <div className="min-h-screen bg-[#f8fafc]">
+      {/* ──── HEADER ──── */}
       <div className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900" />
-        <div className="absolute inset-0 opacity-30" style={{backgroundImage: 'radial-gradient(circle at 20% 50%, rgba(139,92,246,0.3) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(6,182,212,0.2) 0%, transparent 50%), radial-gradient(circle at 60% 80%, rgba(16,185,129,0.2) 0%, transparent 50%)'}} />
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 pt-6 pb-12">
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#0f172a]" />
+        <div className="absolute inset-0" style={{backgroundImage: 'radial-gradient(ellipse 80% 60% at 20% 120%, rgba(139,92,246,0.15) 0%, transparent 60%), radial-gradient(ellipse 60% 50% at 85% -10%, rgba(6,182,212,0.12) 0%, transparent 60%)'}} />
+        <div className="relative max-w-[1400px] mx-auto px-6 pt-5 pb-5">
           <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-violet-500/20">
-                  <span className="text-white text-lg font-black">S</span>
-                </div>
-                <div>
-                  <h1 className="text-2xl font-black text-white tracking-tight">Smart Strategies</h1>
-                  <p className="text-slate-400 text-xs">Advanced option strategies with dynamic risk management</p>
-                </div>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-violet-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-violet-500/25">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              </div>
+              <div>
+                <h1 className="text-lg font-black text-white tracking-tight leading-none">Smart Strategies</h1>
+                <p className="text-[11px] text-slate-500 mt-0.5 font-medium">7 advanced strategies with real-time scanning</p>
               </div>
             </div>
-            <div className="flex items-center gap-1 bg-white/[0.07] backdrop-blur-sm rounded-xl p-1 border border-white/10">
+            <div className="flex items-center gap-1.5 bg-white/[0.06] backdrop-blur-sm rounded-lg p-1 border border-white/[0.08]">
               {['ALL', 'NIFTY', 'BANKNIFTY'].map(u => (
                 <button key={u} onClick={() => setUnderlying(u)}
-                  className={`px-5 py-2 rounded-lg text-xs font-bold transition-all duration-300 ${
+                  className={`px-4 py-1.5 rounded-md text-[11px] font-bold tracking-wide transition-all duration-200 ${
                     underlying === u
-                      ? 'bg-white text-slate-900 shadow-lg shadow-white/20'
-                      : 'text-white/50 hover:text-white/80 hover:bg-white/[0.06]'
+                      ? 'bg-white text-slate-900 shadow-md'
+                      : 'text-slate-400 hover:text-white/80 hover:bg-white/[0.05]'
                   }`}>{u}</button>
               ))}
             </div>
@@ -111,37 +109,36 @@ export default function SmartStrategies() {
         </div>
       </div>
 
-      {/* ──── TAB CARDS ──── */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 -mt-6 relative z-10">
-        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
-          {TABS.map(t => {
-            const isActive = activeTab === t.id;
-            return (
-              <button key={t.id} onClick={() => setActiveTab(t.id)}
-                className={`group relative rounded-2xl p-5 transition-all duration-300 overflow-hidden flex-1 min-w-[160px] ${
-                  isActive
-                    ? 'shadow-xl scale-[1.02]'
-                    : 'bg-white border border-slate-200 shadow-sm hover:shadow-lg hover:-translate-y-0.5'
-                }`}>
-                {isActive && <div className={`absolute inset-0 bg-gradient-to-br ${t.gradient}`} />}
-                <div className="relative flex items-center gap-3">
-                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-2xl shrink-0 ${
-                    isActive ? 'bg-white/20 shadow-inner' : 'bg-slate-50 border border-slate-100'
-                  }`}>{t.icon}</div>
-                  <div className="text-left min-w-0">
-                    <div className={`text-sm font-black truncate ${isActive ? 'text-white' : 'text-slate-800'}`}>{t.label}</div>
-                    <div className={`text-[10px] truncate mt-0.5 ${isActive ? 'text-white/60' : 'text-slate-400'}`}>{t.desc}</div>
+      {/* ──── STRATEGY NAV ──── */}
+      <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-200/60">
+        <div className="max-w-[1400px] mx-auto px-6">
+          <div className="flex items-center gap-1 py-2">
+            {TABS.map(t => {
+              const isActive = activeTab === t.id;
+              return (
+                <button key={t.id} onClick={() => setActiveTab(t.id)}
+                  className={`group relative flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all duration-200 ${
+                    isActive
+                      ? `bg-gradient-to-r ${t.gradient} shadow-lg shadow-${t.text}-500/20 ring-1 ${t.ring}`
+                      : 'hover:bg-slate-50'
+                  }`}>
+                  <span className={`text-base leading-none ${isActive ? '' : 'grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100 transition-all'}`}>{t.icon}</span>
+                  <div className="text-left">
+                    <div className={`text-[12px] font-extrabold leading-none whitespace-nowrap ${isActive ? 'text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{t.label}</div>
+                    <div className={`text-[9px] mt-0.5 leading-none whitespace-nowrap ${isActive ? 'text-white/60' : 'text-slate-400'}`}>{t.desc}</div>
                   </div>
-                </div>
-                {isActive && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-1 bg-white/40 rounded-t-full" />}
-              </button>
-            );
-          })}
+                  {t.risk === 'ZERO' && (
+                    <span className={`ml-1 px-1.5 py-0.5 rounded text-[8px] font-black ${isActive ? 'bg-white/25 text-white' : 'bg-emerald-50 text-emerald-600 border border-emerald-200'}`}>0 RISK</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {/* ──── CONTENT ──── */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      <div className="max-w-[1400px] mx-auto px-6 py-5">
         <TabContent tab={activeTab} underlying={underlying} tabInfo={tab} key={activeTab} />
       </div>
     </div>
@@ -164,13 +161,11 @@ function useScan(tab, underlying) {
 /* ──── SHARED UI ──── */
 function Stat({ label, value, sub, color = 'text-slate-800', icon }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm hover:shadow-md transition-all group">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{label}</span>
-        {icon && <span className="text-sm opacity-60 group-hover:opacity-100 transition-opacity">{icon}</span>}
-      </div>
-      <div className={`text-xl font-black ${color} leading-none`}>{value}</div>
-      {sub && <div className="text-[10px] text-slate-400 mt-1.5">{sub}</div>}
+    <div className="relative bg-white rounded-xl border border-slate-100/80 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] transition-all duration-200 group overflow-hidden">
+      <div className="absolute top-0 right-0 w-16 h-16 opacity-[0.04] text-4xl flex items-center justify-center pointer-events-none select-none">{icon}</div>
+      <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">{label}</span>
+      <div className={`text-xl font-black ${color} leading-none mt-1.5`}>{value}</div>
+      {sub && <div className="text-[10px] text-slate-400 mt-1">{sub}</div>}
     </div>
   );
 }
@@ -199,15 +194,19 @@ function TableShell({ tab, headerContent, children, count }) {
   const info = STRATEGY_INFO[tab];
   const tabData = TABS.find(t => t.id === tab);
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-      <div className={`px-5 py-4 bg-gradient-to-r ${tabData.lightBg} border-b border-slate-100`}>
+    <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/40">
         <div className="flex items-center justify-between">
-          <div>
-            <h3 className={`text-sm font-black text-${tabData.text}-800`}>{info.structure}</h3>
-            <p className={`text-[11px] text-${tabData.text}-500/80 mt-0.5 max-w-2xl`}>{info.detail}</p>
+          <div className="flex items-center gap-3">
+            <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${tabData.gradient} flex items-center justify-center text-sm shadow-sm`}>{tabData.icon}</div>
+            <div>
+              <h3 className="text-[12px] font-bold text-slate-700">{info.structure}</h3>
+              <p className="text-[10px] text-slate-400 mt-0.5 max-w-xl">{info.detail}</p>
+            </div>
           </div>
           {count > 0 && (
-            <div className={`px-3 py-1.5 rounded-lg bg-${tabData.text}-100 text-${tabData.text}-700 text-xs font-black`}>
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
               {count} signal{count !== 1 ? 's' : ''}
             </div>
           )}
@@ -215,10 +214,10 @@ function TableShell({ tab, headerContent, children, count }) {
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
-          <thead className="bg-slate-50/80 text-[10px] text-slate-400 uppercase tracking-wider font-bold border-b border-slate-100">
+          <thead className="bg-slate-50/60 text-[10px] text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-100">
             {headerContent}
           </thead>
-          <tbody className="divide-y divide-slate-50">
+          <tbody className="divide-y divide-slate-50/80">
             {children}
           </tbody>
         </table>
@@ -229,15 +228,15 @@ function TableShell({ tab, headerContent, children, count }) {
 
 function LoadingState() {
   return (
-    <div className="flex flex-col items-center justify-center py-24">
-      <div className="relative mb-5">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-500 animate-pulse" />
-        <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-lg bg-white border-2 border-slate-100 flex items-center justify-center">
-          <div className="w-3 h-3 border-2 border-slate-300 border-t-slate-700 rounded-full animate-spin" />
+    <div className="flex flex-col items-center justify-center py-20">
+      <div className="relative mb-6">
+        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-cyan-400 animate-pulse shadow-lg shadow-violet-500/20" />
+        <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-md bg-white border border-slate-200 flex items-center justify-center shadow-sm">
+          <div className="w-2.5 h-2.5 border-[2px] border-slate-200 border-t-slate-600 rounded-full animate-spin" />
         </div>
       </div>
-      <span className="text-slate-600 font-bold text-sm">Scanning Live Option Chain</span>
-      <span className="text-slate-400 text-xs mt-1">Fetching real-time quotes from NSE...</span>
+      <span className="text-slate-700 font-bold text-sm">Scanning Live Chain</span>
+      <span className="text-slate-400 text-[11px] mt-1">Real-time quotes from NSE</span>
     </div>
   );
 }
@@ -260,67 +259,59 @@ function ErrorState({ error }) {
 function EmptyState({ tab, marketOpen, lastScannedAt }) {
   const info = STRATEGY_INFO[tab];
   const tabData = TABS.find(t => t.id === tab);
-  const theoreticalAtm = tab === 'ratio' || tab === 'theta' ? 24500 : 24500;
+  const theoreticalAtm = 24500;
   const theoreticalLegs = THEORETICAL_LEGS[tab]?.(theoreticalAtm) || [];
 
-  // Determine empty state reason
   const isMarketClosed = marketOpen === false;
-  const emptyTitle = isMarketClosed ? 'Market Closed' : 'No Opportunities Found';
-  const emptyIcon = isMarketClosed ? '🌙' : '🔍';
+  const emptyTitle = isMarketClosed ? 'Market Closed' : 'No Opportunities Right Now';
   const emptySubtext = isMarketClosed
-    ? 'NSE market hours: 9:15 AM - 3:30 PM IST. Scanner will activate automatically when the market opens.'
+    ? 'NSE hours: 9:15 AM — 3:30 PM IST. Scanner activates automatically.'
     : info.emptyMsg;
 
   return (
-    <div className="space-y-5">
-      {/* Strategy info card even when empty */}
-      <div className={`bg-gradient-to-r ${tabData.lightBg} rounded-2xl border border-slate-100 p-6`}>
+    <div className="space-y-4">
+      {/* Strategy overview */}
+      <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-5">
         <div className="flex items-start gap-4">
-          <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${tabData.gradient} flex items-center justify-center text-3xl shadow-lg shrink-0`}>
+          <div className={`w-11 h-11 rounded-lg bg-gradient-to-br ${tabData.gradient} flex items-center justify-center text-xl shadow-sm shrink-0`}>
             {tabData.icon}
           </div>
-          <div>
-            <h3 className={`text-lg font-black text-${tabData.text}-800 mb-1`}>{tabData.label} Strategy</h3>
-            <p className={`text-sm text-${tabData.text}-700/70 font-medium`}>{info.structure}</p>
-            <p className={`text-xs text-${tabData.text}-600/50 mt-2 max-w-xl`}>{info.detail}</p>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-slate-800">{tabData.label}</h3>
+            <p className="text-[11px] text-slate-500 font-medium mt-0.5">{info.structure}</p>
+            <p className="text-[11px] text-slate-400 mt-1.5 max-w-xl leading-relaxed">{info.detail}</p>
           </div>
         </div>
       </div>
 
       {/* Theoretical payoff chart */}
       {theoreticalLegs.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-3 bg-slate-50/60 border-b border-slate-100 flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">Theoretical Payoff Structure</span>
-            <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md font-medium">Example only — not a live signal</span>
+        <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+          <div className="px-5 py-2.5 border-b border-slate-100 flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-slate-500">Theoretical Payoff</span>
+            <span className="text-[9px] text-slate-400 bg-slate-50 px-2 py-0.5 rounded font-medium">Example — not a live signal</span>
           </div>
           <div className="p-4">
-            <PayoffChart legs={theoreticalLegs} lotSize={75} spot={theoreticalAtm} accentColor={
-              { ratio: '#7c3aed', bwb: '#f59e0b', skew: '#0891b2', theta: '#10b981', box: '#e11d48', jade: '#16a34a', calendar: '#0284c7' }[tab] || '#7c3aed'
-            } />
+            <PayoffChart legs={theoreticalLegs} lotSize={75} spot={theoreticalAtm} accentColor={tabData.accent || '#7c3aed'} />
           </div>
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="flex flex-col items-center justify-center py-12 px-8">
-          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 ${
+      {/* Empty message */}
+      <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+        <div className="flex flex-col items-center justify-center py-10 px-8">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-3 ${
             isMarketClosed ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'
           }`}>
-            <span className="text-3xl">{emptyIcon}</span>
+            <span className="text-2xl">{isMarketClosed ? '🌙' : '🔍'}</span>
           </div>
-          <span className={`font-bold text-base ${isMarketClosed ? 'text-slate-600' : 'text-slate-500'}`}>{emptyTitle}</span>
-          <span className="text-slate-400 text-xs mt-2 max-w-md text-center leading-relaxed">{emptySubtext}</span>
-          <div className="mt-5 flex items-center gap-4 text-[10px] text-slate-400">
-            {lastScannedAt && (
-              <span className="flex items-center gap-1.5">
-                <span className="text-slate-300">Last scan:</span>
-                <span className="font-mono font-medium text-slate-500">{lastScannedAt}</span>
-              </span>
-            )}
-            <span className="flex items-center gap-1.5">
+          <span className="font-bold text-sm text-slate-600">{emptyTitle}</span>
+          <span className="text-slate-400 text-[11px] mt-1.5 max-w-sm text-center leading-relaxed">{emptySubtext}</span>
+          <div className="mt-4 flex items-center gap-3 text-[10px] text-slate-400">
+            {lastScannedAt && <span>Last scan: <span className="font-mono text-slate-500">{lastScannedAt}</span></span>}
+            <span className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              Auto-refreshing every 30s
+              Auto-refresh 30s
             </span>
           </div>
         </div>
@@ -570,24 +561,23 @@ function ScanStatusBar({ data }) {
   if (!data) return null;
   const { lastScannedAt, marketOpen, count } = data;
   return (
-    <div className="flex items-center justify-between px-1 mb-4">
-      <div className="flex items-center gap-3 text-[11px] text-slate-400">
+    <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-2.5 text-[11px]">
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold ${
+          marketOpen ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
+        }`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${marketOpen ? 'bg-emerald-400 animate-pulse' : 'bg-slate-300'}`}></span>
+          {marketOpen ? 'Live' : 'Closed'}
+        </span>
         {lastScannedAt && (
-          <span className="flex items-center gap-1.5">
-            <span className="text-slate-300">Scanned at</span>
-            <span className="font-mono font-medium text-slate-500">{lastScannedAt}</span>
+          <span className="text-slate-400 font-medium">
+            Scanned <span className="font-mono text-slate-500">{lastScannedAt}</span>
           </span>
         )}
-        <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold ${
-          marketOpen ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-slate-100 text-slate-500 border border-slate-200'
-        }`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${marketOpen ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'}`}></span>
-          {marketOpen ? 'MARKET OPEN' : 'MARKET CLOSED'}
-        </span>
       </div>
       {count > 0 && (
-        <span className="text-[10px] text-slate-400">
-          <span className="font-mono font-bold text-slate-600">{count}</span> opportunities found
+        <span className="text-[10px] text-slate-400 font-medium">
+          <span className="font-mono font-bold text-slate-600">{count}</span> found
         </span>
       )}
     </div>
