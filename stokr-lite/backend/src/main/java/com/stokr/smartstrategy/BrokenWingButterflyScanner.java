@@ -142,7 +142,12 @@ public class BrokenWingButterflyScanner {
     private OptionChainService.OptionQuote getQuote(Map<String, OptionChainService.OptionQuote> quotes,
             String underlying, LocalDate expiry, int strike, String optType) {
         for (String c : optionChainService.buildNfoSymbolCandidates(underlying, expiry, strike, optType)) {
-            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) return quotes.get(c);
+            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) {
+                OptionChainService.OptionQuote q = quotes.get(c);
+                if (q.bid <= 0) q.bid = q.lastPrice;
+                if (q.ask <= 0) q.ask = q.lastPrice;
+                return q;
+            }
         }
         return null;
     }

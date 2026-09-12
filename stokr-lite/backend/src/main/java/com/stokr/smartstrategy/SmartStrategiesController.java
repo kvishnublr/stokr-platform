@@ -158,7 +158,11 @@ public class SmartStrategiesController {
         resp.put("underlying", underlying);
         resp.put("opportunities", opps);
         resp.put("count", opps.size());
-        resp.put("marketOpen", isMarketOpen());
+        boolean marketOpen = isMarketOpen();
+        resp.put("marketOpen", marketOpen);
+        if (!marketOpen) {
+            resp.put("ltpBased", true);
+        }
         resp.put("lastScannedAt", ZonedDateTime.now(ZoneId.of("Asia/Kolkata"))
             .format(DateTimeFormatter.ofPattern("hh:mm:ss a")));
         return resp;
