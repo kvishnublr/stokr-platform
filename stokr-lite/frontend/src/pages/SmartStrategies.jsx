@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback, Fragment } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import client from '../api/client';
 
 const TABS = [
@@ -76,6 +76,7 @@ const THEORETICAL_LEGS = {
 export default function SmartStrategies() {
   const [activeTab, setActiveTab] = useState('ratio');
   const [underlying, setUnderlying] = useState('ALL');
+  const [entryModal, setEntryModal] = useState(null);
   const tab = TABS.find(t => t.id === activeTab);
 
   return (
@@ -141,10 +142,18 @@ export default function SmartStrategies() {
         </div>
       </div>
 
+      {/* ──── ACTIVE POSITIONS ──── */}
+      <div className="max-w-[1400px] mx-auto px-6 pt-5">
+        <ActivePositionsPanel />
+      </div>
+
       {/* ──── CONTENT ──── */}
       <div className="max-w-[1400px] mx-auto px-6 py-5">
-        <TabContent tab={activeTab} underlying={underlying} tabInfo={tab} key={activeTab} />
+        <TabContent tab={activeTab} underlying={underlying} tabInfo={tab} key={activeTab} onEnter={setEntryModal} />
       </div>
+
+      {/* ──── ENTRY MODAL ──── */}
+      {entryModal && <EnterTradeModal opp={entryModal} onClose={() => setEntryModal(null)} />}
     </div>
   );
 }
@@ -514,20 +523,27 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
   );
 }
 
-function ExpandableRows({ opps, colSpan, renderRow, getLegs, getLotSize, getSpot, accentColor }) {
+function ExpandableRows({ opps, colSpan, renderRow, getLegs, getLotSize, getSpot, accentColor, onEnter }) {
   const [expanded, setExpanded] = useState(null);
   return opps.map((o, i) => (
     <Fragment key={i}>
       <tr className={`cursor-pointer transition-colors ${expanded === i ? 'bg-slate-50' : ''}`}
         onClick={() => setExpanded(expanded === i ? null : i)}>
         {renderRow(o, i)}
+        <td className="px-2 py-3 text-center" onClick={e => e.stopPropagation()}>
+          <button onClick={() => onEnter?.(o)}
+            className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-[10px] font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all"
+            title="Enter this trade">
+            Enter
+          </button>
+        </td>
         <td className="px-2 py-3 text-center">
           <span className={`inline-block transition-transform duration-200 text-slate-400 text-xs ${expanded === i ? 'rotate-180' : ''}`}>▼</span>
         </td>
       </tr>
       {expanded === i && (
         <tr>
-          <td colSpan={colSpan + 1} className="px-4 py-3 bg-slate-50/50">
+          <td colSpan={colSpan + 2} className="px-4 py-3 bg-slate-50/50">
             <PayoffChart legs={getLegs(o)} lotSize={getLotSize(o)} spot={getSpot(o)} accentColor={accentColor} />
           </td>
         </tr>
@@ -596,7 +612,7 @@ function ScanStatusBar({ data }) {
   );
 }
 
-function TabContent({ tab, underlying, tabInfo }) {
+function TabContent({ tab, underlying, tabInfo, onEnter }) {
   const { data, isLoading, error } = useScan(tab, underlying);
   if (isLoading) return <LoadingState />;
   if (error) return <ErrorState error={error} />;
@@ -605,13 +621,13 @@ function TabContent({ tab, underlying, tabInfo }) {
 
   const content = (() => {
     switch (tab) {
-      case 'ratio': return <RatioContent opps={opps} />;
-      case 'bwb': return <BWBContent opps={opps} />;
-      case 'skew': return <SkewContent opps={opps} />;
-      case 'theta': return <ThetaContent opps={opps} />;
-      case 'box': return <BoxContent opps={opps} />;
-      case 'jade': return <JadeContent opps={opps} />;
-      case 'calendar': return <CalendarContent opps={opps} />;
+      case 'ratio': return <RatioContent opps={opps} onEnter={onEnter} />;
+      case 'bwb': return <BWBContent opps={opps} onEnter={onEnter} />;
+      case 'skew': return <SkewContent opps={opps} onEnter={onEnter} />;
+      case 'theta': return <ThetaContent opps={opps} onEnter={onEnter} />;
+      case 'box': return <BoxContent opps={opps} onEnter={onEnter} />;
+      case 'jade': return <JadeContent opps={opps} onEnter={onEnter} />;
+      case 'calendar': return <CalendarContent opps={opps} onEnter={onEnter} />;
       default: return null;
     }
   })();
@@ -643,7 +659,7 @@ function TabContent({ tab, underlying, tabInfo }) {
 }
 
 /* ──────── RATIO BUTTERFLY ──────── */
-function RatioContent({ opps }) {
+function RatioContent({ opps, onEnter }) {
   const sort = useSort('riskReward');
   const b = opps[0];
   const sorted = sort.sorted(opps);
@@ -669,9 +685,10 @@ function RatioContent({ opps }) {
           <SortTh field="riskReward" label="R:R" sort={sort} className="text-right" />
           <th className="px-4 py-3 text-left">Expiry</th>
           <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={10} accentColor="#7c3aed"
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#7c3aed" onEnter={onEnter}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -692,7 +709,7 @@ function RatioContent({ opps }) {
 }
 
 /* ──────── BROKEN WING BUTTERFLY ──────── */
-function BWBContent({ opps }) {
+function BWBContent({ opps, onEnter }) {
   const [bwbType, setBwbType] = useState('PE');
   const putOpps = opps.filter(o => o.optionType === 'PE');
   const callOpps = opps.filter(o => o.optionType === 'CE');
@@ -753,9 +770,10 @@ function BWBContent({ opps }) {
             <SortTh field="riskReward" label="R:R" sort={sort} className="text-right" />
             <th className="px-4 py-3 text-left">Expiry</th>
             <th className="px-2 py-3 text-center w-8"></th>
+            <th className="px-2 py-3 text-center w-8"></th>
           </tr>
         }>
-          <ExpandableRows opps={sorted} colSpan={10} accentColor={bwbType === 'PE' ? '#10b981' : '#3b82f6'}
+          <ExpandableRows opps={sorted} colSpan={10} accentColor={bwbType === 'PE' ? '#10b981' : '#3b82f6'} onEnter={onEnter}
             getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
             renderRow={(o, i) => (<>
               <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -776,7 +794,7 @@ function BWBContent({ opps }) {
 }
 
 /* ──────── SKEW HARVEST ──────── */
-function SkewContent({ opps }) {
+function SkewContent({ opps, onEnter }) {
   const sort = useSort('skewEdge');
   const b = opps[0];
   const sorted = sort.sorted(opps);
@@ -802,9 +820,10 @@ function SkewContent({ opps }) {
           <SortTh field="scenarioUp" label="Up P&L" sort={sort} className="text-right" />
           <SortTh field="scenarioDown" label="Down P&L" sort={sort} className="text-right" />
           <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={10} accentColor="#0891b2"
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#0891b2" onEnter={onEnter}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -827,7 +846,7 @@ function SkewContent({ opps }) {
 }
 
 /* ──────── THETA CRUSH ──────── */
-function ThetaContent({ opps }) {
+function ThetaContent({ opps, onEnter }) {
   const sort = useSort('thetaDecayExpected');
   const b = opps[0];
   const isExpiryDay = b.dte === 0;
@@ -867,9 +886,10 @@ function ThetaContent({ opps }) {
           <th className="px-4 py-3 text-center">Window</th>
           <th className="px-4 py-3 text-center">Win Rate</th>
           <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={9} accentColor="#10b981"
+        <ExpandableRows opps={sorted} colSpan={9} accentColor="#10b981" onEnter={onEnter}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -894,7 +914,7 @@ function ThetaContent({ opps }) {
 }
 
 /* ──────── BOX SPREAD ARBITRAGE ──────── */
-function BoxContent({ opps }) {
+function BoxContent({ opps, onEnter }) {
   const sort = useSort('netEdgeRs');
   const b = opps[0];
   const sorted = sort.sorted(opps);
@@ -920,9 +940,10 @@ function BoxContent({ opps }) {
           <SortTh field="annualizedReturn" label="Annual %" sort={sort} className="text-right" />
           <th className="px-4 py-3 text-left">Expiry</th>
           <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={10} accentColor="#e11d48"
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#e11d48" onEnter={onEnter}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -947,7 +968,7 @@ function BoxContent({ opps }) {
 }
 
 /* ──────── JADE LIZARD ──────── */
-function JadeContent({ opps }) {
+function JadeContent({ opps, onEnter }) {
   const sort = useSort('creditRs');
   const b = opps[0];
   const sorted = sort.sorted(opps);
@@ -973,9 +994,10 @@ function JadeContent({ opps }) {
           <SortTh field="scenarioUp" label="Up P&L" sort={sort} className="text-right" />
           <SortTh field="scenarioDown" label="Down P&L" sort={sort} className="text-right" />
           <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={10} accentColor="#16a34a"
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#16a34a" onEnter={onEnter}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -1002,7 +1024,7 @@ function JadeContent({ opps }) {
 }
 
 /* ──────── CALENDAR SPREAD EDGE ──────── */
-function CalendarContent({ opps }) {
+function CalendarContent({ opps, onEnter }) {
   const sort = useSort('ivEdge');
   const b = opps[0];
   const sorted = sort.sorted(opps);
@@ -1041,9 +1063,10 @@ function CalendarContent({ opps }) {
           <SortTh field="dailyThetaEdgeRs" label="Daily θ ₹" sort={sort} className="text-right" />
           <SortTh field="expectedProfitRs" label="Exp. P&L" sort={sort} className="text-right" />
           <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={10} accentColor="#0284c7"
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#0284c7" onEnter={onEnter}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -1067,6 +1090,314 @@ function CalendarContent({ opps }) {
           </>)}
         />
       </TableShell>
+    </div>
+  );
+}
+
+/* ──────── ACTIVE POSITIONS PANEL ──────── */
+function ActivePositionsPanel() {
+  const queryClient = useQueryClient();
+  const { data: positions } = useQuery({
+    queryKey: ['smart-positions'],
+    queryFn: async () => { const r = await client.get('/smart-strategies/positions'); return r.data; },
+    refetchInterval: 10000,
+    staleTime: 5000,
+  });
+
+  const exitMutation = useMutation({
+    mutationFn: (id) => client.post(`/smart-strategies/exit/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['smart-positions'] }),
+  });
+
+  if (!positions || positions.length === 0) return null;
+
+  const STRAT_LABELS = {
+    BROKEN_WING_BUTTERFLY: 'BWB', RATIO_BUTTERFLY: 'Ratio', SKEW_HARVEST: 'Skew',
+    EXPIRY_THETA_CRUSH: 'Theta', BOX_SPREAD_ARB: 'Box', JADE_LIZARD: 'Jade', CALENDAR_SPREAD_EDGE: 'Calendar',
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden mb-1">
+      <div className="px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-violet-50 to-indigo-50 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center text-sm shadow-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M12 2v20M2 12h20"/></svg>
+          </div>
+          <span className="text-xs font-black text-slate-700">Active Positions</span>
+          <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold">{positions.length}</span>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50/60 text-[10px] text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-100">
+            <tr>
+              <th className="px-4 py-2.5 text-left">Strategy</th>
+              <th className="px-4 py-2.5 text-left">Index</th>
+              <th className="px-4 py-2.5 text-left">Broker</th>
+              <th className="px-4 py-2.5 text-center">Lots</th>
+              <th className="px-4 py-2.5 text-right">P&L</th>
+              <th className="px-4 py-2.5 text-center">SL%</th>
+              <th className="px-4 py-2.5 text-center">Target%</th>
+              <th className="px-4 py-2.5 text-center">Time Exit</th>
+              <th className="px-4 py-2.5 text-left">Entered</th>
+              <th className="px-4 py-2.5 text-center">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50/80">
+            {positions.map(p => {
+              const pnl = p.currentPnl ?? 0;
+              const isPaper = !p.broker || p.broker === 'PAPER';
+              return (
+                <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-4 py-3">
+                    <span className="px-2 py-1 rounded-md bg-violet-50 text-violet-700 text-[10px] font-black border border-violet-200">
+                      {STRAT_LABELS[p.strategyType] || p.strategyType}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 font-bold text-slate-800">{p.underlying}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${isPaper ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-emerald-50 text-emerald-600 border border-emerald-200'}`}>
+                      {isPaper ? 'PAPER' : p.broker}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center font-mono font-bold text-slate-600">{p.lots || 1}</td>
+                  <td className={`px-4 py-3 text-right font-mono font-bold ${pnl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {pnl >= 0 ? '+' : ''}₹{Math.round(pnl).toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3 text-center font-mono text-slate-500">{p.slPct ? `${p.slPct}%` : '--'}</td>
+                  <td className="px-4 py-3 text-center font-mono text-slate-500">{p.targetPct ? `${p.targetPct}%` : '--'}</td>
+                  <td className="px-4 py-3 text-center font-mono text-slate-500">{p.timeExitMinutes ? `${p.timeExitMinutes}m` : '--'}</td>
+                  <td className="px-4 py-3 text-slate-400 text-[10px]">{p.enteredAt ? new Date(p.enteredAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '--'}</td>
+                  <td className="px-4 py-3 text-center">
+                    <button onClick={() => { if (confirm('Exit this position?')) exitMutation.mutate(p.id); }}
+                      disabled={exitMutation.isPending}
+                      className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-red-500 to-rose-500 text-white text-[10px] font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all disabled:opacity-50">
+                      {exitMutation.isPending ? '...' : 'Exit'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ──────── ENTER TRADE MODAL ──────── */
+function EnterTradeModal({ opp, onClose }) {
+  const queryClient = useQueryClient();
+  const [lots, setLots] = useState(1);
+  const [slPct, setSlPct] = useState(50);
+  const [targetPct, setTargetPct] = useState(80);
+  const [timeExit, setTimeExit] = useState(5);
+  const [slEnabled, setSlEnabled] = useState(true);
+  const [targetEnabled, setTargetEnabled] = useState(true);
+  const [timeEnabled, setTimeEnabled] = useState(true);
+  const [broker, setBroker] = useState('PAPER');
+  const [result, setResult] = useState(null);
+
+  const enterMutation = useMutation({
+    mutationFn: (payload) => client.post('/smart-strategies/enter', payload),
+    onSuccess: (res) => {
+      setResult(res.data);
+      queryClient.invalidateQueries({ queryKey: ['smart-positions'] });
+    },
+    onError: (err) => setResult({ status: 'ERROR', message: err?.response?.data?.message || err.message }),
+  });
+
+  const stratType = opp.strategyType || opp.strategy || 'UNKNOWN';
+  const maxLoss = (opp.maxLoss || 0) * lots;
+  const maxProfit = (opp.maxProfit || opp.netEdgeRs || 0) * lots;
+
+  const handleSubmit = () => {
+    enterMutation.mutate({
+      strategyType: stratType,
+      underlying: opp.underlying,
+      expiry: opp.expiry,
+      action: opp.action || stratType,
+      lots,
+      broker,
+      slPct: slEnabled ? slPct : null,
+      targetPct: targetEnabled ? targetPct : null,
+      timeExitMinutes: timeEnabled ? timeExit : null,
+      maxLoss: opp.maxLoss || 0,
+      maxProfit: opp.maxProfit || opp.netEdgeRs || 0,
+      legList: opp.legList,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-[520px] max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-violet-50 to-indigo-50 rounded-t-2xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center shadow-lg">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M12 2v20M2 12h20"/></svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-800">Enter Trade</h3>
+                <p className="text-[10px] text-slate-500">{stratType.replace(/_/g, ' ')} — {opp.underlying}</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+
+        {result ? (
+          <div className="p-6">
+            <div className={`p-5 rounded-xl border ${result.status === 'SUCCESS' ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+              <div className={`text-sm font-black ${result.status === 'SUCCESS' ? 'text-emerald-700' : 'text-red-700'}`}>
+                {result.status === 'SUCCESS' ? 'Trade Entered!' : 'Entry Failed'}
+              </div>
+              <div className={`text-xs mt-1 ${result.status === 'SUCCESS' ? 'text-emerald-600' : 'text-red-600'}`}>{result.message}</div>
+              {result.positionId && <div className="text-[10px] text-slate-400 mt-2">Position #{result.positionId}</div>}
+            </div>
+            <button onClick={onClose} className="mt-4 w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-sm font-bold text-slate-700 transition-colors">Close</button>
+          </div>
+        ) : (
+          <div className="p-6 space-y-5">
+            {/* Legs preview */}
+            {opp.legList && (
+              <div className="bg-slate-50 rounded-xl border border-slate-100 p-3">
+                <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-2">Legs</div>
+                <div className="space-y-1">
+                  {opp.legList.map((leg, i) => (
+                    <div key={i} className="flex items-center gap-2 text-[11px] font-mono">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${leg.side === 'BUY' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                        {leg.side}
+                      </span>
+                      <span className="text-slate-600">{leg.qty || 1}x</span>
+                      <span className="font-bold text-slate-800">{leg.strike} {leg.optionType}</span>
+                      <span className="text-slate-400">@</span>
+                      <span className="text-slate-600">₹{leg.price}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* P&L summary */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 rounded-xl bg-red-50 border border-red-100 text-center">
+                <div className="text-[9px] text-red-400 font-semibold uppercase">Max Risk (per lot)</div>
+                <div className="text-sm font-black text-red-600 mt-0.5">₹{Math.round(opp.maxLoss || 0).toLocaleString()}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 text-center">
+                <div className="text-[9px] text-emerald-400 font-semibold uppercase">Max Reward (per lot)</div>
+                <div className="text-sm font-black text-emerald-600 mt-0.5">₹{Math.round(opp.maxProfit || opp.netEdgeRs || 0).toLocaleString()}</div>
+              </div>
+            </div>
+
+            {/* Controls */}
+            <div className="space-y-3">
+              {/* Broker + Lots */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Broker</label>
+                  <select value={broker} onChange={e => setBroker(e.target.value)}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white focus:ring-2 focus:ring-violet-200 focus:border-violet-400 outline-none">
+                    <option value="PAPER">PAPER (Simulated)</option>
+                    <option value="ZERODHA">ZERODHA (Live)</option>
+                    <option value="NAVIA">NAVIA (Live)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Lots</label>
+                  <input type="number" min="1" max="50" value={lots} onChange={e => setLots(Math.max(1, +e.target.value))}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white focus:ring-2 focus:ring-violet-200 focus:border-violet-400 outline-none" />
+                </div>
+              </div>
+
+              {/* Stop Loss */}
+              <div className={`p-3 rounded-xl border transition-colors ${slEnabled ? 'bg-red-50/50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={slEnabled} onChange={e => setSlEnabled(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-red-500 focus:ring-red-200" />
+                    <span className="text-[11px] font-bold text-slate-700">Stop Loss</span>
+                  </label>
+                  {slEnabled && <span className="text-[10px] font-mono text-red-500">Exit if loss hits ₹{Math.round(maxLoss * slPct / 100).toLocaleString()}</span>}
+                </div>
+                {slEnabled && (
+                  <div className="mt-2 flex items-center gap-3">
+                    <input type="range" min="10" max="100" step="5" value={slPct} onChange={e => setSlPct(+e.target.value)}
+                      className="flex-1 h-1.5 bg-red-200 rounded-full accent-red-500" />
+                    <span className="text-xs font-black text-red-600 w-12 text-right">{slPct}%</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Target */}
+              <div className={`p-3 rounded-xl border transition-colors ${targetEnabled ? 'bg-emerald-50/50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={targetEnabled} onChange={e => setTargetEnabled(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-emerald-500 focus:ring-emerald-200" />
+                    <span className="text-[11px] font-bold text-slate-700">Auto Book Profit</span>
+                  </label>
+                  {targetEnabled && <span className="text-[10px] font-mono text-emerald-600">Exit if profit hits ₹{Math.round(maxProfit * targetPct / 100).toLocaleString()}</span>}
+                </div>
+                {targetEnabled && (
+                  <div className="mt-2 flex items-center gap-3">
+                    <input type="range" min="10" max="100" step="5" value={targetPct} onChange={e => setTargetPct(+e.target.value)}
+                      className="flex-1 h-1.5 bg-emerald-200 rounded-full accent-emerald-500" />
+                    <span className="text-xs font-black text-emerald-600 w-12 text-right">{targetPct}%</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Time Exit */}
+              <div className={`p-3 rounded-xl border transition-colors ${timeEnabled ? 'bg-blue-50/50 border-blue-100' : 'bg-slate-50 border-slate-100'}`}>
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={timeEnabled} onChange={e => setTimeEnabled(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-blue-500 focus:ring-blue-200" />
+                    <span className="text-[11px] font-bold text-slate-700">Time-Based Exit</span>
+                  </label>
+                  {timeEnabled && <span className="text-[10px] font-mono text-blue-600">Exit {timeExit}min before 3:30 PM</span>}
+                </div>
+                {timeEnabled && (
+                  <div className="mt-2 flex items-center gap-3">
+                    <input type="range" min="1" max="30" step="1" value={timeExit} onChange={e => setTimeExit(+e.target.value)}
+                      className="flex-1 h-1.5 bg-blue-200 rounded-full accent-blue-500" />
+                    <span className="text-xs font-black text-blue-600 w-12 text-right">{timeExit}m</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Total risk summary */}
+            <div className="p-3 rounded-xl bg-slate-800 text-white">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-300">Total Risk ({lots} lot{lots > 1 ? 's' : ''})</span>
+                <span className="font-mono font-black text-red-400">₹{Math.round(maxLoss).toLocaleString()}</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] mt-1">
+                <span className="text-slate-300">Max Reward ({lots} lot{lots > 1 ? 's' : ''})</span>
+                <span className="font-mono font-black text-emerald-400">₹{Math.round(maxProfit).toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* Submit */}
+            <button onClick={handleSubmit} disabled={enterMutation.isPending}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-sm font-black shadow-lg shadow-violet-500/25 hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50 disabled:scale-100">
+              {enterMutation.isPending ? 'Placing Orders...' : broker === 'PAPER' ? `Enter PAPER Trade (${lots} lot${lots > 1 ? 's' : ''})` : `Enter LIVE Trade via ${broker}`}
+            </button>
+
+            {broker !== 'PAPER' && (
+              <div className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-center font-medium">
+                LIVE orders will be placed with your broker. Market must be open (9:15 AM - 3:30 PM IST).
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

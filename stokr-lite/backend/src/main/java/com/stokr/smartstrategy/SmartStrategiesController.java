@@ -27,6 +27,7 @@ public class SmartStrategiesController {
     private final JadeLizardScanner jadeLizardScanner;
     private final CalendarSpreadEdgeScanner calendarSpreadScanner;
     private final OptionArbAutoExecService autoExecService;
+    private final SmartStrategyExecutionService executionService;
 
     private final ConcurrentHashMap<String, CachedResult> cache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Map<String, Object>> lastGoodCache = new ConcurrentHashMap<>();
@@ -38,7 +39,8 @@ public class SmartStrategiesController {
                                       BoxSpreadArbScanner boxSpreadScanner,
                                       JadeLizardScanner jadeLizardScanner,
                                       CalendarSpreadEdgeScanner calendarSpreadScanner,
-                                      OptionArbAutoExecService autoExecService) {
+                                      OptionArbAutoExecService autoExecService,
+                                      SmartStrategyExecutionService executionService) {
         this.ratioButterflyScanner = ratioButterflyScanner;
         this.bwbScanner = bwbScanner;
         this.skewHarvestScanner = skewHarvestScanner;
@@ -47,6 +49,7 @@ public class SmartStrategiesController {
         this.jadeLizardScanner = jadeLizardScanner;
         this.calendarSpreadScanner = calendarSpreadScanner;
         this.autoExecService = autoExecService;
+        this.executionService = executionService;
     }
 
     @GetMapping("/ratio-butterfly/scan")
@@ -137,6 +140,21 @@ public class SmartStrategiesController {
         catch (Exception e) { resp.put("calendarSpread", List.of()); }
 
         return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/enter")
+    public ResponseEntity<Map<String, Object>> enterTrade(@RequestBody Map<String, Object> request) {
+        return ResponseEntity.ok(executionService.enterTrade(request));
+    }
+
+    @GetMapping("/positions")
+    public ResponseEntity<List<Map<String, Object>>> getPositions() {
+        return ResponseEntity.ok(executionService.getActivePositions());
+    }
+
+    @PostMapping("/exit/{positionId}")
+    public ResponseEntity<Map<String, Object>> exitPosition(@PathVariable Long positionId) {
+        return ResponseEntity.ok(executionService.exitPosition(positionId));
     }
 
     private void tryAutoExec(List<Map<String, Object>> opps) {

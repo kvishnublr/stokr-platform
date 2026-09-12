@@ -967,6 +967,46 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         + " — " + String.format("%.0f", pctAchieved) + "% of target reached (₹" + String.format("%.0f", pnl) + ")");
             }
 
+            // Per-position SL (Smart Strategies)
+            if (!shouldExit && pos.getSlPct() != null && pos.getSlPct() > 0 && pos.getMaxLossAmount() != null && pos.getMaxLossAmount() > 0) {
+                double slThreshold = pos.getMaxLossAmount() * pos.getSlPct() / 100.0;
+                if (pnl < 0 && Math.abs(pnl) >= slThreshold) {
+                    shouldExit = true;
+                    exitReason = "PER_POSITION_SL";
+                    log.info("PER_POS_SL: {} {} — loss ₹{} >= SL ₹{} ({}%)", pos.getUnderlying(),
+                        pos.getStrategyType(), String.format("%.0f", Math.abs(pnl)), String.format("%.0f", slThreshold), pos.getSlPct());
+                    addLog("PER_POS_SL", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrategyType()
+                        + " — loss ₹" + String.format("%.0f", Math.abs(pnl)) + " hit " + pos.getSlPct() + "% SL");
+                }
+            }
+
+            // Per-position target (Smart Strategies)
+            if (!shouldExit && pos.getTargetPct() != null && pos.getTargetPct() > 0 && pos.getMaxProfitAmount() != null && pos.getMaxProfitAmount() > 0) {
+                double targetThreshold = pos.getMaxProfitAmount() * pos.getTargetPct() / 100.0;
+                if (pnl > 0 && pnl >= targetThreshold) {
+                    shouldExit = true;
+                    exitReason = "PER_POSITION_TARGET";
+                    log.info("PER_POS_TARGET: {} {} — profit ₹{} >= target ₹{} ({}%)", pos.getUnderlying(),
+                        pos.getStrategyType(), String.format("%.0f", pnl), String.format("%.0f", targetThreshold), pos.getTargetPct());
+                    addLog("PER_POS_TARGET", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrategyType()
+                        + " — profit ₹" + String.format("%.0f", pnl) + " hit " + pos.getTargetPct() + "% target");
+                }
+            }
+
+            // Per-position time exit (Smart Strategies) — exit N minutes before market close
+            if (!shouldExit && pos.getTimeExitMinutes() != null && pos.getTimeExitMinutes() > 0) {
+                LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+                LocalTime exitTime = LocalTime.of(15, 30).minusMinutes(pos.getTimeExitMinutes());
+                if (!now.isBefore(exitTime) && now.isBefore(LocalTime.of(15, 30))) {
+                    shouldExit = true;
+                    exitReason = "TIME_EXIT";
+                    log.info("TIME_EXIT: {} {} — {}min before close (P&L ₹{})", pos.getUnderlying(),
+                        pos.getStrategyType(), pos.getTimeExitMinutes(), String.format("%.0f", pnl));
+                    addLog("TIME_EXIT", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrategyType()
+                        + " — " + pos.getTimeExitMinutes() + "min before close (₹" + String.format("%.0f", pnl) + ")");
+                }
+            }
+
             if (!shouldExit) continue;
 
             // Close ALL legs (auto-exit or stop-loss)
@@ -985,6 +1025,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
 
             // Save exit prices and close position
             pos.setStatus("CLOSED");
+            pos.setExitReason(exitReason);
             pos.setExitedAt(LocalDateTime.now());
             pos.setCurrentPnl(BigDecimal.valueOf(pnl));
             if (isMultiLeg) {

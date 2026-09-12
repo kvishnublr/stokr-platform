@@ -83,6 +83,13 @@ public class LivePosition {
     @Column(columnDefinition = "TEXT")
     private String legsJson;
 
+    private Double slPct;
+    private Double targetPct;
+    private Integer timeExitMinutes;
+    private Double maxLossAmount;
+    private Double maxProfitAmount;
+    private String exitReason;
+
     private LocalDateTime enteredAt;
     private LocalDateTime exitedAt;
     private LocalDateTime createdAt;
@@ -138,6 +145,12 @@ public class LivePosition {
         map.put("errorMessage", errorMessage);
         var legs2 = getLegs();
         if (legs2 != null) map.put("legList", legs2);
+        map.put("slPct", slPct);
+        map.put("targetPct", targetPct);
+        map.put("timeExitMinutes", timeExitMinutes);
+        map.put("maxLossAmount", maxLossAmount);
+        map.put("maxProfitAmount", maxProfitAmount);
+        map.put("exitReason", exitReason);
         map.put("enteredAt", enteredAt != null ? enteredAt.toString() : null);
         map.put("exitedAt", exitedAt != null ? exitedAt.toString() : null);
         map.put("createdAt", createdAt != null ? createdAt.toString() : null);
