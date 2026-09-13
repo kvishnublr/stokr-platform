@@ -989,16 +989,17 @@ function BoxContent({ opps, onEnter }) {
   );
 }
 
-/* ──────── JADE LIZARD ──────── */
+/* ──────── IRON LIZARD (was Jade Lizard) ──────── */
 function JadeContent({ opps, onEnter }) {
-  const sort = useSort('creditRs');
+  const sort = useSort('riskRewardRatio');
   const b = opps[0];
   const sorted = sort.sorted(opps);
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <Stat label="Best Credit" value={`₹${Math.round(b.creditRs).toLocaleString()}`} color="text-emerald-600" icon="💵" />
-        <Stat label="Upside Risk" value={b.zeroUpsideRisk ? 'ZERO' : 'LIMITED'} color={b.zeroUpsideRisk ? 'text-emerald-600' : 'text-amber-600'} icon={b.zeroUpsideRisk ? '🛡️' : '⚠️'} />
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+        <Stat label="Best Credit" value={`₹${Math.round(b.netCreditRs || b.creditRs).toLocaleString()}`} sub="After costs" color="text-emerald-600" icon="💵" />
+        <Stat label="Max Loss" value={`₹${Math.round(b.maxLoss || b.maxLossDown).toLocaleString()}`} sub="Defined risk" color="text-red-500" icon="🛡️" />
+        <Stat label="R:R Ratio" value={`${(b.riskRewardRatio || 0).toFixed(2)}`} sub="Reward/Risk" color="text-blue-600" icon="📊" />
         <Stat label="Win Rate" value={`${Math.round(b.estimatedWinRate)}%`} color="text-blue-600" icon="🎯" />
         <Stat label="Break Even" value={Math.round(b.breakEvenDown).toLocaleString()} sub="Downside" color="text-red-500" icon="📉" />
         <Stat label="Signals" value={opps.length} sub={b.expiry} color="text-green-600" icon="📡" />
@@ -1007,11 +1008,12 @@ function JadeContent({ opps, onEnter }) {
         <tr>
           <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
           <th className="px-4 py-3 text-left">Sell Put</th>
+          <th className="px-4 py-3 text-left">Buy Put</th>
           <th className="px-4 py-3 text-left">Sell Call</th>
           <th className="px-4 py-3 text-left">Buy Call</th>
-          <SortTh field="creditRs" label="Credit ₹" sort={sort} className="text-right" />
-          <SortTh field="zeroUpsideRisk" label="Upside" sort={sort} className="text-center" />
-          <SortTh field="estimatedWinRate" label="Win %" sort={sort} className="text-right" />
+          <SortTh field="netCreditRs" label="Net Credit" sort={sort} className="text-right" />
+          <SortTh field="maxLoss" label="Max Loss" sort={sort} className="text-right" />
+          <SortTh field="riskRewardRatio" label="R:R" sort={sort} className="text-right" />
           <SortTh field="scenarioFlat" label="Flat P&L" sort={sort} className="text-right" />
           <SortTh field="scenarioUp" label="Up P&L" sort={sort} className="text-right" />
           <SortTh field="scenarioDown" label="Down P&L" sort={sort} className="text-right" />
@@ -1019,20 +1021,17 @@ function JadeContent({ opps, onEnter }) {
           <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={10} accentColor="#16a34a" onEnter={onEnter}
+        <ExpandableRows opps={sorted} colSpan={11} accentColor="#16a34a" onEnter={onEnter}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
-            <td className="px-4 py-3 font-mono text-red-600 font-bold">{o.putSellStrike} <span className="text-red-300">@</span> ₹{o.putPrice}</td>
+            <td className="px-4 py-3 font-mono text-red-600 font-bold">{o.putSellStrike} <span className="text-red-300">@</span> ₹{o.putSellPrice || o.putPrice}</td>
+            <td className="px-4 py-3 font-mono text-emerald-600">{o.putBuyStrike} <span className="text-emerald-300">@</span> ₹{o.putBuyPrice}</td>
             <td className="px-4 py-3 font-mono text-red-600 font-bold">{o.callSellStrike} <span className="text-red-300">@</span> ₹{o.callSellPrice}</td>
             <td className="px-4 py-3 font-mono text-slate-600">{o.callBuyStrike} <span className="text-slate-300">@</span> ₹{o.callBuyPrice}</td>
-            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.creditRs).toLocaleString()}</td>
-            <td className="px-4 py-3 text-center">
-              <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border ${
-                o.zeroUpsideRisk ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-              }`}>{o.zeroUpsideRisk ? 'ZERO RISK' : 'LIMITED'}</span>
-            </td>
-            <td className="px-4 py-3 text-right font-mono text-slate-600">{Math.round(o.estimatedWinRate)}%</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.netCreditRs || o.creditRs).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.maxLoss || o.maxLossDown).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-blue-600">{(o.riskRewardRatio || 0).toFixed(2)}</td>
             <td className="px-4 py-3 text-right font-mono text-emerald-600">₹{Math.round(o.scenarioFlat).toLocaleString()}</td>
             <td className={`px-4 py-3 text-right font-mono font-bold ${o.scenarioUp >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
               {o.scenarioUp >= 0 ? '+' : ''}₹{Math.round(o.scenarioUp).toLocaleString()}
