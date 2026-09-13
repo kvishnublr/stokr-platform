@@ -57,7 +57,7 @@ public class JadeLizardScanner {
         int atmStrike = (int) (Math.round(spot / step) * step);
 
         List<String> instruments = new ArrayList<>();
-        for (int i = -10; i <= 10; i++) {
+        for (int i = -16; i <= 10; i++) {
             int s = atmStrike + i * step;
             instruments.addAll(optionChainService.buildNfoSymbolCandidates(underlying, expiry, s, "CE"));
             instruments.addAll(optionChainService.buildNfoSymbolCandidates(underlying, expiry, s, "PE"));
@@ -75,8 +75,9 @@ public class JadeLizardScanner {
                     int callSellStrike = atmStrike + callDist * step;
                     int callBuyStrike = callSellStrike + callSpreadWidth * step;
 
-                    // Put hedge: buy a put 3 steps below sold put to cap downside
-                    int putHedgeSteps = 3;
+                    // Put hedge: buy a far OTM put to cap downside but keep asymmetry
+                    // Wider than call spread so we retain more credit (Jade Lizard character)
+                    int putHedgeSteps = "BANKNIFTY".equals(underlying) ? 10 : 8;
                     int putBuyStrike = putSellStrike - putHedgeSteps * step;
 
                     OptionChainService.OptionQuote putSellQ = getQuote(quotes, underlying, expiry, putSellStrike, "PE");
