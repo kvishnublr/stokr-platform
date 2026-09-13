@@ -85,6 +85,14 @@ public class MorningRangeThetaExecutor {
             return;
         }
 
+        // Compute today's realized P&L from closed morning theta positions
+        todayPnl = positionRepo.findAll().stream()
+            .filter(p -> "MORNING_RANGE_THETA".equals(p.getStrategyType()))
+            .filter(p -> ("CLOSED".equals(p.getStatus()) || "EXITED".equals(p.getStatus())))
+            .filter(p -> p.getExitedAt() != null && p.getExitedAt().toLocalDate().equals(today))
+            .mapToDouble(p -> p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0)
+            .sum();
+
         // Daily loss limit check
         if (todayPnl < DAILY_LOSS_LIMIT) {
             lastStatus = String.format("Daily loss limit hit: ₹%.0f (limit ₹%.0f) — stopped", todayPnl, DAILY_LOSS_LIMIT);
@@ -180,26 +188,28 @@ public class MorningRangeThetaExecutor {
             }
         }
 
-        // Check for adjustment trigger: spot moves 60% toward a sold strike
+        // Check for adjustment trigger: spot moves 60% toward a sold strike from midpoint
         boolean alreadyAdjusted = todayAdjusted.getOrDefault(posKey, false);
         if (!alreadyAdjusted) {
             if (ceSellStrike > 0 && peSellStrike > 0) {
+                double midpoint = (ceSellStrike + peSellStrike) / 2.0;
                 double ceDistance = ceSellStrike - spot;
                 double peDistance = spot - peSellStrike;
-                double entrySpot = range.openPrice();
+                double ceFullDistance = ceSellStrike - midpoint;
+                double peFullDistance = midpoint - peSellStrike;
 
-                // CE side threatened
-                if (ceDistance > 0 && ceDistance < (ceSellStrike - entrySpot) * 0.4) {
-                    log.info("MORNING_THETA: {} CE side threatened — spot {} approaching sold {}CE",
-                        underlying, spot, ceSellStrike);
-                    // Don't auto-adjust for now — just log. Adjustment requires closing + opening new legs
-                    // which is complex for PAPER trades. The SL/target exits handle this.
+                // CE side threatened — spot has covered 60%+ of the distance from midpoint to sold CE
+                if (ceFullDistance > 0 && ceDistance > 0 && ceDistance < ceFullDistance * 0.4) {
+                    log.info("MORNING_THETA: {} CE side threatened — spot {} approaching sold {}CE ({}% of distance)",
+                        underlying, Math.round(spot), ceSellStrike,
+                        Math.round((1 - ceDistance / ceFullDistance) * 100));
                     todayAdjusted.put(posKey, true);
                 }
-                // PE side threatened
-                if (peDistance > 0 && peDistance < (entrySpot - peSellStrike) * 0.4) {
-                    log.info("MORNING_THETA: {} PE side threatened — spot {} approaching sold {}PE",
-                        underlying, spot, peSellStrike);
+                // PE side threatened — spot has covered 60%+ of the distance from midpoint to sold PE
+                if (peFullDistance > 0 && peDistance > 0 && peDistance < peFullDistance * 0.4) {
+                    log.info("MORNING_THETA: {} PE side threatened — spot {} approaching sold {}PE ({}% of distance)",
+                        underlying, Math.round(spot), peSellStrike,
+                        Math.round((1 - peDistance / peFullDistance) * 100));
                     todayAdjusted.put(posKey, true);
                 }
             }

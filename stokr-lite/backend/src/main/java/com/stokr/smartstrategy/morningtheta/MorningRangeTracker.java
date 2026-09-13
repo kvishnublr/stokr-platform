@@ -137,8 +137,9 @@ public class MorningRangeTracker {
             double straddle = cePrice + pePrice;
             if (straddle <= 0 || spot <= 0) return 0;
             // Rough IV approximation: straddle_price / spot * sqrt(365/DTE) * 100
+            LocalDate todayIST = LocalDate.now(ZoneId.of("Asia/Kolkata"));
             long dte = Math.max(1, java.time.Duration.between(
-                LocalDate.now().atStartOfDay(), expiry.atStartOfDay()).toDays());
+                todayIST.atStartOfDay(), expiry.atStartOfDay()).toDays());
             return straddle / spot * Math.sqrt(365.0 / dte) * 100;
         } catch (Exception e) {
             return 0;

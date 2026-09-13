@@ -179,6 +179,8 @@ public class MorningRangeThetaScanner {
             int ceBuyStrike = ceSellStrike + wingWidth;
             results.addAll(buildCreditSpreadOpp(underlying, spot, range, expiry, dte, lotSize,
                 ceSellStrike, ceBuyStrike, "CE", "SPIKE DOWN — far call spread (move already happened)"));
+        } else {
+            log.info("MORNING_THETA: Skipping {} — SPIKE day with NEUTRAL trend, too risky", underlying);
         }
         return results;
     }
@@ -326,8 +328,6 @@ public class MorningRangeThetaScanner {
         opp.put("edgeAfterCosts", round2(netCredit));
         opp.put("edgePoints", round2(credit));
 
-        String side1 = "PE".equals(optType) ? "SELL" : "SELL";
-        String side2 = "PE".equals(optType) ? "BUY" : "BUY";
         opp.put("action", String.format("SELL %d%s @ %.1f | BUY %d%s @ %.1f",
             sellStrike, optType, sellQ.bid, buyStrike, optType, buyQ.ask));
 
