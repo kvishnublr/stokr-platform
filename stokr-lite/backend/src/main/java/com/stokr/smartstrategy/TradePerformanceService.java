@@ -22,7 +22,7 @@ public class TradePerformanceService {
     private static final List<String> SMART_TYPES = List.of(
         "BROKEN_WING_BUTTERFLY", "RATIO_BUTTERFLY", "SKEW_HARVEST",
         "EXPIRY_THETA_CRUSH", "BOX_SPREAD_ARB", "JADE_LIZARD",
-        "CALENDAR_SPREAD_EDGE", "IRON_CONDOR"
+        "CALENDAR_SPREAD_EDGE", "IRON_CONDOR", "MORNING_RANGE_THETA"
     );
 
     public Map<String, Object> getPerformanceReport() {
