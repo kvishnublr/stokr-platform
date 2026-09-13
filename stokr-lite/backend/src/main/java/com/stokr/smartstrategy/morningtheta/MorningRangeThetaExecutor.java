@@ -8,11 +8,13 @@ import com.stokr.arbitrage.FuturesKeyResolver;
 import com.stokr.smartstrategy.SmartStrategyExecutionService;
 import com.stokr.smartstrategy.StrategyScoreEngine;
 import com.stokr.smartstrategy.morningtheta.MorningRangeTracker.RangeData;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -60,6 +62,12 @@ public class MorningRangeThetaExecutor {
         this.spotFetcher = spotFetcher;
     }
 
+    @PostConstruct
+    public void init() {
+        enabled.set(true);
+        log.info("MORNING_THETA: Auto-execution auto-started (PAPER mode)");
+    }
+
     public void setEnabled(boolean on) {
         enabled.set(on);
         log.info("MORNING_THETA: Auto-execution {}", on ? "ENABLED" : "DISABLED");
@@ -82,6 +90,13 @@ public class MorningRangeThetaExecutor {
 
         // Only active 10:15 - 15:00
         if (now.isBefore(LocalTime.of(10, 15)) || now.isAfter(LocalTime.of(15, 0))) {
+            return;
+        }
+
+        // Skip expiry day — pin risk and gamma spikes make theta selling dangerous
+        LocalDate nearestExpiry = optionChainService.getNearestExpiry("NIFTY");
+        if (nearestExpiry != null && nearestExpiry.equals(today)) {
+            lastStatus = "Skipping — expiry day (pin risk)";
             return;
         }
 
@@ -133,7 +148,7 @@ public class MorningRangeThetaExecutor {
         }
 
         // Score and filter
-        List<Map<String, Object>> scored = scoreEngine.rankAndFilter(opps, 50.0);
+        List<Map<String, Object>> scored = scoreEngine.rankAndFilter(opps, 60.0);
         if (scored.isEmpty()) {
             lastStatus = "No opportunities above score threshold — " + nowStr();
             return;
@@ -278,6 +293,29 @@ public class MorningRangeThetaExecutor {
         List<LivePosition> open = getOpenMorningThetaPositions();
         status.put("openPositions", open.size());
         status.put("positions", open.stream().map(LivePosition::toMap).toList());
+
+        // Today's closed trades
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        List<Map<String, Object>> todayTrades = positionRepo.findAll().stream()
+            .filter(p -> "MORNING_RANGE_THETA".equals(p.getStrategyType()))
+            .filter(p -> ("CLOSED".equals(p.getStatus()) || "EXITED".equals(p.getStatus())))
+            .filter(p -> p.getExitedAt() != null && p.getExitedAt().toLocalDate().equals(today))
+            .sorted(Comparator.comparing(LivePosition::getExitedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+            .map(p -> {
+                Map<String, Object> t = new LinkedHashMap<>();
+                t.put("id", p.getId());
+                t.put("underlying", p.getUnderlying());
+                t.put("pnl", p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0);
+                t.put("exitReason", p.getExitReason());
+                t.put("enteredAt", p.getEnteredAt() != null ? p.getEnteredAt().toString() : null);
+                t.put("exitedAt", p.getExitedAt() != null ? p.getExitedAt().toString() : null);
+                t.put("broker", p.getBroker());
+                t.put("legs", p.getLegs());
+                return t;
+            })
+            .toList();
+        status.put("todayTrades", todayTrades);
+        status.put("todayTradeCount", todayTrades.size());
 
         return status;
     }

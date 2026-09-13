@@ -255,6 +255,7 @@ export default function MorningTheta() {
   const ranges = scanData?.morningRanges || statusData?.morningRanges || {};
   const opportunities = scanData?.opportunities || [];
   const positions = statusData?.positions || [];
+  const todayTrades = statusData?.todayTrades || [];
   const isEnabled = statusData?.enabled || false;
   const trackingPhase = scanData?.trackingPhase || statusData?.trackingPhase || false;
 
@@ -326,6 +327,58 @@ export default function MorningTheta() {
             {positions.map((pos, i) => (
               <PositionCard key={pos.id || i} pos={pos} onExit={(id) => exitMutation.mutate(id)} />
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Today's Trade History */}
+      {todayTrades.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800 mb-3">
+            Today's Trades <span className="text-sm font-normal text-gray-500">({todayTrades.length})</span>
+          </h2>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Underlying</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Entry</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Exit</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Exit Reason</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Legs</th>
+                  <th className="px-4 py-2 text-right text-xs font-semibold text-gray-500">P&L</th>
+                </tr>
+              </thead>
+              <tbody>
+                {todayTrades.map((t, i) => (
+                  <tr key={t.id || i} className="border-b border-gray-100 last:border-0">
+                    <td className="px-4 py-2 font-semibold">{t.underlying}</td>
+                    <td className="px-4 py-2 text-gray-500 text-xs">{t.enteredAt ? new Date(t.enteredAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '--'}</td>
+                    <td className="px-4 py-2 text-gray-500 text-xs">{t.exitedAt ? new Date(t.exitedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '--'}</td>
+                    <td className="px-4 py-2">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        t.exitReason === 'PER_POSITION_TARGET' || t.exitReason === 'TRAILING_SL' ? 'bg-green-100 text-green-700' :
+                        t.exitReason === 'PER_POSITION_SL' ? 'bg-red-100 text-red-700' :
+                        t.exitReason === 'TIME_EXIT' ? 'bg-blue-100 text-blue-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>{t.exitReason || 'MANUAL'}</span>
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="flex flex-wrap gap-1">
+                        {(t.legs || []).map((leg, j) => (
+                          <span key={j} className={`px-1.5 py-0.5 rounded text-xs font-mono ${leg.side === 'SELL' ? 'text-red-600' : 'text-green-600'}`}>
+                            {leg.strike}{leg.optionType}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className={`px-4 py-2 text-right font-bold ${t.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {t.pnl >= 0 ? '+' : ''}₹{Math.round(t.pnl)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
