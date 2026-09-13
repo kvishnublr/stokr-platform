@@ -85,8 +85,10 @@ public class JadeLizardScanner {
                     double callSpreadWidthPts = callBuyStrike - callSellStrike;
                     boolean zeroUpsideRisk = credit >= callSpreadWidthPts;
 
-                    // Max loss on downside = (putSellStrike - credit) * lotSize (like naked put minus credit)
-                    double maxLossDown = (putSellStrike - credit) * lotSize;
+                    // Max loss on downside — use realistic 3% move (not underlying-goes-to-zero)
+                    double realisticDownMove = spot * 0.03;
+                    double realisticLossDown = Math.max(0, realisticDownMove - (spot - putSellStrike) + credit) * lotSize;
+                    double maxLossDown = Math.max(realisticLossDown, credit * lotSize * 2);
                     // Max loss on upside = (callSpreadWidth - credit) * lotSize (if credit < spread width)
                     double maxLossUp = zeroUpsideRisk ? 0 : (callSpreadWidthPts - credit) * lotSize;
 

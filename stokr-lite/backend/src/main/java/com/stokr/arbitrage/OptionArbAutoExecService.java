@@ -1009,20 +1009,20 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 Double currentTrailingSl = pos.getTrailingSlLevel();
                 Double newTrailingSl = currentTrailingSl;
 
-                // At 30% of target: move SL to breakeven (0)
-                if (pctOfTarget >= 30 && (currentTrailingSl == null || currentTrailingSl < 0)) {
+                // At 50% of target: move SL to breakeven (0)
+                if (pctOfTarget >= 50 && (currentTrailingSl == null || currentTrailingSl < 0)) {
                     newTrailingSl = 0.0;
                 }
-                // At 60% of target: lock in 30% of peak profit
-                if (pctOfTarget >= 60 && peakPnl > 0) {
-                    double lockedLevel = peakPnl * 0.30;
+                // At 70% of target: lock in 40% of peak profit
+                if (pctOfTarget >= 70 && peakPnl > 0) {
+                    double lockedLevel = peakPnl * 0.40;
                     if (newTrailingSl == null || lockedLevel > newTrailingSl) {
                         newTrailingSl = lockedLevel;
                     }
                 }
-                // At 80% of target: lock in 50% of peak profit
-                if (pctOfTarget >= 80 && peakPnl > 0) {
-                    double lockedLevel = peakPnl * 0.50;
+                // At 90% of target: lock in 60% of peak profit
+                if (pctOfTarget >= 90 && peakPnl > 0) {
+                    double lockedLevel = peakPnl * 0.60;
                     if (newTrailingSl == null || lockedLevel > newTrailingSl) {
                         newTrailingSl = lockedLevel;
                     }

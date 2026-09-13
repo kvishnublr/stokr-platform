@@ -2,6 +2,7 @@ package com.stokr.smartstrategy;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -11,6 +12,7 @@ public class StrategyScoreEngine {
 
     private static final Logger log = LoggerFactory.getLogger(StrategyScoreEngine.class);
 
+    @Autowired(required = false)
     private MarketRegimeDetector regimeDetector;
 
     public void setRegimeDetector(MarketRegimeDetector regimeDetector) {

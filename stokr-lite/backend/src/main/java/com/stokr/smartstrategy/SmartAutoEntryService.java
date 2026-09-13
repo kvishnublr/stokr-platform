@@ -30,7 +30,7 @@ public class SmartAutoEntryService {
 
     private final AtomicBoolean enabled;
     private final ConcurrentHashMap<String, Long> recentEntries;
-    private static final long COOLDOWN_MS = 5 * 60 * 1000;
+    private static final long COOLDOWN_MS = 15 * 60 * 1000;
     private static final double MIN_SCORE = 65.0;
     private volatile String lastScanResult = "Not started";
     private volatile String timingNote = "";
@@ -136,16 +136,29 @@ public class SmartAutoEntryService {
             safeScan("EXPIRY_THETA_CRUSH", () -> thetaCrushScanner.scan("ALL"), allOpportunities);
             safeScan("CALENDAR_SPREAD_EDGE", () -> calendarSpreadScanner.scan("ALL"), allOpportunities);
 
-            // Score and rank all
-            List<Map<String, Object>> ranked = scoreEngine.rankAndFilter(allOpportunities, MIN_SCORE);
+            // Filter out non-actionable opportunities (no legs = preview only)
+            allOpportunities.removeIf(o -> o.get("legList") == null
+                || "PRE_EXPIRY_SETUP".equals(o.get("subType")));
+
+            // Score and rank — apply timing multiplier to effective threshold
+            double effectiveMinScore = MIN_SCORE / timing.scoreMultiplier;
+            List<Map<String, Object>> ranked = scoreEngine.rankAndFilter(allOpportunities, effectiveMinScore);
+
+            // Apply timing multiplier to composite scores
+            for (Map<String, Object> opp : ranked) {
+                double raw = ((Number) opp.get("compositeScore")).doubleValue();
+                opp.put("compositeScore", Math.min(100, Math.round(raw * timing.scoreMultiplier * 100.0) / 100.0));
+            }
+            // Re-filter after multiplier application
+            ranked.removeIf(opp -> ((Number) opp.get("compositeScore")).doubleValue() < MIN_SCORE);
 
             if (ranked.isEmpty()) {
-                lastScanResult = "No opportunities above score " + MIN_SCORE + " — " + now();
+                lastScanResult = "No opportunities above score " + MIN_SCORE + " (timing: " + timing.phase + ") — " + now();
                 return;
             }
 
-            log.info("SMART_AUTO: {} opportunities scored above {}, top score: {}",
-                ranked.size(), MIN_SCORE, ranked.get(0).get("compositeScore"));
+            log.info("SMART_AUTO: {} opportunities scored above {} (timing: {}, mult: {}), top score: {}",
+                ranked.size(), MIN_SCORE, timing.phase, timing.scoreMultiplier, ranked.get(0).get("compositeScore"));
 
             // Try to enter the best one that passes risk checks
             int entered = 0;
@@ -236,10 +249,10 @@ public class SmartAutoEntryService {
         TimingWindow timing = getTimingWindow();
         switch (strategyType) {
             case "BOX_SPREAD_ARB" -> {
-                // Arb — hold to expiry, tight SL, no early exit needed
-                req.put("slPct", 30.0);
-                req.put("targetPct", 90.0);
-                req.put("timeExitMinutes", 2);
+                // Arb — hold to expiry, no SL (risk-free at expiry), no time exit
+                req.put("slPct", 200.0);
+                req.put("targetPct", 95.0);
+                req.put("timeExitMinutes", 0);
             }
             case "IRON_CONDOR", "JADE_LIZARD" -> {
                 // Premium sellers — book profit at 50-60% of credit, tight SL
