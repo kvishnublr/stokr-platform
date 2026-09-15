@@ -544,22 +544,34 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
   );
 }
 
-function ExpandableRows({ opps, colSpan, renderRow, getLegs, getLotSize, getSpot, accentColor, onEnter }) {
+function oppKey(o) {
+  return o.action || `${o.underlying}-${o.strategyType}-${JSON.stringify((o.legList || []).map(l => l.strike))}`;
+}
+
+function getTopKeys(opps, scoreField, count = 3) {
+  const scored = [...opps].sort((a, b) => (b[scoreField] || 0) - (a[scoreField] || 0));
+  return new Set(scored.slice(0, count).map(oppKey));
+}
+
+function ExpandableRows({ opps, colSpan, renderRow, getLegs, getLotSize, getSpot, accentColor, onEnter, topKeys }) {
   const [expandedKey, setExpandedKey] = useState(null);
-  const oppKey = (o) => o.action || `${o.underlying}-${o.strategyType}-${JSON.stringify((o.legList || []).map(l => l.strike))}`;
   return opps.map((o, i) => {
     const key = oppKey(o);
     const isExpanded = expandedKey === key;
+    const isTop = topKeys && topKeys.has(key);
     return (
       <Fragment key={key}>
-        <tr className={`cursor-pointer transition-colors ${isExpanded ? 'bg-slate-50' : ''}`}
-          onClick={() => setExpandedKey(isExpanded ? null : key)}>
-          {renderRow(o, i)}
+        <tr className={`cursor-pointer transition-colors ${isExpanded ? 'bg-slate-50' : isTop ? 'bg-emerald-50/40' : ''}`}
+          onClick={() => setExpandedKey(isExpanded ? null : key)}
+          style={isTop ? { boxShadow: 'inset 3px 0 0 #10b981' } : undefined}>
+          {renderRow(o, i, isTop)}
           <td className="px-2 py-3 text-center" onClick={e => e.stopPropagation()}>
             <button onClick={() => onEnter?.(o)}
-              className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-[10px] font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all"
+              className={`px-2.5 py-1.5 rounded-lg text-white text-[10px] font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all ${
+                isTop ? 'bg-gradient-to-r from-emerald-500 to-teal-500 ring-2 ring-emerald-300/50' : 'bg-gradient-to-r from-violet-500 to-indigo-500'
+              }`}
               title="Enter this trade">
-              Enter
+              {isTop ? 'TOP' : 'Enter'}
             </button>
           </td>
           <td className="px-2 py-3 text-center">
@@ -690,6 +702,7 @@ function RatioContent({ opps, onEnter }) {
   const sort = useSort('riskReward');
   const b = opps[0];
   const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'riskReward'), [opps]);
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -715,7 +728,7 @@ function RatioContent({ opps, onEnter }) {
           <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={10} accentColor="#7c3aed" onEnter={onEnter}
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#7c3aed" onEnter={onEnter} topKeys={topKeys}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -744,6 +757,7 @@ function BWBContent({ opps, onEnter }) {
   const sort = useSort('creditRs');
   const sorted = sort.sorted(filtered);
   const b = filtered[0];
+  const topKeys = useMemo(() => filtered.length > 0 ? getTopKeys(filtered, 'creditRs') : new Set(), [filtered]);
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2 mb-1">
@@ -800,7 +814,7 @@ function BWBContent({ opps, onEnter }) {
             <th className="px-2 py-3 text-center w-8"></th>
           </tr>
         }>
-          <ExpandableRows opps={sorted} colSpan={10} accentColor={bwbType === 'PE' ? '#10b981' : '#3b82f6'} onEnter={onEnter}
+          <ExpandableRows opps={sorted} colSpan={10} accentColor={bwbType === 'PE' ? '#10b981' : '#3b82f6'} onEnter={onEnter} topKeys={topKeys}
             getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
             renderRow={(o, i) => (<>
               <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -825,6 +839,7 @@ function SkewContent({ opps, onEnter }) {
   const sort = useSort('skewEdge');
   const b = opps[0];
   const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'skewEdge'), [opps]);
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -850,7 +865,7 @@ function SkewContent({ opps, onEnter }) {
           <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={10} accentColor="#0891b2" onEnter={onEnter}
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#0891b2" onEnter={onEnter} topKeys={topKeys}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -878,6 +893,7 @@ function ThetaContent({ opps, onEnter }) {
   const b = opps[0];
   const isExpiryDay = b.dte === 0;
   const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'expectedProfitRs'), [opps]);
 
   return (
     <div className="space-y-5">
@@ -916,7 +932,7 @@ function ThetaContent({ opps, onEnter }) {
           <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={9} accentColor="#10b981" onEnter={onEnter}
+        <ExpandableRows opps={sorted} colSpan={9} accentColor="#10b981" onEnter={onEnter} topKeys={topKeys}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -945,6 +961,7 @@ function BoxContent({ opps, onEnter }) {
   const sort = useSort('netEdgeRs');
   const b = opps[0];
   const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'netEdgeRs'), [opps]);
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -970,7 +987,7 @@ function BoxContent({ opps, onEnter }) {
           <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={10} accentColor="#e11d48" onEnter={onEnter}
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#e11d48" onEnter={onEnter} topKeys={topKeys}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -999,6 +1016,7 @@ function JadeContent({ opps, onEnter }) {
   const sort = useSort('riskRewardRatio');
   const b = opps[0];
   const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'riskRewardRatio'), [opps]);
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
@@ -1026,7 +1044,7 @@ function JadeContent({ opps, onEnter }) {
           <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={11} accentColor="#16a34a" onEnter={onEnter}
+        <ExpandableRows opps={sorted} colSpan={11} accentColor="#16a34a" onEnter={onEnter} topKeys={topKeys}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -1054,6 +1072,7 @@ function CalendarContent({ opps, onEnter }) {
   const sort = useSort('ivEdge');
   const b = opps[0];
   const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'dailyThetaEdgeRs'), [opps]);
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -1092,7 +1111,7 @@ function CalendarContent({ opps, onEnter }) {
           <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={10} accentColor="#0284c7" onEnter={onEnter}
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#0284c7" onEnter={onEnter} topKeys={topKeys}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
@@ -1153,6 +1172,7 @@ function IronCondorContent({ opps, onEnter }) {
   const b = opps[0];
   const sorted = sort.sorted(opps);
   const top3 = sorted.slice(0, 3);
+  const topKeys = useMemo(() => getTopKeys(opps, 'score'), [opps]);
   return (
     <div className="space-y-5">
       {/* Top 3 Picks Showcase */}
@@ -1229,7 +1249,7 @@ function IronCondorContent({ opps, onEnter }) {
           <th className="px-2 py-3 text-center w-8"></th>
         </tr>
       }>
-        <ExpandableRows opps={sorted} colSpan={9} accentColor="#6366f1" onEnter={onEnter}
+        <ExpandableRows opps={sorted} colSpan={9} accentColor="#6366f1" onEnter={onEnter} topKeys={topKeys}
           getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
           renderRow={(o, i) => (<>
             <td className="px-2 py-3 text-center"><RankBadge rank={i + 1} /></td>
