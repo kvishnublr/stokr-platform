@@ -3,38 +3,143 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import client from '../api/client';
 
 const TOP_PICK_STYLES = `
-@keyframes topPickGlow {
-  0%, 100% { box-shadow: 0 0 8px 1px rgba(16,185,129,0.3), inset 0 0 0 2px rgba(16,185,129,0.5); }
-  50% { box-shadow: 0 0 16px 3px rgba(16,185,129,0.45), inset 0 0 0 2px rgba(52,211,153,0.7); }
+@keyframes tpBorderRotate {
+  0% { --tp-angle: 0deg; }
+  100% { --tp-angle: 360deg; }
 }
-@keyframes topPickShimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+@keyframes tpShineSweep {
+  0% { transform: translateX(-100%) skewX(-15deg); }
+  100% { transform: translateX(300%) skewX(-15deg); }
 }
-tr.top-pick-row {
+@keyframes tpPulseGlow {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+@keyframes tpBadgePulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 12px 2px rgba(251,191,36,0.4); }
+  50% { transform: scale(1.05); box-shadow: 0 0 20px 5px rgba(251,191,36,0.6); }
+}
+@keyframes tpStarSpin {
+  0% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.2); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+@property --tp-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* ─── Row wrapper ─── */
+.top-pick-wrapper {
   position: relative;
-  background: linear-gradient(90deg, rgba(16,185,129,0.06) 0%, rgba(52,211,153,0.1) 50%, rgba(16,185,129,0.06) 100%) !important;
-  animation: topPickGlow 2.5s ease-in-out infinite;
-  border-radius: 8px;
+  margin: 6px 0;
 }
-tr.top-pick-row td:first-child {
-  border-left: 3px solid #10b981;
-}
-tr.top-pick-row td:first-child::before {
+.top-pick-wrapper::before {
   content: '';
   position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: linear-gradient(180deg, #10b981, #34d399, #10b981);
-  background-size: 100% 200%;
-  animation: topPickShimmer 2s ease-in-out infinite;
+  inset: -2px;
+  border-radius: 12px;
+  padding: 2px;
+  background: conic-gradient(from var(--tp-angle, 0deg), #f59e0b, #ec4899, #8b5cf6, #06b6d4, #10b981, #f59e0b);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: tpBorderRotate 3s linear infinite;
+  pointer-events: none;
 }
+.top-pick-wrapper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg,
+    rgba(251,191,36,0.08) 0%,
+    rgba(139,92,246,0.06) 25%,
+    rgba(236,72,153,0.05) 50%,
+    rgba(6,182,212,0.06) 75%,
+    rgba(251,191,36,0.08) 100%);
+  pointer-events: none;
+}
+
+/* Shine sweep across the row */
+.top-pick-shine {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+.top-pick-shine::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+  animation: tpShineSweep 3s ease-in-out infinite;
+}
+
+/* Glow dots at corners */
+.top-pick-wrapper .tp-dot {
+  position: absolute;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #fbbf24;
+  animation: tpPulseGlow 2s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+.top-pick-wrapper .tp-dot-tl { top: -3px; left: -3px; }
+.top-pick-wrapper .tp-dot-tr { top: -3px; right: -3px; animation-delay: 0.5s; }
+.top-pick-wrapper .tp-dot-bl { bottom: -3px; left: -3px; animation-delay: 1s; }
+.top-pick-wrapper .tp-dot-br { bottom: -3px; right: -3px; animation-delay: 1.5s; }
+
+/* Inner row styles */
+tr.top-pick-row {
+  background: transparent !important;
+}
+tr.top-pick-row:hover {
+  background: rgba(251,191,36,0.04) !important;
+}
+
+/* ─── Badge ─── */
 .top-pick-badge {
-  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #34d399 100%);
-  background-size: 200% 200%;
-  animation: topPickShimmer 3s ease-in-out infinite;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 40%, #fbbf24 100%);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  animation: tpBadgePulse 2s ease-in-out infinite;
+  cursor: pointer;
+  border: none;
+  white-space: nowrap;
+}
+.top-pick-badge .tp-star {
+  display: inline-block;
+  animation: tpStarSpin 4s linear infinite;
+  font-size: 11px;
+}
+
+/* ─── Rank indicator ─── */
+.tp-rank {
+  position: absolute;
+  top: -8px; left: 12px;
+  background: linear-gradient(135deg, #7c3aed, #ec4899);
+  color: white;
+  font-size: 9px;
+  font-weight: 900;
+  padding: 1px 8px;
+  border-radius: 10px;
+  z-index: 3;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 6px rgba(124,58,237,0.3);
 }
 `;
 
@@ -587,7 +692,9 @@ function oppKey(o) {
 
 function getTopKeys(opps, scoreField, count = 3) {
   const scored = [...opps].sort((a, b) => (b[scoreField] || 0) - (a[scoreField] || 0));
-  return new Set(scored.slice(0, count).map(oppKey));
+  const topMap = new Map();
+  scored.slice(0, count).forEach((o, idx) => topMap.set(oppKey(o), idx + 1));
+  return topMap;
 }
 
 function ExpandableRows({ opps, colSpan, renderRow, getLegs, getLotSize, getSpot, accentColor, onEnter, topKeys }) {
@@ -595,26 +702,62 @@ function ExpandableRows({ opps, colSpan, renderRow, getLegs, getLotSize, getSpot
   return opps.map((o, i) => {
     const key = oppKey(o);
     const isExpanded = expandedKey === key;
-    const isTop = topKeys && topKeys.has(key);
+    const topRank = topKeys && topKeys.get(key);
+    const isTop = !!topRank;
+
+    if (isTop) {
+      return (
+        <Fragment key={key}>
+          {/* Spacer row for the animated wrapper */}
+          <tr><td colSpan={colSpan + 2} className="p-0 border-none" style={{ padding: '4px 0 0' }} /></tr>
+          <tr><td colSpan={colSpan + 2} className="p-0 border-none">
+            <div className="top-pick-wrapper">
+              <div className="tp-dot tp-dot-tl" />
+              <div className="tp-dot tp-dot-tr" />
+              <div className="tp-dot tp-dot-bl" />
+              <div className="tp-dot tp-dot-br" />
+              <div className="top-pick-shine" />
+              <div className="tp-rank">#{topRank} TOP PICK</div>
+              <table className="w-full" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
+                <tbody>
+                  <tr className="top-pick-row cursor-pointer" onClick={() => setExpandedKey(isExpanded ? null : key)}>
+                    {renderRow(o, i, isTop)}
+                    <td className="px-2 py-3 text-center" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => onEnter?.(o)} className="top-pick-badge" title="Top pick — enter this trade">
+                        <span className="tp-star">★</span> TOP PICK
+                      </button>
+                    </td>
+                    <td className="px-2 py-3 text-center">
+                      <span className={`inline-block transition-transform duration-200 text-slate-400 text-xs ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={colSpan + 2} className="px-4 py-3 bg-white/80">
+                        <PayoffChart legs={getLegs(o)} lotSize={getLotSize(o)} spot={getSpot(o)} accentColor={accentColor} />
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </td></tr>
+          <tr><td colSpan={colSpan + 2} className="p-0 border-none" style={{ padding: '0 0 4px' }} /></tr>
+        </Fragment>
+      );
+    }
+
     return (
       <Fragment key={key}>
-        <tr className={`cursor-pointer transition-colors ${isTop ? 'top-pick-row' : ''} ${isExpanded ? 'bg-slate-50' : ''}`}
+        <tr className={`cursor-pointer transition-colors ${isExpanded ? 'bg-slate-50' : ''}`}
           onClick={() => setExpandedKey(isExpanded ? null : key)}>
-          {renderRow(o, i, isTop)}
+          {renderRow(o, i, false)}
           <td className="px-2 py-3 text-center" onClick={e => e.stopPropagation()}>
-            {isTop ? (
-              <button onClick={() => onEnter?.(o)}
-                className="top-pick-badge px-3 py-1.5 rounded-lg text-white text-[10px] font-black shadow-lg shadow-emerald-300/40 hover:shadow-xl hover:scale-110 transition-all ring-2 ring-emerald-300/40"
-                title="Top pick — enter this trade">
-                TOP PICK
-              </button>
-            ) : (
-              <button onClick={() => onEnter?.(o)}
-                className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-[10px] font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all"
-                title="Enter this trade">
-                Enter
-              </button>
-            )}
+            <button onClick={() => onEnter?.(o)}
+              className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-[10px] font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all"
+              title="Enter this trade">
+              Enter
+            </button>
           </td>
           <td className="px-2 py-3 text-center">
             <span className={`inline-block transition-transform duration-200 text-slate-400 text-xs ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
@@ -799,7 +942,7 @@ function BWBContent({ opps, onEnter }) {
   const sort = useSort('creditRs');
   const sorted = sort.sorted(filtered);
   const b = filtered[0];
-  const topKeys = useMemo(() => filtered.length > 0 ? getTopKeys(filtered, 'creditRs') : new Set(), [filtered]);
+  const topKeys = useMemo(() => filtered.length > 0 ? getTopKeys(filtered, 'creditRs') : new Map(), [filtered]);
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2 mb-1">
