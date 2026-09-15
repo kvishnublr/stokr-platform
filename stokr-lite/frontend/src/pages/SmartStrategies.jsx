@@ -192,6 +192,7 @@ export default function SmartStrategies() {
   const [underlying, setUnderlying] = useState('ALL');
   const [entryModal, setEntryModal] = useState(null);
   const tab = TABS.find(t => t.id === activeTab);
+  usePrefetchTabs(underlying);
 
   return (
     <div className="min-h-screen bg-[#f8fafc]">
@@ -285,9 +286,29 @@ function useScan(tab, underlying) {
       return res.data;
     },
     refetchInterval: 30000,
-    staleTime: 20000,
-    retry: 2,
+    staleTime: 60000,
+    gcTime: 300000,
+    retry: 1,
+    placeholderData: (prev) => prev,
   });
+}
+
+function usePrefetchTabs(underlying) {
+  const qc = useQueryClient();
+  useEffect(() => {
+    const tabs = Object.keys(SCAN_URLS);
+    let i = 0;
+    const id = setInterval(() => {
+      if (i >= tabs.length) { clearInterval(id); return; }
+      const tab = tabs[i++];
+      qc.prefetchQuery({
+        queryKey: ['smart-scan', tab, underlying],
+        queryFn: async () => { const res = await client.get(SCAN_URLS[tab], { params: { underlying } }); return res.data; },
+        staleTime: 60000,
+      });
+    }, 800);
+    return () => clearInterval(id);
+  }, [underlying, qc]);
 }
 
 /* ──── SHARED UI ──── */
@@ -645,91 +666,117 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
 }
 
 function AdvancedPayoff({ opp, legs, lotSize, spot, accentColor }) {
+  if (!legs || legs.length === 0) return null;
   const points = useMemo(() => computePayoff(legs, lotSize, spot), [legs, lotSize, spot]);
   const maxProfit = points.length > 0 ? Math.max(...points.map(p => p.pnl)) : 0;
   const maxLoss = points.length > 0 ? Math.min(...points.map(p => p.pnl)) : 0;
   const isRiskFree = maxLoss >= 0;
   const rr = maxLoss < 0 ? Math.abs(maxProfit / maxLoss) : Infinity;
-  const costPerShare = legs.reduce((sum, l) => sum + (l.side === 'BUY' ? -l.price : l.price) * (l.qty || 1), 0);
+  const netCredit = legs.reduce((sum, l) => sum + (l.side === 'SELL' ? l.price : -l.price) * (l.qty || 1), 0);
   const expiry = opp.expiry || opp.expiryDate || '--';
-
-  // Breakeven: find where payoff crosses zero
-  const breakevens = [];
-  for (let i = 1; i < points.length; i++) {
-    if ((points[i-1].pnl < 0 && points[i].pnl >= 0) || (points[i-1].pnl >= 0 && points[i].pnl < 0)) {
-      const ratio = Math.abs(points[i-1].pnl) / (Math.abs(points[i-1].pnl) + Math.abs(points[i].pnl));
-      breakevens.push(Math.round(points[i-1].s + (points[i].s - points[i-1].s) * ratio));
+  const breakevens = useMemo(() => {
+    const be = [];
+    for (let i = 1; i < points.length; i++) {
+      if ((points[i-1].pnl < 0 && points[i].pnl >= 0) || (points[i-1].pnl >= 0 && points[i].pnl < 0)) {
+        const ratio = Math.abs(points[i-1].pnl) / (Math.abs(points[i-1].pnl) + Math.abs(points[i].pnl));
+        be.push(Math.round(points[i-1].s + (points[i].s - points[i-1].s) * ratio));
+      }
     }
-  }
+    return be;
+  }, [points]);
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Execution Legs */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-black text-slate-700">EXECUTION LEGS</span>
-            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">{expiry}</span>
+    <div className="space-y-3 mt-2">
+      {/* Strategy Breakdown Header */}
+      <div className="flex items-center gap-2">
+        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Strategy Breakdown</span>
+        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+      </div>
+
+      {/* Execution Legs + Stats side-by-side */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
+        {/* Legs Table — 3 cols */}
+        <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b border-slate-100">
+            <span className="text-[10px] font-black text-slate-600 uppercase tracking-wider">Execution Legs</span>
+            <span className="text-[9px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded-md border border-slate-100">{expiry}</span>
           </div>
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-[10px] text-slate-400 font-semibold border-b border-slate-100">
-                <th className="text-left pb-2">Action</th>
-                <th className="text-left pb-2">Strike</th>
-                <th className="text-left pb-2">Type</th>
-                <th className="text-left pb-2">Qty</th>
-                <th className="text-right pb-2">Price</th>
+              <tr className="text-[9px] text-slate-400 font-bold uppercase tracking-wider border-b border-slate-50">
+                <th className="text-left px-4 py-2">Action</th>
+                <th className="text-left px-2 py-2">Strike</th>
+                <th className="text-left px-2 py-2">Type</th>
+                <th className="text-center px-2 py-2">Qty</th>
+                <th className="text-right px-4 py-2">Premium</th>
               </tr>
             </thead>
             <tbody>
               {legs.map((l, i) => (
-                <tr key={i} className="border-b border-slate-50">
-                  <td className={`py-2 font-black ${l.side === 'SELL' ? 'text-red-500' : 'text-blue-600'}`}>{l.side}</td>
-                  <td className="py-2 font-mono text-slate-700">{l.strike}</td>
-                  <td className="py-2 text-slate-500">{l.optionType}</td>
-                  <td className="py-2 text-slate-500">{l.qty || 1}</td>
-                  <td className="py-2 text-right font-mono text-slate-700">₹{typeof l.price === 'number' ? l.price.toFixed(2) : l.price}</td>
+                <tr key={i} className={`border-b border-slate-50/80 ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
+                  <td className="px-4 py-2.5">
+                    <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-black ${
+                      l.side === 'SELL' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{l.side}</span>
+                  </td>
+                  <td className="px-2 py-2.5 font-mono font-bold text-slate-800">{l.strike}</td>
+                  <td className="px-2 py-2.5">
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                      l.optionType === 'CE' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>{l.optionType}</span>
+                  </td>
+                  <td className="px-2 py-2.5 text-center text-slate-500 font-bold">{l.qty || 1}</td>
+                  <td className="px-4 py-2.5 text-right font-mono font-bold text-slate-700">₹{typeof l.price === 'number' ? l.price.toFixed(2) : l.price}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-t border-slate-100">
+            <span className="text-[9px] text-slate-400 font-bold">{legs.length} legs × {lotSize} lot</span>
+            <span className={`text-[10px] font-black ${netCredit > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+              Net: {netCredit > 0 ? '+' : ''}₹{netCredit.toFixed(2)}/share
+            </span>
+          </div>
         </div>
 
-        {/* Stat Cards */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl border border-emerald-200/60 p-4">
-            <div className="text-[10px] font-black text-emerald-500 mb-1">MAX PROFIT</div>
-            <div className="text-xl font-black text-emerald-600">+₹{Math.round(maxProfit).toLocaleString()}</div>
-            <div className="text-[10px] text-emerald-500/70 mt-0.5">₹{Math.abs(costPerShare).toFixed(2)}/share × {lotSize}</div>
+        {/* Stat Cards — 2 cols */}
+        <div className="lg:col-span-2 grid grid-cols-2 gap-2">
+          <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl border border-emerald-200/60 p-3 flex flex-col justify-center">
+            <div className="text-[9px] font-black text-emerald-500/80 uppercase tracking-wider">Max Profit</div>
+            <div className="text-lg font-black text-emerald-600 mt-1">+₹{Math.round(maxProfit).toLocaleString()}</div>
           </div>
-          <div className={`rounded-xl border p-4 ${isRiskFree
+          <div className={`rounded-xl border p-3 flex flex-col justify-center ${isRiskFree
             ? 'bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200/60'
             : 'bg-gradient-to-br from-red-50 to-rose-50 border-red-200/60'}`}>
-            <div className={`text-[10px] font-black mb-1 ${isRiskFree ? 'text-emerald-500' : 'text-red-500'}`}>MAX LOSS</div>
-            <div className={`text-xl font-black ${isRiskFree ? 'text-emerald-600' : 'text-red-600'}`}>
+            <div className={`text-[9px] font-black uppercase tracking-wider ${isRiskFree ? 'text-emerald-500/80' : 'text-red-500/80'}`}>Max Loss</div>
+            <div className={`text-lg font-black mt-1 ${isRiskFree ? 'text-emerald-600' : 'text-red-600'}`}>
               {isRiskFree ? 'Risk-Free' : `-₹${Math.abs(Math.round(maxLoss)).toLocaleString()}`}
             </div>
           </div>
-          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200/60 p-4">
-            <div className="text-[10px] font-black text-blue-500 mb-1">RISK:REWARD</div>
-            <div className="text-xl font-black text-blue-600">
-              {isRiskFree ? 'Risk-Free' : rr >= 10 ? `${Math.round(rr)}:1` : rr >= 1 ? `${rr.toFixed(1)}:1` : `1:${(1/rr).toFixed(1)}`}
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200/60 p-3 flex flex-col justify-center">
+            <div className="text-[9px] font-black text-blue-500/80 uppercase tracking-wider">Risk:Reward</div>
+            <div className="text-lg font-black text-blue-600 mt-1">
+              {isRiskFree ? '∞' : rr >= 10 ? `${Math.round(rr)}:1` : rr >= 1 ? `${rr.toFixed(1)}:1` : `1:${(1/rr).toFixed(1)}`}
             </div>
           </div>
-          <div className="bg-gradient-to-br from-violet-50 to-purple-50 rounded-xl border border-violet-200/60 p-4">
-            <div className="text-[10px] font-black text-violet-500 mb-1">POP (WIN RATE)</div>
-            <div className="text-xl font-black text-violet-600">{opp.estimatedWinRate ? `${Math.round(opp.estimatedWinRate)}%` : opp.winRate || '--'}</div>
+          <div className="bg-gradient-to-br from-violet-50 to-purple-50 rounded-xl border border-violet-200/60 p-3 flex flex-col justify-center">
+            <div className="text-[9px] font-black text-violet-500/80 uppercase tracking-wider">Win Rate</div>
+            <div className="text-lg font-black text-violet-600 mt-1">{opp.estimatedWinRate ? `${Math.round(opp.estimatedWinRate)}%` : opp.winRate || '--'}</div>
+          </div>
+          {/* Breakeven */}
+          <div className="col-span-2 bg-slate-50 rounded-xl border border-slate-200/40 p-3 flex items-center justify-between">
+            <div>
+              <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Breakeven</div>
+              <div className="text-sm font-black text-slate-700 mt-0.5">{breakevens.length > 0 ? breakevens.join(' / ') : '--'}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[9px] text-slate-400">Spot: {spot}</div>
+              <div className="text-[9px] text-slate-400">Lot: {lotSize}</div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Breakeven Bar */}
-      <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200/40">
-        <span className="text-[10px] font-black text-slate-400">BREAKEVEN</span>
-        <span className="text-sm font-black text-slate-700">{breakevens.length > 0 ? breakevens.join(' / ') : '--'}</span>
-        <span className="text-[10px] text-slate-400 ml-auto">Net cost: ₹{costPerShare.toFixed(2)}/share × {lotSize} lot</span>
-      </div>
-
+      {/* Payoff Chart */}
       <PayoffChart legs={legs} lotSize={lotSize} spot={spot} accentColor={accentColor} />
     </div>
   );
@@ -861,7 +908,7 @@ function SortTh({ field, label, sort, className = '' }) {
   );
 }
 
-function ScanStatusBar({ data }) {
+function ScanStatusBar({ data, isFetching }) {
   if (!data) return null;
   const { lastScannedAt, marketOpen, count } = data;
   return (
@@ -878,6 +925,12 @@ function ScanStatusBar({ data }) {
             Scanned <span className="font-mono text-slate-500">{lastScannedAt}</span>
           </span>
         )}
+        {isFetching && (
+          <span className="inline-flex items-center gap-1 text-[9px] text-violet-500 font-bold">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+            Refreshing...
+          </span>
+        )}
       </div>
       {count > 0 && (
         <span className="text-[10px] text-slate-400 font-medium">
@@ -889,9 +942,9 @@ function ScanStatusBar({ data }) {
 }
 
 function TabContent({ tab, underlying, tabInfo, onEnter }) {
-  const { data, isLoading, error } = useScan(tab, underlying);
-  if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState error={error} />;
+  const { data, isLoading, isFetching, error } = useScan(tab, underlying);
+  if (isLoading && !data) return <LoadingState />;
+  if (error && !data) return <ErrorState error={error} />;
   const opps = data?.opportunities || [];
   if (opps.length === 0) return <EmptyState tab={tab} marketOpen={data?.marketOpen} lastScannedAt={data?.lastScannedAt} />;
 
@@ -930,7 +983,7 @@ function TabContent({ tab, underlying, tabInfo, onEnter }) {
           </div>
         </div>
       )}
-      <ScanStatusBar data={data} />
+      <ScanStatusBar data={data} isFetching={isFetching} />
       {content}
     </div>
   );
