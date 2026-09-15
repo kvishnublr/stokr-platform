@@ -29,7 +29,9 @@ public class LivePosition {
 
     private String underlying;
     private Integer strike;
+    @Column(columnDefinition = "TEXT")
     private String action;
+    @Column(length = 100)
     private String strategyType;
 
     /** Contract expiry this position was actually traded on -- the payoff chart shows this
