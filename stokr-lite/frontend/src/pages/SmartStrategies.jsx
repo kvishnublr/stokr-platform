@@ -1,6 +1,42 @@
-import { useState, useMemo, useRef, useCallback, Fragment } from 'react';
+import { useState, useMemo, useRef, useCallback, Fragment, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import client from '../api/client';
+
+const TOP_PICK_STYLES = `
+@keyframes topPickGlow {
+  0%, 100% { box-shadow: 0 0 8px 1px rgba(16,185,129,0.3), inset 0 0 0 2px rgba(16,185,129,0.5); }
+  50% { box-shadow: 0 0 16px 3px rgba(16,185,129,0.45), inset 0 0 0 2px rgba(52,211,153,0.7); }
+}
+@keyframes topPickShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+tr.top-pick-row {
+  position: relative;
+  background: linear-gradient(90deg, rgba(16,185,129,0.06) 0%, rgba(52,211,153,0.1) 50%, rgba(16,185,129,0.06) 100%) !important;
+  animation: topPickGlow 2.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+tr.top-pick-row td:first-child {
+  border-left: 3px solid #10b981;
+}
+tr.top-pick-row td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, #10b981, #34d399, #10b981);
+  background-size: 100% 200%;
+  animation: topPickShimmer 2s ease-in-out infinite;
+}
+.top-pick-badge {
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #34d399 100%);
+  background-size: 200% 200%;
+  animation: topPickShimmer 3s ease-in-out infinite;
+}
+`;
 
 const TABS = [
   { id: 'ratio', label: 'Ratio Butterfly', shortLabel: 'Ratio', icon: '🦋', risk: 'LOW', desc: 'Near-zero cost, 1:15 reward', gradient: 'from-violet-500 via-purple-500 to-fuchsia-500', lightBg: 'from-violet-50 to-purple-50', text: 'violet', accent: '#7c3aed', ring: 'ring-violet-500/30' },
@@ -96,6 +132,7 @@ export default function SmartStrategies() {
 
   return (
     <div className="min-h-screen bg-[#f8fafc]">
+      <style>{TOP_PICK_STYLES}</style>
       {/* ──── HEADER ──── */}
       <div className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#0f172a]" />
@@ -561,18 +598,23 @@ function ExpandableRows({ opps, colSpan, renderRow, getLegs, getLotSize, getSpot
     const isTop = topKeys && topKeys.has(key);
     return (
       <Fragment key={key}>
-        <tr className={`cursor-pointer transition-colors ${isExpanded ? 'bg-slate-50' : isTop ? 'bg-emerald-50/40' : ''}`}
-          onClick={() => setExpandedKey(isExpanded ? null : key)}
-          style={isTop ? { boxShadow: 'inset 3px 0 0 #10b981' } : undefined}>
+        <tr className={`cursor-pointer transition-colors ${isTop ? 'top-pick-row' : ''} ${isExpanded ? 'bg-slate-50' : ''}`}
+          onClick={() => setExpandedKey(isExpanded ? null : key)}>
           {renderRow(o, i, isTop)}
           <td className="px-2 py-3 text-center" onClick={e => e.stopPropagation()}>
-            <button onClick={() => onEnter?.(o)}
-              className={`px-2.5 py-1.5 rounded-lg text-white text-[10px] font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all ${
-                isTop ? 'bg-gradient-to-r from-emerald-500 to-teal-500 ring-2 ring-emerald-300/50' : 'bg-gradient-to-r from-violet-500 to-indigo-500'
-              }`}
-              title="Enter this trade">
-              {isTop ? 'TOP' : 'Enter'}
-            </button>
+            {isTop ? (
+              <button onClick={() => onEnter?.(o)}
+                className="top-pick-badge px-3 py-1.5 rounded-lg text-white text-[10px] font-black shadow-lg shadow-emerald-300/40 hover:shadow-xl hover:scale-110 transition-all ring-2 ring-emerald-300/40"
+                title="Top pick — enter this trade">
+                TOP PICK
+              </button>
+            ) : (
+              <button onClick={() => onEnter?.(o)}
+                className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-[10px] font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all"
+                title="Enter this trade">
+                Enter
+              </button>
+            )}
           </td>
           <td className="px-2 py-3 text-center">
             <span className={`inline-block transition-transform duration-200 text-slate-400 text-xs ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
