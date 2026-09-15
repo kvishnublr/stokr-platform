@@ -605,7 +605,7 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
         {yLabels.map((yl, i) => (
           <g key={`y${i}`}>
             <line x1={PAD.l} y1={yl.yPos} x2={W - PAD.r} y2={yl.yPos} stroke="#e2e8f0" strokeWidth="0.5" />
-            <text x={PAD.l - 8} y={yl.yPos + 3} textAnchor="end" fontSize="9" fill="#94a3b8" fontFamily="monospace">
+            <text x={PAD.l - 8} y={yl.yPos + 3} textAnchor="end" fontSize="9" fill="#64748b" fontFamily="monospace" fontWeight="600">
               {yl.val >= 0 ? '' : '-'}₹{Math.abs(Math.round(yl.val)).toLocaleString()}
             </text>
           </g>
@@ -613,7 +613,7 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
         {xLabels.map((xl, i) => (
           <g key={`x${i}`}>
             <line x1={xl.xPos} y1={PAD.t} x2={xl.xPos} y2={H - PAD.b} stroke="#e2e8f0" strokeWidth="0.5" />
-            <text x={xl.xPos} y={H - PAD.b + 14} textAnchor="middle" fontSize="9" fill="#94a3b8" fontFamily="monospace">{xl.val}</text>
+            <text x={xl.xPos} y={H - PAD.b + 14} textAnchor="middle" fontSize="9" fill="#64748b" fontFamily="monospace" fontWeight="600">{xl.val}</text>
           </g>
         ))}
 
@@ -621,22 +621,22 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
           <line x1={PAD.l} y1={zeroY} x2={W - PAD.r} y2={zeroY} stroke="#475569" strokeWidth="1" strokeDasharray="4,3" />
         )}
 
-        <path d={profitPath.join(' ')} fill="rgba(16,185,129,0.15)" />
-        <path d={lossPath.join(' ')} fill="rgba(239,68,68,0.12)" />
-        <path d={pathD} fill="none" stroke={accentColor} strokeWidth="2.5" strokeLinejoin="round" />
+        <path d={profitPath.join(' ')} fill="rgba(16,185,129,0.25)" />
+        <path d={lossPath.join(' ')} fill="rgba(239,68,68,0.2)" />
+        <path d={pathD} fill="none" stroke="#d946ef" strokeWidth="3" strokeLinejoin="round" />
 
         <line x1={spotX} y1={PAD.t} x2={spotX} y2={H - PAD.b} stroke="#64748b" strokeWidth="1" strokeDasharray="3,3" />
         <text x={spotX} y={PAD.t - 6} textAnchor="middle" fontSize="9" fill="#64748b" fontWeight="bold">SPOT</text>
 
-        <circle cx={x(maxProfitPt.s)} cy={y(maxProfitPt.pnl)} r="4" fill="#10b981" stroke="white" strokeWidth="2" />
-        <text x={x(maxProfitPt.s)} y={y(maxProfitPt.pnl) - 10} textAnchor="middle" fontSize="9" fill="#10b981" fontWeight="bold">
+        <circle cx={x(maxProfitPt.s)} cy={y(maxProfitPt.pnl)} r="5" fill="#10b981" stroke="white" strokeWidth="2.5" />
+        <text x={x(maxProfitPt.s)} y={y(maxProfitPt.pnl) - 12} textAnchor="middle" fontSize="11" fill="#059669" fontWeight="900">
           +₹{Math.round(maxProfitPt.pnl).toLocaleString()}
         </text>
 
         {maxLossPt.pnl < 0 && (
           <>
-            <circle cx={x(maxLossPt.s)} cy={y(maxLossPt.pnl)} r="4" fill="#ef4444" stroke="white" strokeWidth="2" />
-            <text x={x(maxLossPt.s)} y={y(maxLossPt.pnl) + 16} textAnchor="middle" fontSize="9" fill="#ef4444" fontWeight="bold">
+            <circle cx={x(maxLossPt.s)} cy={y(maxLossPt.pnl)} r="5" fill="#ef4444" stroke="white" strokeWidth="2.5" />
+            <text x={x(maxLossPt.s)} y={y(maxLossPt.pnl) + 18} textAnchor="middle" fontSize="11" fill="#dc2626" fontWeight="900">
               -₹{Math.abs(Math.round(maxLossPt.pnl)).toLocaleString()}
             </text>
           </>
@@ -2163,192 +2163,161 @@ function EnterTradeModal({ opp, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-[520px] max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-6 pb-6 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-[900px] max-w-[95vw] max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-violet-50 to-indigo-50 rounded-t-2xl">
+        <div className="shrink-0 px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-violet-900 to-indigo-900 rounded-t-2xl">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center shadow-lg">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M12 2v20M2 12h20"/></svg>
+              <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center ring-1 ring-white/20">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M12 2v20M2 12h20"/></svg>
               </div>
               <div>
-                <h3 className="text-sm font-black text-slate-800">Enter Trade</h3>
-                <p className="text-[10px] text-slate-500">{stratType.replace(/_/g, ' ')} — {opp.underlying}</p>
+                <h3 className="text-sm font-black text-white tracking-tight">Enter Trade</h3>
+                <p className="text-[10px] text-white/50 font-medium">{stratType.replace(/_/g, ' ')} — {opp.underlying} — {opp.expiry || opp.expiryDate || ''}</p>
               </div>
             </div>
-            <button onClick={onClose} className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
+            <button onClick={onClose} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/60 hover:text-white transition-colors">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
           </div>
         </div>
 
         {result ? (
-          <div className="p-6">
-            <div className={`p-5 rounded-xl border ${result.status === 'SUCCESS' ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-              <div className={`text-sm font-black ${result.status === 'SUCCESS' ? 'text-emerald-700' : 'text-red-700'}`}>
-                {result.status === 'SUCCESS' ? 'Trade Entered!' : 'Entry Failed'}
-              </div>
-              <div className={`text-xs mt-1 ${result.status === 'SUCCESS' ? 'text-emerald-600' : 'text-red-600'}`}>{result.message}</div>
-              {result.positionId && <div className="text-[10px] text-slate-400 mt-2">Position #{result.positionId}</div>}
+          <div className="p-8 flex flex-col items-center">
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 ${result.status === 'SUCCESS' ? 'bg-emerald-100' : 'bg-red-100'}`}>
+              <span className="text-3xl">{result.status === 'SUCCESS' ? '✓' : '✗'}</span>
             </div>
-            <button onClick={onClose} className="mt-4 w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-sm font-bold text-slate-700 transition-colors">Close</button>
+            <div className={`text-lg font-black ${result.status === 'SUCCESS' ? 'text-emerald-700' : 'text-red-700'}`}>
+              {result.status === 'SUCCESS' ? 'Trade Entered Successfully!' : 'Entry Failed'}
+            </div>
+            <div className={`text-xs mt-2 ${result.status === 'SUCCESS' ? 'text-emerald-600' : 'text-red-600'}`}>{result.message}</div>
+            {result.positionId && <div className="text-[10px] text-slate-400 mt-2">Position #{result.positionId}</div>}
+            <button onClick={onClose} className="mt-6 px-8 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-sm font-bold text-slate-700 transition-colors">Close</button>
           </div>
         ) : (
-          <div className="p-6 space-y-5">
-            {/* Legs preview */}
-            {opp.legList && (
-              <div className="bg-slate-50 rounded-xl border border-slate-100 p-3">
-                <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-2">Legs</div>
-                <div className="space-y-1">
-                  {opp.legList.map((leg, i) => (
-                    <div key={i} className="flex items-center gap-2 text-[11px] font-mono">
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${leg.side === 'BUY' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                        {leg.side}
-                      </span>
-                      <span className="text-slate-600">{leg.qty || 1}x</span>
-                      <span className="font-bold text-slate-800">{leg.strike} {leg.optionType}</span>
-                      <span className="text-slate-400">@</span>
-                      <span className="text-slate-600">₹{leg.price}</span>
+          <div className="flex-1 overflow-y-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-0">
+              {/* LEFT: Strategy Analysis (3/5) */}
+              <div className="lg:col-span-3 p-5 space-y-4 border-r border-slate-100">
+                {/* Payoff + Legs */}
+                {opp.legList && opp.legList.length > 0 && (
+                  <AdvancedPayoff
+                    opp={opp}
+                    legs={opp.legList}
+                    lotSize={opp.lotSize || 75}
+                    spot={opp.spotPrice || opp.legList[0]?.strike || 24000}
+                    accentColor={tabData?.accent || '#6366f1'}
+                  />
+                )}
+              </div>
+
+              {/* RIGHT: Trade Controls (2/5) */}
+              <div className="lg:col-span-2 p-5 space-y-4 bg-slate-50/50">
+                {/* Broker + Lots */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] text-slate-400 font-black uppercase tracking-wider">Broker</label>
+                    <select value={broker} onChange={e => setBroker(e.target.value)}
+                      className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white focus:ring-2 focus:ring-violet-200 focus:border-violet-400 outline-none shadow-sm">
+                      <option value="PAPER">PAPER</option>
+                      <option value="ZERODHA">ZERODHA</option>
+                      <option value="NAVIA">NAVIA</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-slate-400 font-black uppercase tracking-wider">Lots</label>
+                    <input type="number" min="1" max="50" value={lots} onChange={e => setLots(Math.max(1, +e.target.value))}
+                      className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white focus:ring-2 focus:ring-violet-200 focus:border-violet-400 outline-none shadow-sm" />
+                  </div>
+                </div>
+
+                {/* Stop Loss */}
+                <div className={`p-3 rounded-xl border transition-colors ${slEnabled ? 'bg-red-50/50 border-red-200/60' : 'bg-white border-slate-100'}`}>
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={slEnabled} onChange={e => setSlEnabled(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-red-500 focus:ring-red-200" />
+                      <span className="text-[10px] font-bold text-slate-700">Stop Loss</span>
+                    </label>
+                    {slEnabled && <span className="text-[9px] font-mono font-bold text-red-500">₹{Math.round(maxLoss * slPct / 100).toLocaleString()}</span>}
+                  </div>
+                  {slEnabled && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <input type="range" min="10" max="100" step="5" value={slPct} onChange={e => setSlPct(+e.target.value)}
+                        className="flex-1 h-1 bg-red-200 rounded-full accent-red-500" />
+                      <span className="text-[10px] font-black text-red-600 w-10 text-right">{slPct}%</span>
                     </div>
-                  ))}
+                  )}
                 </div>
-              </div>
-            )}
 
-            {/* Payoff Chart */}
-            {opp.legList && opp.legList.length > 0 && (
-              <div className="rounded-xl border border-slate-100 overflow-hidden p-3">
-                <AdvancedPayoff
-                  opp={opp}
-                  legs={opp.legList}
-                  lotSize={opp.lotSize || 75}
-                  spot={opp.spotPrice || opp.legList[0]?.strike || 24000}
-                  accentColor={tabData?.accent || '#6366f1'}
-                />
-              </div>
-            )}
-
-            {/* P&L summary */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="p-3 rounded-xl bg-red-50 border border-red-100 text-center">
-                <div className="text-[9px] text-red-400 font-semibold uppercase">Max Risk</div>
-                <div className="text-sm font-black text-red-600 mt-0.5">₹{Math.round(perLotLoss).toLocaleString()}</div>
-                <div className="text-[9px] text-red-300 mt-0.5">per lot</div>
-              </div>
-              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 text-center">
-                <div className="text-[9px] text-emerald-400 font-semibold uppercase">Max Reward</div>
-                <div className="text-sm font-black text-emerald-600 mt-0.5">₹{Math.round(perLotProfit).toLocaleString()}</div>
-                <div className="text-[9px] text-emerald-300 mt-0.5">per lot</div>
-              </div>
-              <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-100 text-center">
-                <div className="text-[9px] text-indigo-400 font-semibold uppercase">R:R Ratio</div>
-                <div className="text-sm font-black text-indigo-600 mt-0.5">{perLotLoss > 0 ? formatRR(perLotProfit / perLotLoss) : '--'}</div>
-                <div className="text-[9px] text-indigo-300 mt-0.5">reward / risk</div>
-              </div>
-            </div>
-
-            {/* Controls */}
-            <div className="space-y-3">
-              {/* Broker + Lots */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Broker</label>
-                  <select value={broker} onChange={e => setBroker(e.target.value)}
-                    className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white focus:ring-2 focus:ring-violet-200 focus:border-violet-400 outline-none">
-                    <option value="PAPER">PAPER (Simulated)</option>
-                    <option value="ZERODHA">ZERODHA (Live)</option>
-                    <option value="NAVIA">NAVIA (Live)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Lots</label>
-                  <input type="number" min="1" max="50" value={lots} onChange={e => setLots(Math.max(1, +e.target.value))}
-                    className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white focus:ring-2 focus:ring-violet-200 focus:border-violet-400 outline-none" />
-                </div>
-              </div>
-
-              {/* Stop Loss */}
-              <div className={`p-3 rounded-xl border transition-colors ${slEnabled ? 'bg-red-50/50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={slEnabled} onChange={e => setSlEnabled(e.target.checked)}
-                      className="w-3.5 h-3.5 rounded border-slate-300 text-red-500 focus:ring-red-200" />
-                    <span className="text-[11px] font-bold text-slate-700">Stop Loss</span>
-                  </label>
-                  {slEnabled && <span className="text-[10px] font-mono text-red-500">Exit if loss hits ₹{Math.round(maxLoss * slPct / 100).toLocaleString()}</span>}
-                </div>
-                {slEnabled && (
-                  <div className="mt-2 flex items-center gap-3">
-                    <input type="range" min="10" max="100" step="5" value={slPct} onChange={e => setSlPct(+e.target.value)}
-                      className="flex-1 h-1.5 bg-red-200 rounded-full accent-red-500" />
-                    <span className="text-xs font-black text-red-600 w-12 text-right">{slPct}%</span>
+                {/* Target */}
+                <div className={`p-3 rounded-xl border transition-colors ${targetEnabled ? 'bg-emerald-50/50 border-emerald-200/60' : 'bg-white border-slate-100'}`}>
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={targetEnabled} onChange={e => setTargetEnabled(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-emerald-500 focus:ring-emerald-200" />
+                      <span className="text-[10px] font-bold text-slate-700">Auto Profit</span>
+                    </label>
+                    {targetEnabled && <span className="text-[9px] font-mono font-bold text-emerald-600">₹{Math.round(maxProfit * targetPct / 100).toLocaleString()}</span>}
                   </div>
-                )}
-              </div>
-
-              {/* Target */}
-              <div className={`p-3 rounded-xl border transition-colors ${targetEnabled ? 'bg-emerald-50/50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={targetEnabled} onChange={e => setTargetEnabled(e.target.checked)}
-                      className="w-3.5 h-3.5 rounded border-slate-300 text-emerald-500 focus:ring-emerald-200" />
-                    <span className="text-[11px] font-bold text-slate-700">Auto Book Profit</span>
-                  </label>
-                  {targetEnabled && <span className="text-[10px] font-mono text-emerald-600">Exit if profit hits ₹{Math.round(maxProfit * targetPct / 100).toLocaleString()}</span>}
+                  {targetEnabled && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <input type="range" min="10" max="100" step="5" value={targetPct} onChange={e => setTargetPct(+e.target.value)}
+                        className="flex-1 h-1 bg-emerald-200 rounded-full accent-emerald-500" />
+                      <span className="text-[10px] font-black text-emerald-600 w-10 text-right">{targetPct}%</span>
+                    </div>
+                  )}
                 </div>
-                {targetEnabled && (
-                  <div className="mt-2 flex items-center gap-3">
-                    <input type="range" min="10" max="100" step="5" value={targetPct} onChange={e => setTargetPct(+e.target.value)}
-                      className="flex-1 h-1.5 bg-emerald-200 rounded-full accent-emerald-500" />
-                    <span className="text-xs font-black text-emerald-600 w-12 text-right">{targetPct}%</span>
+
+                {/* Time Exit */}
+                <div className={`p-3 rounded-xl border transition-colors ${timeEnabled ? 'bg-blue-50/50 border-blue-200/60' : 'bg-white border-slate-100'}`}>
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={timeEnabled} onChange={e => setTimeEnabled(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-blue-500 focus:ring-blue-200" />
+                      <span className="text-[10px] font-bold text-slate-700">Time Exit</span>
+                    </label>
+                    {timeEnabled && <span className="text-[9px] font-mono font-bold text-blue-600">{timeExit}m before close</span>}
                   </div>
-                )}
-              </div>
-
-              {/* Time Exit */}
-              <div className={`p-3 rounded-xl border transition-colors ${timeEnabled ? 'bg-blue-50/50 border-blue-100' : 'bg-slate-50 border-slate-100'}`}>
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={timeEnabled} onChange={e => setTimeEnabled(e.target.checked)}
-                      className="w-3.5 h-3.5 rounded border-slate-300 text-blue-500 focus:ring-blue-200" />
-                    <span className="text-[11px] font-bold text-slate-700">Time-Based Exit</span>
-                  </label>
-                  {timeEnabled && <span className="text-[10px] font-mono text-blue-600">Exit {timeExit}min before 3:30 PM</span>}
+                  {timeEnabled && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <input type="range" min="1" max="30" step="1" value={timeExit} onChange={e => setTimeExit(+e.target.value)}
+                        className="flex-1 h-1 bg-blue-200 rounded-full accent-blue-500" />
+                      <span className="text-[10px] font-black text-blue-600 w-10 text-right">{timeExit}m</span>
+                    </div>
+                  )}
                 </div>
-                {timeEnabled && (
-                  <div className="mt-2 flex items-center gap-3">
-                    <input type="range" min="1" max="30" step="1" value={timeExit} onChange={e => setTimeExit(+e.target.value)}
-                      className="flex-1 h-1.5 bg-blue-200 rounded-full accent-blue-500" />
-                    <span className="text-xs font-black text-blue-600 w-12 text-right">{timeExit}m</span>
+
+                {/* Total risk summary */}
+                <div className="p-4 rounded-xl bg-slate-900 text-white space-y-2">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Risk ({lots} lot{lots > 1 ? 's' : ''})</span>
+                    <span className="font-mono font-black text-red-400">-₹{Math.round(maxLoss).toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Reward ({lots} lot{lots > 1 ? 's' : ''})</span>
+                    <span className="font-mono font-black text-emerald-400">+₹{Math.round(maxProfit).toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-2 border-t border-white/10">
+                    <span className="text-slate-400">R:R</span>
+                    <span className="font-mono font-black text-violet-400">{perLotLoss > 0 ? formatRR(perLotProfit / perLotLoss) : '∞'}</span>
+                  </div>
+                </div>
+
+                {/* Submit */}
+                <button onClick={handleSubmit} disabled={enterMutation.isPending}
+                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-sm font-black shadow-lg shadow-violet-500/25 hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50 disabled:scale-100">
+                  {enterMutation.isPending ? 'Placing Orders...' : broker === 'PAPER' ? `Enter PAPER Trade` : `Enter LIVE — ${broker}`}
+                </button>
+
+                {broker !== 'PAPER' && (
+                  <div className="text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-center font-medium">
+                    LIVE orders placed with broker. Market hours only.
                   </div>
                 )}
               </div>
             </div>
-
-            {/* Total risk summary */}
-            <div className="p-3 rounded-xl bg-slate-800 text-white">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-300">Total Risk ({lots} lot{lots > 1 ? 's' : ''})</span>
-                <span className="font-mono font-black text-red-400">₹{Math.round(maxLoss).toLocaleString()}</span>
-              </div>
-              <div className="flex items-center justify-between text-[11px] mt-1">
-                <span className="text-slate-300">Max Reward ({lots} lot{lots > 1 ? 's' : ''})</span>
-                <span className="font-mono font-black text-emerald-400">₹{Math.round(maxProfit).toLocaleString()}</span>
-              </div>
-            </div>
-
-            {/* Submit */}
-            <button onClick={handleSubmit} disabled={enterMutation.isPending}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-sm font-black shadow-lg shadow-violet-500/25 hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50 disabled:scale-100">
-              {enterMutation.isPending ? 'Placing Orders...' : broker === 'PAPER' ? `Enter PAPER Trade (${lots} lot${lots > 1 ? 's' : ''})` : `Enter LIVE Trade via ${broker}`}
-            </button>
-
-            {broker !== 'PAPER' && (
-              <div className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-center font-medium">
-                LIVE orders will be placed with your broker. Market must be open (9:15 AM - 3:30 PM IST).
-              </div>
-            )}
           </div>
         )}
       </div>
