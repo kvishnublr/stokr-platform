@@ -65,6 +65,7 @@ public class RatioButterflyScanner {
         }
         Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
+        log.info("Ratio [{}]: spot={}, atm={}, expiry={}, dte={}, quotes={}", underlying, spot, atmStrike, expiry, dte, quotes.size());
         for (String optType : List.of("CE", "PE")) {
             int dir = "CE".equals(optType) ? 1 : -1;
             for (int bodyOffset = 1; bodyOffset <= 6; bodyOffset++) {
@@ -86,13 +87,16 @@ public class RatioButterflyScanner {
                 double maxLoss = (wingWidth + Math.max(cost, 0)) * lotSize;
                 if (maxLoss <= 0) maxLoss = 1;
 
-                double costLimit = dte <= 3 ? step * 0.3 : dte <= 7 ? step * 0.6 : step * 1.0;
+                double costLimit = dte <= 3 ? step * 0.3 : dte <= 7 ? step * 0.6 : step * 1.5;
+                log.info("RATIO {} {}{} body={} cost={} costLimit={} maxProfit={} maxLoss={}",
+                    underlying, optType, bodyOffset, sellStrike, round2(cost), round2(costLimit), round2(maxProfit), round2(maxLoss));
                 if (cost > costLimit) continue;
 
                 double txnCost = ArbitrageCosts.PER_LEG_BROKERAGE * 6 + 50;
                 maxLoss += txnCost;
                 double riskReward = maxProfit / maxLoss;
-                double rrMin = dte <= 3 ? 3.0 : dte <= 7 ? 2.0 : 1.5;
+                double rrMin = dte <= 3 ? 3.0 : dte <= 7 ? 2.0 : 1.0;
+                log.info("RATIO {} {}{} rr={} rrMin={}", underlying, optType, bodyOffset, round2(riskReward), rrMin);
                 if (riskReward < rrMin) continue;
 
                 Map<String, Object> opp = new LinkedHashMap<>();
