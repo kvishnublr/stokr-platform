@@ -718,7 +718,7 @@ function ExpandableRows({ opps, colSpan, renderRow, getLegs, getLotSize, getSpot
                 isTop ? 'bg-gradient-to-r from-amber-500 to-orange-500 ring-1 ring-amber-300/50' : 'bg-gradient-to-r from-violet-500 to-indigo-500'
               }`}
               title="Enter this trade">
-              {isTop ? '★ TOP' : 'Enter'}
+              {isTop ? '★ Enter' : 'Enter'}
             </button>
           </td>
           <td className="px-2 py-3 text-center">
