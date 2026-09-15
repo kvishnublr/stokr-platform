@@ -96,8 +96,10 @@ public class ExpiryThetaCrushScanner {
             OptionChainService.OptionQuote peWingQ = getQuote(quotes, underlying, expiry, peWingStrike, "PE");
             if (ceQ == null || peQ == null || ceWingQ == null || peWingQ == null) continue;
 
-            double straddleCredit = ceQ.bid + peQ.bid;
-            double wingCost = ceWingQ.ask + peWingQ.ask;
+            double ceBid = ceQ.effectiveBid(), peBid = peQ.effectiveBid();
+            double ceWAsk = ceWingQ.effectiveAsk(), peWAsk = peWingQ.effectiveAsk();
+            double straddleCredit = ceBid + peBid;
+            double wingCost = ceWAsk + peWAsk;
             double netCredit = straddleCredit - wingCost;
             if (netCredit <= 0) continue;
 
@@ -134,15 +136,15 @@ public class ExpiryThetaCrushScanner {
             opp.put("isOptimalWindow", isOptimalWindow);
             opp.put("winRate", isOptimalWindow ? "90-95%" : "75-85%");
             opp.put("action", String.format("SELL %dCE @ %.1f + SELL %dPE @ %.1f | BUY %dCE @ %.1f + BUY %dPE @ %.1f",
-                ceStrike, ceQ.bid, peStrike, peQ.bid, ceWingStrike, ceWingQ != null ? ceWingQ.ask : 0, peWingStrike, peWingQ != null ? peWingQ.ask : 0));
+                ceStrike, ceBid, peStrike, peBid, ceWingStrike, ceWAsk, peWingStrike, peWAsk));
             opp.put("legList", List.of(
-                Map.of("strike", ceStrike, "optionType", "CE", "side", "SELL", "qty", 1, "price", ceQ.bid,
+                Map.of("strike", ceStrike, "optionType", "CE", "side", "SELL", "qty", 1, "price", ceBid,
                     "symbol", getSymbol(quotes, underlying, expiry, ceStrike, "CE")),
-                Map.of("strike", peStrike, "optionType", "PE", "side", "SELL", "qty", 1, "price", peQ.bid,
+                Map.of("strike", peStrike, "optionType", "PE", "side", "SELL", "qty", 1, "price", peBid,
                     "symbol", getSymbol(quotes, underlying, expiry, peStrike, "PE")),
-                Map.of("strike", ceWingStrike, "optionType", "CE", "side", "BUY", "qty", 1, "price", ceWingQ != null ? ceWingQ.ask : 0,
+                Map.of("strike", ceWingStrike, "optionType", "CE", "side", "BUY", "qty", 1, "price", ceWAsk,
                     "symbol", getSymbol(quotes, underlying, expiry, ceWingStrike, "CE")),
-                Map.of("strike", peWingStrike, "optionType", "PE", "side", "BUY", "qty", 1, "price", peWingQ != null ? peWingQ.ask : 0,
+                Map.of("strike", peWingStrike, "optionType", "PE", "side", "BUY", "qty", 1, "price", peWAsk,
                     "symbol", getSymbol(quotes, underlying, expiry, peWingStrike, "PE"))
             ));
             opp.put("edgePoints", round2(expectedDecay));
@@ -176,7 +178,7 @@ public class ExpiryThetaCrushScanner {
         OptionChainService.OptionQuote peQ = getQuote(quotes, underlying, expiry, atmStrike, "PE");
         if (ceQ == null || peQ == null) return results;
 
-        double straddleValue = ceQ.bid + peQ.bid;
+        double straddleValue = ceQ.effectiveBid() + peQ.effectiveBid();
         double dailyDecay = straddleValue / (dte + 0.5);
 
         Map<String, Object> opp = new LinkedHashMap<>();

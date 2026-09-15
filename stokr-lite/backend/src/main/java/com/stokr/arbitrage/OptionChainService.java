@@ -476,6 +476,9 @@ public class OptionChainService {
         public int askQty;
         public int volume;
         public int openInterest;
+
+        public double effectiveBid() { return bid > 0 ? bid : lastPrice; }
+        public double effectiveAsk() { return ask > 0 ? ask : lastPrice; }
     }
 }
 

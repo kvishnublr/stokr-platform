@@ -96,10 +96,12 @@ public class SkewHarvestScanner {
                 OptionChainService.OptionQuote cbQ = getQuote(quotes, underlying, expiry, callBuyStrike, "CE");
                 OptionChainService.OptionQuote csQ = getQuote(quotes, underlying, expiry, callSellStrike, "CE");
                 if (psQ == null || pbQ == null || cbQ == null || csQ == null) continue;
-                if (psQ.bid <= 0 || pbQ.ask <= 0 || cbQ.ask <= 0 || csQ.bid <= 0) continue;
+                double psBid = psQ.effectiveBid(), pbAsk = pbQ.effectiveAsk();
+                double cbAsk = cbQ.effectiveAsk(), csBid = csQ.effectiveBid();
+                if (psBid <= 0 || pbAsk <= 0 || cbAsk <= 0 || csBid <= 0) continue;
 
-                double putSpreadCredit = psQ.bid - pbQ.ask;
-                double callSpreadDebit = cbQ.ask - csQ.bid;
+                double putSpreadCredit = psBid - pbAsk;
+                double callSpreadDebit = cbAsk - csBid;
                 double netCost = callSpreadDebit - putSpreadCredit;
 
                 Double putSellIV = putIVs.get(putSellStrike);
@@ -139,15 +141,15 @@ public class SkewHarvestScanner {
                 opp.put("scenarioUp", round2(maxProfitCall + putSpreadCredit * lotSize - txnCost));
                 opp.put("scenarioDown", round2(-maxLossPut));
                 opp.put("action", String.format("SELL %dPE @ %.1f | BUY %dPE @ %.1f | BUY %dCE @ %.1f | SELL %dCE @ %.1f",
-                    putSellStrike, psQ.bid, putBuyStrike, pbQ.ask, callBuyStrike, cbQ.ask, callSellStrike, csQ.bid));
+                    putSellStrike, psBid, putBuyStrike, pbAsk, callBuyStrike, cbAsk, callSellStrike, csBid));
                 opp.put("legList", List.of(
-                    Map.of("strike", putSellStrike, "optionType", "PE", "side", "SELL", "qty", 1, "price", psQ.bid,
+                    Map.of("strike", putSellStrike, "optionType", "PE", "side", "SELL", "qty", 1, "price", psBid,
                         "symbol", getSymbol(quotes, underlying, expiry, putSellStrike, "PE")),
-                    Map.of("strike", putBuyStrike, "optionType", "PE", "side", "BUY", "qty", 1, "price", pbQ.ask,
+                    Map.of("strike", putBuyStrike, "optionType", "PE", "side", "BUY", "qty", 1, "price", pbAsk,
                         "symbol", getSymbol(quotes, underlying, expiry, putBuyStrike, "PE")),
-                    Map.of("strike", callBuyStrike, "optionType", "CE", "side", "BUY", "qty", 1, "price", cbQ.ask,
+                    Map.of("strike", callBuyStrike, "optionType", "CE", "side", "BUY", "qty", 1, "price", cbAsk,
                         "symbol", getSymbol(quotes, underlying, expiry, callBuyStrike, "CE")),
-                    Map.of("strike", callSellStrike, "optionType", "CE", "side", "SELL", "qty", 1, "price", csQ.bid,
+                    Map.of("strike", callSellStrike, "optionType", "CE", "side", "SELL", "qty", 1, "price", csBid,
                         "symbol", getSymbol(quotes, underlying, expiry, callSellStrike, "CE"))
                 ));
                 opp.put("edgePoints", round2(skewEdge));

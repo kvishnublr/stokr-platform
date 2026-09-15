@@ -86,9 +86,10 @@ public class BrokenWingButterflyScanner {
                     OptionChainService.OptionQuote bodyQ = getQuote(quotes, underlying, expiry, bodyStrike, optType);
                     OptionChainService.OptionQuote farQ = getQuote(quotes, underlying, expiry, farWingStrike, optType);
                     if (nearQ == null || bodyQ == null || farQ == null) continue;
-                    if (nearQ.ask <= 0 || bodyQ.bid <= 0 || farQ.ask <= 0) continue;
+                    double nAsk = nearQ.effectiveAsk(), bBid = bodyQ.effectiveBid(), fAsk = farQ.effectiveAsk();
+                    if (nAsk <= 0 || bBid <= 0 || fAsk <= 0) continue;
 
-                    double credit = 2 * bodyQ.bid - nearQ.ask - farQ.ask;
+                    double credit = 2 * bBid - nAsk - fAsk;
                     if (credit <= 0) continue;
 
                     int narrowWidth = Math.abs(nearWingStrike - bodyStrike);
@@ -111,9 +112,9 @@ public class BrokenWingButterflyScanner {
                     opp.put("dte", dte);
                     opp.put("lotSize", lotSize);
                     opp.put("spotPrice", round2(spot));
-                    opp.put("nearWingPrice", round2(nearQ.ask));
-                    opp.put("bodyPrice", round2(bodyQ.bid));
-                    opp.put("farWingPrice", round2(farQ.ask));
+                    opp.put("nearWingPrice", round2(nAsk));
+                    opp.put("bodyPrice", round2(bBid));
+                    opp.put("farWingPrice", round2(fAsk));
                     opp.put("creditReceived", round2(credit));
                     opp.put("creditRs", round2(credit * lotSize));
                     opp.put("maxProfit", round2(maxProfitNarrow));
@@ -121,13 +122,13 @@ public class BrokenWingButterflyScanner {
                     opp.put("riskReward", round2(maxProfitNarrow / (maxLossWide + txnCost)));
                     opp.put("zeroRiskSide", "PE".equals(optType) ? "UPSIDE" : "DOWNSIDE");
                     opp.put("action", String.format("BUY %d%s @ %.1f | SELL 2x%d%s @ %.1f | BUY %d%s @ %.1f",
-                        nearWingStrike, optType, nearQ.ask, bodyStrike, optType, bodyQ.bid, farWingStrike, optType, farQ.ask));
+                        nearWingStrike, optType, nAsk, bodyStrike, optType, bBid, farWingStrike, optType, fAsk));
                     opp.put("legList", List.of(
-                        Map.of("strike", nearWingStrike, "optionType", optType, "side", "BUY", "qty", 1, "price", nearQ.ask,
+                        Map.of("strike", nearWingStrike, "optionType", optType, "side", "BUY", "qty", 1, "price", nAsk,
                             "symbol", getSymbol(quotes, underlying, expiry, nearWingStrike, optType)),
-                        Map.of("strike", bodyStrike, "optionType", optType, "side", "SELL", "qty", 2, "price", bodyQ.bid,
+                        Map.of("strike", bodyStrike, "optionType", optType, "side", "SELL", "qty", 2, "price", bBid,
                             "symbol", getSymbol(quotes, underlying, expiry, bodyStrike, optType)),
-                        Map.of("strike", farWingStrike, "optionType", optType, "side", "BUY", "qty", 1, "price", farQ.ask,
+                        Map.of("strike", farWingStrike, "optionType", optType, "side", "BUY", "qty", 1, "price", fAsk,
                             "symbol", getSymbol(quotes, underlying, expiry, farWingStrike, optType))
                     ));
                     opp.put("edgePoints", round2(credit));

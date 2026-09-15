@@ -76,9 +76,10 @@ public class RatioButterflyScanner {
                 OptionChainService.OptionQuote sellQ = getQuote(quotes, underlying, expiry, sellStrike, optType);
                 OptionChainService.OptionQuote farBuyQ = getQuote(quotes, underlying, expiry, farBuyStrike, optType);
                 if (buyQ == null || sellQ == null || farBuyQ == null) continue;
-                if (buyQ.ask <= 0 || sellQ.bid <= 0 || farBuyQ.ask <= 0) continue;
+                double buyAsk = buyQ.effectiveAsk(), sellBid = sellQ.effectiveBid(), farAsk = farBuyQ.effectiveAsk();
+                if (buyAsk <= 0 || sellBid <= 0 || farAsk <= 0) continue;
 
-                double cost = buyQ.ask - 3 * sellQ.bid + 2 * farBuyQ.ask;
+                double cost = buyAsk - 3 * sellBid + 2 * farAsk;
                 int wingWidth = Math.abs(sellStrike - buyStrike);
                 double maxProfit = (wingWidth - cost) * lotSize;
                 // Max loss: 1 uncovered short beyond the far wing. Risk = wingWidth + net debit paid.
@@ -104,9 +105,9 @@ public class RatioButterflyScanner {
                 opp.put("dte", dte);
                 opp.put("lotSize", lotSize);
                 opp.put("spotPrice", round2(spot));
-                opp.put("buyPrice", round2(buyQ.ask));
-                opp.put("sellPrice", round2(sellQ.bid));
-                opp.put("farBuyPrice", round2(farBuyQ.ask));
+                opp.put("buyPrice", round2(buyAsk));
+                opp.put("sellPrice", round2(sellBid));
+                opp.put("farBuyPrice", round2(farAsk));
                 opp.put("netCost", round2(cost));
                 opp.put("netCostRs", round2(cost * lotSize));
                 opp.put("maxProfit", round2(maxProfit));
@@ -116,13 +117,13 @@ public class RatioButterflyScanner {
                 opp.put("breakEvenLow", "CE".equals(optType) ? round2(buyStrike + cost) : round2(farBuyStrike + cost));
                 opp.put("breakEvenHigh", "CE".equals(optType) ? round2(farBuyStrike - cost) : round2(buyStrike - cost));
                 opp.put("action", String.format("BUY 1x%d%s @ %.1f | SELL 3x%d%s @ %.1f | BUY 2x%d%s @ %.1f",
-                    buyStrike, optType, buyQ.ask, sellStrike, optType, sellQ.bid, farBuyStrike, optType, farBuyQ.ask));
+                    buyStrike, optType, buyAsk, sellStrike, optType, sellBid, farBuyStrike, optType, farAsk));
                 opp.put("legList", List.of(
-                    Map.of("strike", buyStrike, "optionType", optType, "side", "BUY", "qty", 1, "price", buyQ.ask,
+                    Map.of("strike", buyStrike, "optionType", optType, "side", "BUY", "qty", 1, "price", buyAsk,
                         "symbol", getSymbol(quotes, underlying, expiry, buyStrike, optType)),
-                    Map.of("strike", sellStrike, "optionType", optType, "side", "SELL", "qty", 3, "price", sellQ.bid,
+                    Map.of("strike", sellStrike, "optionType", optType, "side", "SELL", "qty", 3, "price", sellBid,
                         "symbol", getSymbol(quotes, underlying, expiry, sellStrike, optType)),
-                    Map.of("strike", farBuyStrike, "optionType", optType, "side", "BUY", "qty", 2, "price", farBuyQ.ask,
+                    Map.of("strike", farBuyStrike, "optionType", optType, "side", "BUY", "qty", 2, "price", farAsk,
                         "symbol", getSymbol(quotes, underlying, expiry, farBuyStrike, optType))
                 ));
                 opp.put("edgePoints", round2(Math.abs(cost)));
