@@ -644,6 +644,97 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
   );
 }
 
+function AdvancedPayoff({ opp, legs, lotSize, spot, accentColor }) {
+  const points = useMemo(() => computePayoff(legs, lotSize, spot), [legs, lotSize, spot]);
+  const maxProfit = points.length > 0 ? Math.max(...points.map(p => p.pnl)) : 0;
+  const maxLoss = points.length > 0 ? Math.min(...points.map(p => p.pnl)) : 0;
+  const isRiskFree = maxLoss >= 0;
+  const rr = maxLoss < 0 ? Math.abs(maxProfit / maxLoss) : Infinity;
+  const costPerShare = legs.reduce((sum, l) => sum + (l.side === 'BUY' ? -l.price : l.price) * (l.qty || 1), 0);
+  const expiry = opp.expiry || opp.expiryDate || '--';
+
+  // Breakeven: find where payoff crosses zero
+  const breakevens = [];
+  for (let i = 1; i < points.length; i++) {
+    if ((points[i-1].pnl < 0 && points[i].pnl >= 0) || (points[i-1].pnl >= 0 && points[i].pnl < 0)) {
+      const ratio = Math.abs(points[i-1].pnl) / (Math.abs(points[i-1].pnl) + Math.abs(points[i].pnl));
+      breakevens.push(Math.round(points[i-1].s + (points[i].s - points[i-1].s) * ratio));
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Execution Legs */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-black text-slate-700">EXECUTION LEGS</span>
+            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">{expiry}</span>
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[10px] text-slate-400 font-semibold border-b border-slate-100">
+                <th className="text-left pb-2">Action</th>
+                <th className="text-left pb-2">Strike</th>
+                <th className="text-left pb-2">Type</th>
+                <th className="text-left pb-2">Qty</th>
+                <th className="text-right pb-2">Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {legs.map((l, i) => (
+                <tr key={i} className="border-b border-slate-50">
+                  <td className={`py-2 font-black ${l.side === 'SELL' ? 'text-red-500' : 'text-blue-600'}`}>{l.side}</td>
+                  <td className="py-2 font-mono text-slate-700">{l.strike}</td>
+                  <td className="py-2 text-slate-500">{l.optionType}</td>
+                  <td className="py-2 text-slate-500">{l.qty || 1}</td>
+                  <td className="py-2 text-right font-mono text-slate-700">₹{typeof l.price === 'number' ? l.price.toFixed(2) : l.price}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Stat Cards */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl border border-emerald-200/60 p-4">
+            <div className="text-[10px] font-black text-emerald-500 mb-1">MAX PROFIT</div>
+            <div className="text-xl font-black text-emerald-600">+₹{Math.round(maxProfit).toLocaleString()}</div>
+            <div className="text-[10px] text-emerald-500/70 mt-0.5">₹{Math.abs(costPerShare).toFixed(2)}/share × {lotSize}</div>
+          </div>
+          <div className={`rounded-xl border p-4 ${isRiskFree
+            ? 'bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200/60'
+            : 'bg-gradient-to-br from-red-50 to-rose-50 border-red-200/60'}`}>
+            <div className={`text-[10px] font-black mb-1 ${isRiskFree ? 'text-emerald-500' : 'text-red-500'}`}>MAX LOSS</div>
+            <div className={`text-xl font-black ${isRiskFree ? 'text-emerald-600' : 'text-red-600'}`}>
+              {isRiskFree ? 'Risk-Free' : `-₹${Math.abs(Math.round(maxLoss)).toLocaleString()}`}
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200/60 p-4">
+            <div className="text-[10px] font-black text-blue-500 mb-1">RISK:REWARD</div>
+            <div className="text-xl font-black text-blue-600">
+              {isRiskFree ? 'Risk-Free' : rr >= 10 ? `${Math.round(rr)}:1` : rr >= 1 ? `${rr.toFixed(1)}:1` : `1:${(1/rr).toFixed(1)}`}
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-violet-50 to-purple-50 rounded-xl border border-violet-200/60 p-4">
+            <div className="text-[10px] font-black text-violet-500 mb-1">POP (WIN RATE)</div>
+            <div className="text-xl font-black text-violet-600">{opp.estimatedWinRate ? `${Math.round(opp.estimatedWinRate)}%` : opp.winRate || '--'}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Breakeven Bar */}
+      <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200/40">
+        <span className="text-[10px] font-black text-slate-400">BREAKEVEN</span>
+        <span className="text-sm font-black text-slate-700">{breakevens.length > 0 ? breakevens.join(' / ') : '--'}</span>
+        <span className="text-[10px] text-slate-400 ml-auto">Net cost: ₹{costPerShare.toFixed(2)}/share × {lotSize} lot</span>
+      </div>
+
+      <PayoffChart legs={legs} lotSize={lotSize} spot={spot} accentColor={accentColor} />
+    </div>
+  );
+}
+
 function oppKey(o) {
   return o.action || `${o.underlying}-${o.strategyType}-${JSON.stringify((o.legList || []).map(l => l.strike))}`;
 }
@@ -690,7 +781,7 @@ function TopPickCards({ opps, topKeys, onEnter, accentColor, renderCardContent }
               </div>
               {isOpen && (
                 <div className="relative z-[2] px-4 pb-4">
-                  <PayoffChart legs={o.legList} lotSize={o.lotSize} spot={o.spotPrice} accentColor={accentColor} />
+                  <AdvancedPayoff opp={o} legs={o.legList} lotSize={o.lotSize} spot={o.spotPrice} accentColor={accentColor} />
                 </div>
               )}
             </div>
@@ -728,7 +819,7 @@ function ExpandableRows({ opps, colSpan, renderRow, getLegs, getLotSize, getSpot
         {isExpanded && (
           <tr>
             <td colSpan={colSpan + 2} className="px-4 py-3 bg-slate-50/50">
-              <PayoffChart legs={getLegs(o)} lotSize={getLotSize(o)} spot={getSpot(o)} accentColor={accentColor} />
+              <AdvancedPayoff opp={o} legs={getLegs(o)} lotSize={getLotSize(o)} spot={getSpot(o)} accentColor={accentColor} />
             </td>
           </tr>
         )}
@@ -2074,8 +2165,9 @@ function EnterTradeModal({ opp, onClose }) {
 
             {/* Payoff Chart */}
             {opp.legList && opp.legList.length > 0 && (
-              <div className="rounded-xl border border-slate-100 overflow-hidden">
-                <PayoffChart
+              <div className="rounded-xl border border-slate-100 overflow-hidden p-3">
+                <AdvancedPayoff
+                  opp={opp}
                   legs={opp.legList}
                   lotSize={opp.lotSize || 75}
                   spot={opp.spotPrice || opp.legList[0]?.strike || 24000}
