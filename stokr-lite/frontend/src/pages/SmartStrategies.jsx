@@ -3,144 +3,93 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import client from '../api/client';
 
 const TOP_PICK_STYLES = `
-@keyframes tpBorderRotate {
-  0% { --tp-angle: 0deg; }
-  100% { --tp-angle: 360deg; }
+@keyframes tpShine {
+  0% { left: -100%; }
+  50%, 100% { left: 150%; }
 }
-@keyframes tpShineSweep {
-  0% { transform: translateX(-100%) skewX(-15deg); }
-  100% { transform: translateX(300%) skewX(-15deg); }
+@keyframes tpGlow {
+  0%, 100% { box-shadow: 0 0 15px -3px rgba(251,191,36,0.5), 0 0 30px -5px rgba(139,92,246,0.3); }
+  33% { box-shadow: 0 0 20px -3px rgba(236,72,153,0.5), 0 0 35px -5px rgba(251,191,36,0.3); }
+  66% { box-shadow: 0 0 20px -3px rgba(139,92,246,0.5), 0 0 35px -5px rgba(236,72,153,0.3); }
 }
-@keyframes tpPulseGlow {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
+@keyframes tpBorderColor {
+  0%, 100% { border-color: #f59e0b; }
+  25% { border-color: #ec4899; }
+  50% { border-color: #8b5cf6; }
+  75% { border-color: #06b6d4; }
 }
-@keyframes tpBadgePulse {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 12px 2px rgba(251,191,36,0.4); }
-  50% { transform: scale(1.05); box-shadow: 0 0 20px 5px rgba(251,191,36,0.6); }
+@keyframes tpBadgeShine {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
 }
-@keyframes tpStarSpin {
-  0% { transform: rotate(0deg) scale(1); }
-  50% { transform: rotate(180deg) scale(1.2); }
-  100% { transform: rotate(360deg) scale(1); }
+@keyframes tpFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-2px); }
 }
-@property --tp-angle {
-  syntax: '<angle>';
-  initial-value: 0deg;
-  inherits: false;
-}
-
-/* ─── Row wrapper ─── */
-.top-pick-wrapper {
+.tp-card {
   position: relative;
-  margin: 6px 0;
-}
-.top-pick-wrapper::before {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: 12px;
-  padding: 2px;
-  background: conic-gradient(from var(--tp-angle, 0deg), #f59e0b, #ec4899, #8b5cf6, #06b6d4, #10b981, #f59e0b);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  animation: tpBorderRotate 3s linear infinite;
-  pointer-events: none;
-}
-.top-pick-wrapper::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 10px;
-  background: linear-gradient(135deg,
-    rgba(251,191,36,0.08) 0%,
-    rgba(139,92,246,0.06) 25%,
-    rgba(236,72,153,0.05) 50%,
-    rgba(6,182,212,0.06) 75%,
-    rgba(251,191,36,0.08) 100%);
-  pointer-events: none;
-}
-
-/* Shine sweep across the row */
-.top-pick-shine {
-  position: absolute;
-  inset: 0;
-  border-radius: 10px;
+  border: 2px solid #f59e0b;
+  border-radius: 16px;
   overflow: hidden;
-  pointer-events: none;
-  z-index: 1;
+  animation: tpGlow 4s ease-in-out infinite, tpBorderColor 6s linear infinite;
+  transition: transform 0.2s, box-shadow 0.2s;
+  cursor: pointer;
 }
-.top-pick-shine::after {
+.tp-card:hover {
+  transform: scale(1.005);
+  box-shadow: 0 0 30px -3px rgba(251,191,36,0.6), 0 0 50px -5px rgba(139,92,246,0.4) !important;
+}
+.tp-card::before {
   content: '';
   position: absolute;
   top: 0; bottom: 0;
-  width: 40%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
-  animation: tpShineSweep 3s ease-in-out infinite;
-}
-
-/* Glow dots at corners */
-.top-pick-wrapper .tp-dot {
-  position: absolute;
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: #fbbf24;
-  animation: tpPulseGlow 2s ease-in-out infinite;
+  width: 60%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), rgba(255,255,255,0.15), rgba(255,255,255,0.08), transparent);
+  left: -100%;
+  animation: tpShine 4s ease-in-out infinite;
   pointer-events: none;
-  z-index: 2;
+  z-index: 1;
 }
-.top-pick-wrapper .tp-dot-tl { top: -3px; left: -3px; }
-.top-pick-wrapper .tp-dot-tr { top: -3px; right: -3px; animation-delay: 0.5s; }
-.top-pick-wrapper .tp-dot-bl { bottom: -3px; left: -3px; animation-delay: 1s; }
-.top-pick-wrapper .tp-dot-br { bottom: -3px; right: -3px; animation-delay: 1.5s; }
-
-/* Inner row styles */
-tr.top-pick-row {
-  background: transparent !important;
+.tp-card-bg {
+  background: linear-gradient(135deg, rgba(255,251,235,0.95) 0%, rgba(254,243,199,0.6) 30%, rgba(252,231,243,0.4) 60%, rgba(237,233,254,0.5) 100%);
 }
-tr.top-pick-row:hover {
-  background: rgba(251,191,36,0.04) !important;
-}
-
-/* ─── Badge ─── */
-.top-pick-badge {
+.tp-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 5px 12px;
+  gap: 5px;
+  padding: 4px 14px;
   border-radius: 20px;
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 40%, #fbbf24 100%);
+  background: linear-gradient(90deg, #f59e0b, #d97706, #fbbf24, #f59e0b);
+  background-size: 300% 100%;
+  animation: tpBadgeShine 3s linear infinite;
   color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.tp-badge:hover {
+  filter: brightness(1.15);
+  transform: scale(1.08);
+  transition: all 0.15s;
+}
+.tp-rank-chip {
+  background: linear-gradient(135deg, #7c3aed 0%, #ec4899 100%);
+  color: white;
   font-size: 10px;
   font-weight: 900;
+  padding: 3px 10px;
+  border-radius: 12px;
   letter-spacing: 0.5px;
-  text-transform: uppercase;
-  animation: tpBadgePulse 2s ease-in-out infinite;
-  cursor: pointer;
-  border: none;
-  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(124,58,237,0.35);
+  animation: tpFloat 3s ease-in-out infinite;
 }
-.top-pick-badge .tp-star {
-  display: inline-block;
-  animation: tpStarSpin 4s linear infinite;
-  font-size: 11px;
-}
-
-/* ─── Rank indicator ─── */
-.tp-rank {
-  position: absolute;
-  top: -8px; left: 12px;
-  background: linear-gradient(135deg, #7c3aed, #ec4899);
-  color: white;
-  font-size: 9px;
-  font-weight: 900;
-  padding: 1px 8px;
-  border-radius: 10px;
-  z-index: 3;
-  letter-spacing: 0.5px;
-  box-shadow: 0 2px 6px rgba(124,58,237,0.3);
-}
+.tp-rank-chip.rank-1 { animation-delay: 0s; }
+.tp-rank-chip.rank-2 { animation-delay: 0.3s; background: linear-gradient(135deg, #0891b2 0%, #6366f1 100%); box-shadow: 0 2px 8px rgba(99,102,241,0.35); }
+.tp-rank-chip.rank-3 { animation-delay: 0.6s; background: linear-gradient(135deg, #059669 0%, #0891b2 100%); box-shadow: 0 2px 8px rgba(8,145,178,0.35); }
 `;
 
 const TABS = [
@@ -697,66 +646,70 @@ function getTopKeys(opps, scoreField, count = 3) {
   return topMap;
 }
 
+function TopPickCards({ opps, topKeys, onEnter, accentColor, renderCardContent }) {
+  const [expandedKey, setExpandedKey] = useState(null);
+  const topOpps = [...opps].filter(o => topKeys.has(oppKey(o))).sort((a, b) => topKeys.get(oppKey(a)) - topKeys.get(oppKey(b)));
+  if (topOpps.length === 0) return null;
+  return (
+    <div className="space-y-3 mb-5">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-black text-slate-700">Best Opportunities</span>
+        <span className="text-[10px] text-amber-500 font-bold animate-pulse">LIVE</span>
+      </div>
+      <div className="grid grid-cols-1 gap-3">
+        {topOpps.map((o) => {
+          const key = oppKey(o);
+          const rank = topKeys.get(key);
+          const isOpen = expandedKey === key;
+          return (
+            <div key={key} className="tp-card tp-card-bg" onClick={() => setExpandedKey(isOpen ? null : key)}>
+              <div className="relative z-[2] p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`tp-rank-chip rank-${rank}`}>#{rank} TOP PICK</span>
+                    <span className="text-xs font-black text-slate-700">{o.underlying}</span>
+                    <span className="text-[10px] text-slate-400">{o.expiry || o.expiryDate}</span>
+                  </div>
+                  <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                    <button onClick={() => onEnter?.(o)} className="tp-badge">
+                      ★ ENTER TRADE
+                    </button>
+                    <span className={`inline-block transition-transform duration-200 text-slate-400 text-sm ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+                  </div>
+                </div>
+                {renderCardContent(o, rank)}
+              </div>
+              {isOpen && (
+                <div className="relative z-[2] px-4 pb-4">
+                  <PayoffChart legs={o.legList} lotSize={o.lotSize} spot={o.spotPrice} accentColor={accentColor} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ExpandableRows({ opps, colSpan, renderRow, getLegs, getLotSize, getSpot, accentColor, onEnter, topKeys }) {
   const [expandedKey, setExpandedKey] = useState(null);
   return opps.map((o, i) => {
     const key = oppKey(o);
     const isExpanded = expandedKey === key;
-    const topRank = topKeys && topKeys.get(key);
-    const isTop = !!topRank;
-
-    if (isTop) {
-      return (
-        <Fragment key={key}>
-          {/* Spacer row for the animated wrapper */}
-          <tr><td colSpan={colSpan + 2} className="p-0 border-none" style={{ padding: '4px 0 0' }} /></tr>
-          <tr><td colSpan={colSpan + 2} className="p-0 border-none">
-            <div className="top-pick-wrapper">
-              <div className="tp-dot tp-dot-tl" />
-              <div className="tp-dot tp-dot-tr" />
-              <div className="tp-dot tp-dot-bl" />
-              <div className="tp-dot tp-dot-br" />
-              <div className="top-pick-shine" />
-              <div className="tp-rank">#{topRank} TOP PICK</div>
-              <table className="w-full" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
-                <tbody>
-                  <tr className="top-pick-row cursor-pointer" onClick={() => setExpandedKey(isExpanded ? null : key)}>
-                    {renderRow(o, i, isTop)}
-                    <td className="px-2 py-3 text-center" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => onEnter?.(o)} className="top-pick-badge" title="Top pick — enter this trade">
-                        <span className="tp-star">★</span> TOP PICK
-                      </button>
-                    </td>
-                    <td className="px-2 py-3 text-center">
-                      <span className={`inline-block transition-transform duration-200 text-slate-400 text-xs ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
-                    </td>
-                  </tr>
-                  {isExpanded && (
-                    <tr>
-                      <td colSpan={colSpan + 2} className="px-4 py-3 bg-white/80">
-                        <PayoffChart legs={getLegs(o)} lotSize={getLotSize(o)} spot={getSpot(o)} accentColor={accentColor} />
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </td></tr>
-          <tr><td colSpan={colSpan + 2} className="p-0 border-none" style={{ padding: '0 0 4px' }} /></tr>
-        </Fragment>
-      );
-    }
-
+    const isTop = topKeys && topKeys.has(key);
     return (
       <Fragment key={key}>
         <tr className={`cursor-pointer transition-colors ${isExpanded ? 'bg-slate-50' : ''}`}
           onClick={() => setExpandedKey(isExpanded ? null : key)}>
-          {renderRow(o, i, false)}
+          {renderRow(o, i, isTop)}
           <td className="px-2 py-3 text-center" onClick={e => e.stopPropagation()}>
             <button onClick={() => onEnter?.(o)}
-              className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-[10px] font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all"
+              className={`px-2.5 py-1.5 rounded-lg text-white text-[10px] font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all ${
+                isTop ? 'bg-gradient-to-r from-amber-500 to-orange-500 ring-1 ring-amber-300/50' : 'bg-gradient-to-r from-violet-500 to-indigo-500'
+              }`}
               title="Enter this trade">
-              Enter
+              {isTop ? '★ TOP' : 'Enter'}
             </button>
           </td>
           <td className="px-2 py-3 text-center">
@@ -890,6 +843,17 @@ function RatioContent({ opps, onEnter }) {
   const topKeys = useMemo(() => getTopKeys(opps, 'riskReward'), [opps]);
   return (
     <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#7c3aed"
+        renderCardContent={(o, rank) => (
+          <div className="grid grid-cols-6 gap-3 text-center">
+            <div><div className="text-[9px] text-slate-400 font-semibold">Type</div><div className="text-xs font-black text-slate-700">{o.optionType}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Buy</div><div className="text-xs font-mono text-slate-600">{o.buyStrike} @ ₹{o.buyPrice}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Sell 3x</div><div className="text-xs font-mono font-bold text-red-600">{o.sellStrike} @ ₹{o.sellPrice}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Net Cost</div><div className={`text-sm font-black ${o.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>₹{Math.round(o.netCostRs).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Max Reward</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">R:R</div><div className="text-sm font-black text-violet-600">1:{Math.round(o.riskReward)}</div></div>
+          </div>
+        )} />
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <Stat label="Best R:R" value={`1:${Math.round(b.riskReward)}`} color="text-emerald-600" icon="🎯" />
         <Stat label="Max Risk" value={`₹${Math.round(b.maxLoss).toLocaleString()}`} sub="Per lot" color="text-red-500" icon="🛡️" />
@@ -968,6 +932,17 @@ function BWBContent({ opps, onEnter }) {
       {filtered.length === 0 ? (
         <div className="text-center py-10 text-slate-400 text-sm">No {bwbType === 'PE' ? 'PUT' : 'CALL'} BWB opportunities right now</div>
       ) : (<>
+        <TopPickCards opps={filtered} topKeys={topKeys} onEnter={onEnter} accentColor={bwbType === 'PE' ? '#10b981' : '#3b82f6'}
+          renderCardContent={(o) => (
+            <div className="grid grid-cols-6 gap-3 text-center">
+              <div><div className="text-[9px] text-slate-400 font-semibold">Near Wing</div><div className="text-xs font-mono text-slate-600">{o.nearWingStrike}</div></div>
+              <div><div className="text-[9px] text-slate-400 font-semibold">Body 2x</div><div className="text-xs font-mono font-bold text-red-600">{o.bodyStrike}</div></div>
+              <div><div className="text-[9px] text-slate-400 font-semibold">Far Wing</div><div className="text-xs font-mono text-slate-600">{o.farWingStrike}</div></div>
+              <div><div className="text-[9px] text-slate-400 font-semibold">Credit</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.creditRs).toLocaleString()}</div></div>
+              <div><div className="text-[9px] text-slate-400 font-semibold">Max Profit</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</div></div>
+              <div><div className="text-[9px] text-slate-400 font-semibold">Max Loss</div><div className="text-sm font-black text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</div></div>
+            </div>
+          )} />
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <Stat label="Best Credit" value={`₹${Math.round(b.creditRs).toLocaleString()}`} color="text-emerald-600" icon="💵" />
           <Stat label="Zero Risk Side" value={b.zeroRiskSide} color={bwbType === 'PE' ? 'text-emerald-600' : 'text-blue-600'} icon="🛡️" />
@@ -1027,6 +1002,17 @@ function SkewContent({ opps, onEnter }) {
   const topKeys = useMemo(() => getTopKeys(opps, 'skewEdge'), [opps]);
   return (
     <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#0891b2"
+        renderCardContent={(o) => (
+          <div className="grid grid-cols-6 gap-3 text-center">
+            <div><div className="text-[9px] text-slate-400 font-semibold">Put Spread</div><div className="text-xs font-mono text-slate-600">S{o.putSellStrike}/B{o.putBuyStrike}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Call Spread</div><div className="text-xs font-mono text-slate-600">B{o.callBuyStrike}/S{o.callSellStrike}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Skew Edge</div><div className="text-sm font-black text-cyan-600">{o.skewEdge}%</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">If Flat</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.scenarioFlat).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">If Up</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.scenarioUp).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">If Down</div><div className="text-sm font-black text-red-500">₹{Math.round(o.scenarioDown).toLocaleString()}</div></div>
+          </div>
+        )} />
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <Stat label="IV Skew Edge" value={`${b.skewEdge}%`} color="text-cyan-600" icon="📊" />
         <Stat label="Net Cost" value={`₹${Math.round(b.netCostRs).toLocaleString()}`} sub={b.netCostRs > 0 ? 'Debit' : 'Credit'} color={b.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'} icon="💵" />
@@ -1082,6 +1068,16 @@ function ThetaContent({ opps, onEnter }) {
 
   return (
     <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#f59e0b"
+        renderCardContent={(o) => (
+          <div className="grid grid-cols-5 gap-3 text-center">
+            <div><div className="text-[9px] text-slate-400 font-semibold">Net Credit</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.netCreditRs ?? 0).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Expected P&L</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.expectedProfitRs ?? o.dailyDecayRs ?? 0).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Theta Decay</div><div className="text-sm font-black text-amber-600">{o.thetaDecayExpected}%</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Win Rate</div><div className="text-sm font-black text-blue-600">{o.winRate || '--'}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">DTE</div><div className="text-sm font-black text-slate-700">{o.dte}d</div></div>
+          </div>
+        )} />
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <Stat label="Status" value={isExpiryDay ? 'EXPIRY DAY' : `${b.dte}d to Expiry`} color={isExpiryDay ? 'text-emerald-600' : 'text-amber-600'} icon={isExpiryDay ? '🟢' : '🟡'} />
         <Stat label="Window" value={b.window?.split(' ')[0] || '--'} sub={b.isOptimalWindow ? 'GO NOW!' : 'Wait for optimal'} color={b.isOptimalWindow ? 'text-emerald-600' : 'text-slate-500'} icon="⏰" />
@@ -1149,6 +1145,16 @@ function BoxContent({ opps, onEnter }) {
   const topKeys = useMemo(() => getTopKeys(opps, 'netEdgeRs'), [opps]);
   return (
     <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#e11d48"
+        renderCardContent={(o) => (
+          <div className="grid grid-cols-5 gap-3 text-center">
+            <div><div className="text-[9px] text-slate-400 font-semibold">Edge</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.netEdgeRs).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Return</div><div className="text-sm font-black text-emerald-600">{o.returnPct}%</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Annualized</div><div className="text-sm font-black text-blue-600">{o.annualizedReturn}%</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Strikes</div><div className="text-xs font-mono text-slate-600">{o.lowerStrike}—{o.upperStrike}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Risk</div><div className="text-sm font-black text-emerald-600">{o.riskLevel}</div></div>
+          </div>
+        )} />
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <Stat label="Best Edge" value={`₹${Math.round(b.netEdgeRs).toLocaleString()}`} color="text-emerald-600" icon="💎" />
         <Stat label="Return" value={`${b.returnPct}%`} color="text-emerald-600" icon="📈" />
@@ -1204,6 +1210,16 @@ function JadeContent({ opps, onEnter }) {
   const topKeys = useMemo(() => getTopKeys(opps, 'riskRewardRatio'), [opps]);
   return (
     <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#16a34a"
+        renderCardContent={(o) => (
+          <div className="grid grid-cols-5 gap-3 text-center">
+            <div><div className="text-[9px] text-slate-400 font-semibold">Net Credit</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.netCreditRs || o.creditRs).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Max Loss</div><div className="text-sm font-black text-red-500">₹{Math.round(o.maxLoss || o.maxLossDown).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">R:R</div><div className="text-sm font-black text-blue-600">{(o.riskRewardRatio || 0).toFixed(2)}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Win Rate</div><div className="text-sm font-black text-emerald-600">{Math.round(o.estimatedWinRate)}%</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Flat P&L</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.scenarioFlat).toLocaleString()}</div></div>
+          </div>
+        )} />
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
         <Stat label="Best Credit" value={`₹${Math.round(b.netCreditRs || b.creditRs).toLocaleString()}`} sub="After costs" color="text-emerald-600" icon="💵" />
         <Stat label="Max Loss" value={`₹${Math.round(b.maxLoss || b.maxLossDown).toLocaleString()}`} sub="Defined risk" color="text-red-500" icon="🛡️" />
@@ -1260,6 +1276,16 @@ function CalendarContent({ opps, onEnter }) {
   const topKeys = useMemo(() => getTopKeys(opps, 'dailyThetaEdgeRs'), [opps]);
   return (
     <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#0284c7"
+        renderCardContent={(o) => (
+          <div className="grid grid-cols-5 gap-3 text-center">
+            <div><div className="text-[9px] text-slate-400 font-semibold">IV Edge</div><div className="text-sm font-black text-sky-600">{o.ivEdge}%</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Daily θ</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.dailyThetaEdgeRs).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Expected P&L</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.expectedProfitRs).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Strike</div><div className="text-xs font-mono text-slate-700">{o.strike} {o.optionType}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Spread</div><div className="text-xs text-slate-500">{o.nearExpiry}→{o.farExpiry}</div></div>
+          </div>
+        )} />
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <Stat label="IV Edge" value={`${b.ivEdge}%`} color="text-sky-600" icon="📊" />
         <Stat label="Daily Theta" value={`₹${Math.round(b.dailyThetaEdgeRs).toLocaleString()}`} sub="Per lot/day" color="text-emerald-600" icon="⏰" />
@@ -1356,49 +1382,20 @@ function IronCondorContent({ opps, onEnter }) {
   const sort = useSort('score');
   const b = opps[0];
   const sorted = sort.sorted(opps);
-  const top3 = sorted.slice(0, 3);
   const topKeys = useMemo(() => getTopKeys(opps, 'score'), [opps]);
   return (
     <div className="space-y-5">
-      {/* Top 3 Picks Showcase */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {top3.map((t, i) => (
-          <div key={i} className={`relative rounded-2xl p-4 border overflow-hidden ${
-            i === 0 ? 'bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-amber-200/60 shadow-lg shadow-amber-100/50'
-            : i === 1 ? 'bg-gradient-to-br from-slate-50 to-gray-50 border-slate-200/60 shadow-md'
-            : 'bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200/40 shadow-sm'
-          }`}>
-            <div className="flex items-center justify-between mb-2">
-              <RankBadge rank={i + 1} />
-              <span className="text-[10px] font-bold text-slate-500 uppercase">{t.underlying}</span>
-            </div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="px-2 py-0.5 rounded-md text-[9px] font-black bg-indigo-100 text-indigo-700">{t.putSellStrike} — {t.callSellStrike}</span>
-              <span className="text-[9px] text-slate-400">profit zone</span>
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div>
-                <div className="text-[9px] text-slate-400 font-semibold">Credit</div>
-                <div className="text-sm font-black text-emerald-600">₹{Math.round(t.creditRs).toLocaleString()}</div>
-              </div>
-              <div>
-                <div className="text-[9px] text-slate-400 font-semibold">Max Loss</div>
-                <div className="text-sm font-black text-red-500">₹{Math.round(t.maxLoss).toLocaleString()}</div>
-              </div>
-              <div>
-                <div className="text-[9px] text-slate-400 font-semibold">R:R</div>
-                <div className="text-sm font-black text-violet-600">{formatRR(t.rewardRiskRatio)}</div>
-              </div>
-            </div>
-            <div className="mt-2 flex items-center justify-between">
-              <ScoreMeter score={t.score} />
-              <span className="text-[10px] font-bold text-emerald-600">{Math.round(t.estimatedWinRate)}% win</span>
-            </div>
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#6366f1"
+        renderCardContent={(o) => (
+          <div className="grid grid-cols-5 gap-3 text-center">
+            <div><div className="text-[9px] text-slate-400 font-semibold">Credit</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.creditRs).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Max Loss</div><div className="text-sm font-black text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">R:R</div><div className="text-sm font-black text-violet-600">{formatRR(o.rewardRiskRatio)}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Score</div><div className="text-sm font-black text-indigo-600"><ScoreMeter score={o.score} /></div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Win Rate</div><div className="text-sm font-black text-emerald-600">{Math.round(o.estimatedWinRate)}%</div></div>
           </div>
-        ))}
-      </div>
+        )} />
 
-      {/* Summary Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <Stat label="Best Score" value={b.score} sub="Rank #1" color="text-indigo-600" icon="⭐" />
         <Stat label="Top Credit" value={`₹${Math.round(b.creditRs).toLocaleString()}`} sub={`${b.credit} pts`} color="text-emerald-600" icon="💰" />
