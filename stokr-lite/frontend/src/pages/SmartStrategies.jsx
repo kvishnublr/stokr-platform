@@ -545,32 +545,37 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
 }
 
 function ExpandableRows({ opps, colSpan, renderRow, getLegs, getLotSize, getSpot, accentColor, onEnter }) {
-  const [expanded, setExpanded] = useState(null);
-  return opps.map((o, i) => (
-    <Fragment key={i}>
-      <tr className={`cursor-pointer transition-colors ${expanded === i ? 'bg-slate-50' : ''}`}
-        onClick={() => setExpanded(expanded === i ? null : i)}>
-        {renderRow(o, i)}
-        <td className="px-2 py-3 text-center" onClick={e => e.stopPropagation()}>
-          <button onClick={() => onEnter?.(o)}
-            className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-[10px] font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all"
-            title="Enter this trade">
-            Enter
-          </button>
-        </td>
-        <td className="px-2 py-3 text-center">
-          <span className={`inline-block transition-transform duration-200 text-slate-400 text-xs ${expanded === i ? 'rotate-180' : ''}`}>▼</span>
-        </td>
-      </tr>
-      {expanded === i && (
-        <tr>
-          <td colSpan={colSpan + 2} className="px-4 py-3 bg-slate-50/50">
-            <PayoffChart legs={getLegs(o)} lotSize={getLotSize(o)} spot={getSpot(o)} accentColor={accentColor} />
+  const [expandedKey, setExpandedKey] = useState(null);
+  const oppKey = (o) => o.action || `${o.underlying}-${o.strategyType}-${JSON.stringify((o.legList || []).map(l => l.strike))}`;
+  return opps.map((o, i) => {
+    const key = oppKey(o);
+    const isExpanded = expandedKey === key;
+    return (
+      <Fragment key={key}>
+        <tr className={`cursor-pointer transition-colors ${isExpanded ? 'bg-slate-50' : ''}`}
+          onClick={() => setExpandedKey(isExpanded ? null : key)}>
+          {renderRow(o, i)}
+          <td className="px-2 py-3 text-center" onClick={e => e.stopPropagation()}>
+            <button onClick={() => onEnter?.(o)}
+              className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-[10px] font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all"
+              title="Enter this trade">
+              Enter
+            </button>
+          </td>
+          <td className="px-2 py-3 text-center">
+            <span className={`inline-block transition-transform duration-200 text-slate-400 text-xs ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
           </td>
         </tr>
-      )}
-    </Fragment>
-  ));
+        {isExpanded && (
+          <tr>
+            <td colSpan={colSpan + 2} className="px-4 py-3 bg-slate-50/50">
+              <PayoffChart legs={getLegs(o)} lotSize={getLotSize(o)} spot={getSpot(o)} accentColor={accentColor} />
+            </td>
+          </tr>
+        )}
+      </Fragment>
+    );
+  });
 }
 
 function useSort(defaultField = null, defaultDir = 'desc') {
