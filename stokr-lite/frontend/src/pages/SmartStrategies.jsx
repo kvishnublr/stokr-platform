@@ -101,6 +101,7 @@ const TABS = [
   { id: 'jade', label: 'Jade Lizard', shortLabel: 'Jade', icon: '🦎', risk: 'LOW', desc: 'Zero upside risk, 70%+ win', gradient: 'from-lime-500 via-green-500 to-emerald-500', lightBg: 'from-lime-50 to-green-50', text: 'green', accent: '#16a34a', ring: 'ring-green-500/30' },
   { id: 'calendar', label: 'Calendar Edge', shortLabel: 'Calendar', icon: '📅', risk: 'LOW', desc: 'Time decay differential', gradient: 'from-sky-500 via-blue-500 to-indigo-500', lightBg: 'from-sky-50 to-blue-50', text: 'sky', accent: '#0284c7', ring: 'ring-sky-500/30' },
   { id: 'condor', label: 'Iron Condor', shortLabel: 'Condor', icon: '🦅', risk: 'LOW', desc: 'Range-bound, 70-80% win', gradient: 'from-indigo-500 via-purple-500 to-pink-500', lightBg: 'from-indigo-50 to-purple-50', text: 'indigo', accent: '#6366f1', ring: 'ring-indigo-500/30' },
+  { id: 'adaptive', label: 'Adaptive AI', shortLabel: 'Adaptive', icon: '🧠', risk: 'SMART', desc: 'Regime-aware dynamic strategies', gradient: 'from-fuchsia-500 via-pink-500 to-rose-500', lightBg: 'from-fuchsia-50 to-rose-50', text: 'fuchsia', accent: '#d946ef', ring: 'ring-fuchsia-500/30' },
 ];
 
 const SCAN_URLS = {
@@ -112,6 +113,7 @@ const SCAN_URLS = {
   jade: '/smart-strategies/jade-lizard/scan',
   calendar: '/smart-strategies/calendar-spread/scan',
   condor: '/smart-strategies/iron-condor/scan',
+  adaptive: '/smart-strategies/adaptive/scan',
 };
 
 const STRATEGY_INFO = {
@@ -123,12 +125,13 @@ const STRATEGY_INFO = {
   jade: { structure: 'SELL OTM Put + SELL OTM Call + BUY Further OTM Call', detail: 'Short put + bear call spread. Zero upside risk when credit >= call spread width. 70-80% estimated win rate with defined risk.', emptyMsg: 'No jade lizard setups found. Requires credit > 40% of call spread width. Best in moderate IV environments with slight bullish bias.' },
   calendar: { structure: 'SELL Near-Expiry + BUY Far-Expiry (Same Strike, Same Type)', detail: 'Exploits faster time decay of near-term options. Profits from theta differential and IV term structure. Low risk, defined max loss.', emptyMsg: 'No calendar spread edge found. Requires meaningful theta differential between near and far expiry. Best when near-term IV > far-term IV.' },
   condor: { structure: 'BUY OTM Put + SELL OTM Put + SELL OTM Call + BUY OTM Call', detail: 'Defined-risk range-bound strategy. Max profit = net credit when price stays between short strikes. 70-80% win rate. Both sides protected by long wings.', emptyMsg: 'No iron condor setups found. Requires net credit > 30% of wing width. Best in sideways/range-bound markets with moderate IV.' },
+  adaptive: { structure: 'Dynamically constructed based on market regime', detail: 'Reads IV rank, trend, skew, and expected move to construct the optimal strategy structure. Iron Butterfly in high IV, Ratio Spreads for direction, Dynamic Condors at expected move boundaries, Skew Exploiter for mispricing, Momentum Ladders for trends, Vol Crush plays.', emptyMsg: 'No adaptive setups found. The scanner requires live market data to detect regime and construct strategies.' },
 };
 
 const STRAT_LABELS = {
   BROKEN_WING_BUTTERFLY: 'BWB', RATIO_BUTTERFLY: 'Ratio', SKEW_HARVEST: 'Skew',
   EXPIRY_THETA_CRUSH: 'Theta', BOX_SPREAD_ARB: 'Box', JADE_LIZARD: 'Jade',
-  CALENDAR_SPREAD_EDGE: 'Calendar', IRON_CONDOR: 'Condor',
+  CALENDAR_SPREAD_EDGE: 'Calendar', IRON_CONDOR: 'Condor', ADAPTIVE: 'Adaptive',
 };
 
 // Theoretical payoff legs for empty state diagrams (representative example strikes)
@@ -169,6 +172,12 @@ const THEORETICAL_LEGS = {
   calendar: (atm) => [
     { strike: atm, optionType: 'CE', side: 'SELL', qty: 1, price: 80 },
     { strike: atm, optionType: 'CE', side: 'BUY', qty: 1, price: 140 },
+  ],
+  adaptive: (atm) => [
+    { strike: atm, optionType: 'CE', side: 'SELL', qty: 1, price: 120 },
+    { strike: atm, optionType: 'PE', side: 'SELL', qty: 1, price: 120 },
+    { strike: atm + 400, optionType: 'CE', side: 'BUY', qty: 1, price: 25 },
+    { strike: atm - 400, optionType: 'PE', side: 'BUY', qty: 1, price: 25 },
   ],
   condor: (atm) => [
     { strike: atm - 400, optionType: 'PE', side: 'BUY', qty: 1, price: 15 },
@@ -805,6 +814,7 @@ function TabContent({ tab, underlying, tabInfo, onEnter }) {
       case 'jade': return <JadeContent opps={opps} onEnter={onEnter} />;
       case 'calendar': return <CalendarContent opps={opps} onEnter={onEnter} />;
       case 'condor': return <IronCondorContent opps={opps} onEnter={onEnter} />;
+      case 'adaptive': return <AdaptiveContent opps={opps} onEnter={onEnter} />;
       default: return null;
     }
   })();
@@ -1472,6 +1482,140 @@ function IronCondorContent({ opps, onEnter }) {
   );
 }
 
+/* ──────── ADAPTIVE AI ──────── */
+const ADAPTIVE_TYPE_META = {
+  IRON_BUTTERFLY: { label: 'Iron Butterfly', icon: '🦋', color: 'text-purple-600', bg: 'bg-purple-50 border-purple-200', tag: 'bg-purple-100 text-purple-700' },
+  RATIO_SPREAD: { label: 'Ratio Spread', icon: '📐', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', tag: 'bg-amber-100 text-amber-700' },
+  DYNAMIC_CONDOR: { label: 'Dynamic Condor', icon: '🦅', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', tag: 'bg-blue-100 text-blue-700' },
+  SKEW_EXPLOITER: { label: 'Skew Exploiter', icon: '⚡', color: 'text-cyan-600', bg: 'bg-cyan-50 border-cyan-200', tag: 'bg-cyan-100 text-cyan-700' },
+  MOMENTUM_LADDER: { label: 'Momentum Ladder', icon: '🚀', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', tag: 'bg-emerald-100 text-emerald-700' },
+  VOL_CRUSH: { label: 'Vol Crush', icon: '💥', color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200', tag: 'bg-rose-100 text-rose-700' },
+};
+const REGIME_DISPLAY = {
+  TRENDING_UP: { label: 'Trending Up', icon: '📈', color: 'text-emerald-600', bg: 'bg-emerald-100' },
+  TRENDING_DOWN: { label: 'Trending Down', icon: '📉', color: 'text-red-500', bg: 'bg-red-100' },
+  SIDEWAYS: { label: 'Sideways', icon: '➡️', color: 'text-amber-600', bg: 'bg-amber-100' },
+  HIGH_VOLATILE: { label: 'High Volatile', icon: '🌊', color: 'text-purple-600', bg: 'bg-purple-100' },
+};
+
+function AdaptiveContent({ opps, onEnter }) {
+  const sort = useSort('adaptiveScore');
+  const b = opps[0];
+  const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'adaptiveScore'), [opps]);
+
+  const regimeInfo = REGIME_DISPLAY[b.regime] || REGIME_DISPLAY.SIDEWAYS;
+  const typeCounts = useMemo(() => {
+    const counts = {};
+    opps.forEach(o => { counts[o.adaptiveType] = (counts[o.adaptiveType] || 0) + 1; });
+    return counts;
+  }, [opps]);
+
+  return (
+    <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#d946ef"
+        renderCardContent={(o) => {
+          const meta = ADAPTIVE_TYPE_META[o.adaptiveType] || ADAPTIVE_TYPE_META.DYNAMIC_CONDOR;
+          return (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border ${meta.tag} border-current/20`}>{meta.icon} {meta.label}</span>
+                <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold ${regimeInfo.bg} ${regimeInfo.color}`}>{regimeInfo.icon} {o.regime}</span>
+                <span className="text-[9px] text-slate-400">IV Rank: {Math.round(o.ivRank)}%</span>
+              </div>
+              <div className="text-[10px] text-slate-500 italic leading-relaxed">{o.adaptiveReason}</div>
+              <div className="grid grid-cols-5 gap-3 text-center mt-1">
+                <div><div className="text-[9px] text-slate-400 font-semibold">Max Profit</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</div></div>
+                <div><div className="text-[9px] text-slate-400 font-semibold">Max Loss</div><div className="text-sm font-black text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</div></div>
+                <div><div className="text-[9px] text-slate-400 font-semibold">R:R</div><div className="text-sm font-black text-blue-600">{(o.riskRewardRatio || 0).toFixed(2)}</div></div>
+                <div><div className="text-[9px] text-slate-400 font-semibold">Win Rate</div><div className="text-sm font-black text-emerald-600">{Math.round(o.estimatedWinRate)}%</div></div>
+                <div><div className="text-[9px] text-slate-400 font-semibold">Score</div><div className="text-sm font-black text-fuchsia-600">{o.adaptiveScore}</div></div>
+              </div>
+            </div>
+          );
+        }} />
+
+      {/* Regime + Strategy Mix Banner */}
+      <div className="bg-gradient-to-r from-fuchsia-50 via-pink-50 to-rose-50 rounded-2xl border border-fuchsia-200/60 p-5">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-fuchsia-500 to-pink-500 flex items-center justify-center shrink-0 shadow-lg shadow-fuchsia-400/20">
+              <span className="text-xl">🧠</span>
+            </div>
+            <div>
+              <div className="text-sm font-black text-fuchsia-800">Adaptive Engine — {regimeInfo.icon} {regimeInfo.label} Regime</div>
+              <div className="text-xs text-fuchsia-600/80 mt-0.5">IV Rank: {Math.round(b.ivRank)}% • ATM IV: {b.atmIV || '--'}% • {opps.length} strategies constructed</div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {Object.entries(typeCounts).map(([type, count]) => {
+              const meta = ADAPTIVE_TYPE_META[type] || {};
+              return <span key={type} className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${meta.tag || 'bg-slate-100 text-slate-600'} border-current/20`}>{meta.icon} {meta.label} ({count})</span>;
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Stat label="Best Score" value={b.adaptiveScore} color="text-fuchsia-600" icon="⭐" />
+        <Stat label="Regime" value={regimeInfo.label} color={regimeInfo.color} icon={regimeInfo.icon} />
+        <Stat label="IV Rank" value={`${Math.round(b.ivRank)}%`} color={b.ivRank > 60 ? 'text-red-500' : b.ivRank > 40 ? 'text-amber-600' : 'text-emerald-600'} icon="📊" />
+        <Stat label="Best R:R" value={`${Math.max(...opps.map(o => o.riskRewardRatio || 0)).toFixed(2)}`} color="text-blue-600" icon="🎯" />
+        <Stat label="Strategies" value={opps.length} sub={`${Object.keys(typeCounts).length} types`} color="text-fuchsia-600" icon="🧠" />
+      </div>
+
+      <TableShell tab="adaptive" count={opps.length} headerContent={
+        <tr>
+          <SortTh field="adaptiveScore" label="Score" sort={sort} className="text-center" />
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <th className="px-4 py-3 text-left">Strategy</th>
+          <th className="px-4 py-3 text-left">Regime</th>
+          <th className="px-4 py-3 text-left">Why</th>
+          <SortTh field="maxProfit" label="Max Profit" sort={sort} className="text-right" />
+          <SortTh field="maxLoss" label="Max Loss" sort={sort} className="text-right" />
+          <SortTh field="riskRewardRatio" label="R:R" sort={sort} className="text-right" />
+          <SortTh field="estimatedWinRate" label="Win %" sort={sort} className="text-right" />
+          <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
+        </tr>
+      }>
+        <ExpandableRows opps={sorted} colSpan={9} accentColor="#d946ef" onEnter={onEnter} topKeys={topKeys}
+          getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+          renderRow={(o, i, isTop) => {
+            const meta = ADAPTIVE_TYPE_META[o.adaptiveType] || ADAPTIVE_TYPE_META.DYNAMIC_CONDOR;
+            const reg = REGIME_DISPLAY[o.regime] || REGIME_DISPLAY.SIDEWAYS;
+            return (<>
+              <td className="px-3 py-3 text-center">
+                <span className={`inline-flex items-center justify-center w-9 h-9 rounded-xl font-black text-sm ${
+                  o.adaptiveScore >= 70 ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-md shadow-emerald-200/50'
+                  : o.adaptiveScore >= 50 ? 'bg-gradient-to-br from-amber-400 to-orange-400 text-white shadow-md shadow-amber-200/50'
+                  : 'bg-slate-100 text-slate-600'
+                }`}>{Math.round(o.adaptiveScore)}</span>
+              </td>
+              <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
+              <td className="px-4 py-3">
+                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black border ${meta.tag} border-current/20`}>
+                  {meta.icon} {meta.label}
+                </span>
+              </td>
+              <td className="px-4 py-3">
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-bold ${reg.bg} ${reg.color}`}>
+                  {reg.icon} {reg.label}
+                </span>
+              </td>
+              <td className="px-4 py-3 text-[10px] text-slate-500 max-w-[200px] truncate" title={o.adaptiveReason}>{o.adaptiveReason}</td>
+              <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</td>
+              <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</td>
+              <td className="px-4 py-3 text-right font-mono font-bold text-blue-600">{(o.riskRewardRatio || 0).toFixed(2)}</td>
+              <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">{Math.round(o.estimatedWinRate)}%</td>
+            </>);
+          }}
+        />
+      </TableShell>
+    </div>
+  );
+}
+
 /* ──────── AUTO-ENTRY PANEL ──────── */
 // ──── MARKET REGIME PANEL ────
 function MarketRegimePanel() {
@@ -1855,7 +1999,7 @@ function EnterTradeModal({ opp, onClose }) {
   const perLotProfit = opp.maxProfit || opp.creditRs || opp.netEdgeRs || opp.edgeAfterCosts || 0;
   const maxLoss = perLotLoss * lots;
   const maxProfit = perLotProfit * lots;
-  const tabData = TABS.find(t => (t.id === 'condor' && stratType === 'IRON_CONDOR') || (t.id === 'jade' && stratType === 'JADE_LIZARD') || (t.id === 'ratio' && stratType === 'RATIO_BUTTERFLY') || (t.id === 'bwb' && stratType === 'BROKEN_WING_BUTTERFLY') || (t.id === 'skew' && stratType === 'SKEW_HARVEST') || (t.id === 'box' && stratType === 'BOX_SPREAD_ARB') || (t.id === 'theta' && stratType === 'EXPIRY_THETA_CRUSH') || (t.id === 'calendar' && stratType === 'CALENDAR_SPREAD_EDGE')) || TABS[0];
+  const tabData = TABS.find(t => (t.id === 'condor' && stratType === 'IRON_CONDOR') || (t.id === 'jade' && stratType === 'JADE_LIZARD') || (t.id === 'ratio' && stratType === 'RATIO_BUTTERFLY') || (t.id === 'bwb' && stratType === 'BROKEN_WING_BUTTERFLY') || (t.id === 'skew' && stratType === 'SKEW_HARVEST') || (t.id === 'box' && stratType === 'BOX_SPREAD_ARB') || (t.id === 'theta' && stratType === 'EXPIRY_THETA_CRUSH') || (t.id === 'calendar' && stratType === 'CALENDAR_SPREAD_EDGE') || (t.id === 'adaptive' && stratType === 'ADAPTIVE')) || TABS[0];
 
   const handleSubmit = () => {
     enterMutation.mutate({

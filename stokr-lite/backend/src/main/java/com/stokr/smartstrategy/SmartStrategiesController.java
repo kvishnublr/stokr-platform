@@ -34,6 +34,7 @@ public class SmartStrategiesController {
     private final StrategyScoreEngine scoreEngine;
     private final TradePerformanceService performanceService;
     private final MarketRegimeDetector regimeDetector;
+    private final AdaptiveStrategyScanner adaptiveScanner;
 
     private final ConcurrentHashMap<String, CachedResult> cache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Map<String, Object>> lastGoodCache = new ConcurrentHashMap<>();
@@ -52,7 +53,8 @@ public class SmartStrategiesController {
                                       PortfolioRiskManager riskManager,
                                       StrategyScoreEngine scoreEngine,
                                       TradePerformanceService performanceService,
-                                      MarketRegimeDetector regimeDetector) {
+                                      MarketRegimeDetector regimeDetector,
+                                      AdaptiveStrategyScanner adaptiveScanner) {
         this.ratioButterflyScanner = ratioButterflyScanner;
         this.bwbScanner = bwbScanner;
         this.skewHarvestScanner = skewHarvestScanner;
@@ -68,6 +70,7 @@ public class SmartStrategiesController {
         this.scoreEngine = scoreEngine;
         this.performanceService = performanceService;
         this.regimeDetector = regimeDetector;
+        this.adaptiveScanner = adaptiveScanner;
         // Wire regime detector into score engine for IV-aware scoring
         scoreEngine.setRegimeDetector(regimeDetector);
     }
@@ -135,6 +138,15 @@ public class SmartStrategiesController {
         });
     }
 
+    @GetMapping("/adaptive/scan")
+    public ResponseEntity<Map<String, Object>> scanAdaptive(@RequestParam(defaultValue = "ALL") String underlying) {
+        return cachedScan("adaptive:" + underlying, () -> {
+            List<Map<String, Object>> opps = adaptiveScanner.scan(underlying);
+            tryAutoExec(opps);
+            return wrapResponse(opps, "ADAPTIVE", underlying);
+        });
+    }
+
     @GetMapping("/iron-condor/scan")
     public ResponseEntity<Map<String, Object>> scanIronCondor(@RequestParam(defaultValue = "ALL") String underlying) {
         return cachedScan("iron-condor:" + underlying, () -> {
@@ -168,6 +180,8 @@ public class SmartStrategiesController {
         catch (Exception e) { resp.put("calendarSpread", List.of()); }
         try { resp.put("ironCondor", ironCondorScanner.scan(underlying)); }
         catch (Exception e) { resp.put("ironCondor", List.of()); }
+        try { resp.put("adaptive", adaptiveScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("adaptive", List.of()); }
 
         return ResponseEntity.ok(resp);
     }
