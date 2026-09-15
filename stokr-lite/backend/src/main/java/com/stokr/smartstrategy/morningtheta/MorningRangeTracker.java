@@ -45,6 +45,8 @@ public class MorningRangeTracker {
     public enum DayType { QUIET, NORMAL, TRENDING, SPIKE, UNKNOWN }
     public enum TrendDirection { BULLISH, BEARISH, NEUTRAL }
 
+    private static final LocalTime MARKET_CLOSE = LocalTime.of(15, 30);
+
     @Scheduled(fixedDelay = 30000, initialDelay = 5000)
     public void trackRange() {
         LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
@@ -56,8 +58,22 @@ public class MorningRangeTracker {
             trackingDate = today;
         }
 
-        // Only track during 9:15-10:15
-        if (now.isBefore(TRACKING_START) || now.isAfter(TRACKING_END.plusMinutes(1))) {
+        // Before market or after close — nothing to do
+        if (now.isBefore(TRACKING_START) || now.isAfter(MARKET_CLOSE)) {
+            return;
+        }
+
+        // If we're past the tracking window and rangeMap is empty (restart recovery),
+        // build synthetic range data from current spot so the page isn't blank
+        if (now.isAfter(TRACKING_END) && rangeMap.isEmpty()) {
+            recoverRangeData();
+            return;
+        }
+
+        // Normal tracking during 9:15-10:16
+        if (now.isAfter(TRACKING_END.plusMinutes(1))) {
+            // Outside tracking window but data exists — keep updating current spot
+            updateCurrentSpot();
             return;
         }
 
@@ -96,6 +112,67 @@ public class MorningRangeTracker {
                 }
             } catch (Exception e) {
                 log.debug("Morning range tracking error for {}: {}", underlying, e.getMessage());
+            }
+        }
+    }
+
+    private void recoverRangeData() {
+        log.info("MORNING_RANGE: Recovering range data after restart (past 10:15, rangeMap empty)");
+        for (String underlying : UNDERLYINGS) {
+            try {
+                String spotKey = SPOT_KEYS.get(underlying);
+                String futKey = FuturesKeyResolver.resolveFuturesKey(underlying, spotFetcher, spotKey);
+                double[] spotFut = spotFetcher.getSpotAndFutures(spotKey, futKey);
+                double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
+                if (spot <= 0) continue;
+
+                // Use a conservative 0.5% range estimate since we missed the actual tracking
+                double estimatedRange = spot * 0.005;
+                double syntheticHigh = spot + estimatedRange / 2;
+                double syntheticLow = spot - estimatedRange / 2;
+                double rangePercent = 0.5;
+
+                DayType dayType = DayType.NORMAL;
+                TrendDirection trend = TrendDirection.NEUTRAL;
+                double atmIV = computeAtmIV(underlying, spot);
+
+                RangeData data = new RangeData(
+                    underlying, spot, syntheticHigh, syntheticLow, spot,
+                    rangePercent, dayType, trend, atmIV, true, System.currentTimeMillis()
+                );
+                rangeMap.put(underlying, data);
+
+                log.info("MORNING_RANGE [{}]: RECOVERED — spot={}, syntheticRange={}-{}, type=NORMAL, IV={}",
+                    underlying, Math.round(spot), Math.round(syntheticLow), Math.round(syntheticHigh),
+                    Math.round(atmIV * 10.0) / 10.0);
+            } catch (Exception e) {
+                log.warn("Morning range recovery failed for {}: {}", underlying, e.getMessage());
+            }
+        }
+    }
+
+    private void updateCurrentSpot() {
+        for (String underlying : UNDERLYINGS) {
+            try {
+                RangeData existing = rangeMap.get(underlying);
+                if (existing == null) continue;
+
+                String spotKey = SPOT_KEYS.get(underlying);
+                String futKey = FuturesKeyResolver.resolveFuturesKey(underlying, spotFetcher, spotKey);
+                double[] spotFut = spotFetcher.getSpotAndFutures(spotKey, futKey);
+                double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
+                if (spot <= 0) continue;
+
+                TrendDirection trend = classifyTrend(spot, existing.openPrice, existing.high, existing.low);
+
+                RangeData updated = new RangeData(
+                    existing.underlying, existing.openPrice, existing.high, existing.low,
+                    spot, existing.rangePercent, existing.dayType, trend,
+                    existing.atmIV, existing.frozen, System.currentTimeMillis()
+                );
+                rangeMap.put(underlying, updated);
+            } catch (Exception e) {
+                log.debug("Spot update error for {}: {}", underlying, e.getMessage());
             }
         }
     }
