@@ -58,7 +58,7 @@ public class RatioButterflyScanner {
         int atmStrike = (int) (Math.round(spot / step) * step);
 
         List<String> instruments = new ArrayList<>();
-        for (int i = -2; i <= 8; i++) {
+        for (int i = -4; i <= 14; i++) {
             int s = atmStrike + i * step;
             instruments.addAll(optionChainService.buildNfoSymbolCandidates(underlying, expiry, s, "CE"));
             instruments.addAll(optionChainService.buildNfoSymbolCandidates(underlying, expiry, s, "PE"));
@@ -67,7 +67,7 @@ public class RatioButterflyScanner {
 
         for (String optType : List.of("CE", "PE")) {
             int dir = "CE".equals(optType) ? 1 : -1;
-            for (int bodyOffset = 1; bodyOffset <= 4; bodyOffset++) {
+            for (int bodyOffset = 1; bodyOffset <= 6; bodyOffset++) {
                 int buyStrike = atmStrike;
                 int sellStrike = atmStrike + dir * bodyOffset * step;
                 int farBuyStrike = atmStrike + dir * (bodyOffset * 2) * step;
@@ -86,12 +86,14 @@ public class RatioButterflyScanner {
                 double maxLoss = (wingWidth + Math.max(cost, 0)) * lotSize;
                 if (maxLoss <= 0) maxLoss = 1;
 
-                if (cost > step * 0.3) continue;
+                double costLimit = dte <= 3 ? step * 0.3 : dte <= 7 ? step * 0.6 : step * 1.0;
+                if (cost > costLimit) continue;
 
                 double txnCost = ArbitrageCosts.PER_LEG_BROKERAGE * 6 + 50;
                 maxLoss += txnCost;
                 double riskReward = maxProfit / maxLoss;
-                if (riskReward < 3) continue;
+                double rrMin = dte <= 3 ? 3.0 : dte <= 7 ? 2.0 : 1.5;
+                if (riskReward < rrMin) continue;
 
                 Map<String, Object> opp = new LinkedHashMap<>();
                 opp.put("strategyType", "RATIO_BUTTERFLY");
@@ -126,6 +128,9 @@ public class RatioButterflyScanner {
                     Map.of("strike", farBuyStrike, "optionType", optType, "side", "BUY", "qty", 2, "price", farAsk,
                         "symbol", getSymbol(quotes, underlying, expiry, farBuyStrike, optType))
                 ));
+                double distPct = Math.abs(sellStrike - spot) / spot * 100;
+                double estimatedWinRate = Math.min(35, 15 + distPct * 3);
+                opp.put("estimatedWinRate", round2(estimatedWinRate));
                 opp.put("edgePoints", round2(Math.abs(cost)));
                 opp.put("edgeAfterCosts", round2(maxProfit - txnCost));
                 results.add(opp);
