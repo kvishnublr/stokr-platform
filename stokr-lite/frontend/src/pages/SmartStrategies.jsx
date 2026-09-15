@@ -586,94 +586,104 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
   const hoverPt = hover ? points[hover.idx] : null;
 
   return (
-    <div className="bg-gradient-to-b from-slate-900 to-slate-800 rounded-xl border border-slate-700 p-4">
+    <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-black text-white tracking-tight">Payoff at Expiry</span>
+        <span className="text-sm font-black text-gray-800 tracking-tight">Payoff at Expiry</span>
         <div className="flex items-center gap-4 text-[10px]">
-          <span className="flex items-center gap-1.5"><span className="w-3 h-2.5 rounded-sm bg-emerald-500/50 border border-emerald-400/30"></span><span className="text-emerald-400 font-semibold">Profit</span></span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-2.5 rounded-sm bg-red-500/40 border border-red-400/30"></span><span className="text-red-400 font-semibold">Loss</span></span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-indigo-400"></span><span className="text-indigo-300 font-semibold">Spot: {spot}</span></span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-2.5 rounded-sm" style={{background:'#10b981'}}></span><span className="text-emerald-700 font-bold">Profit</span></span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-2.5 rounded-sm" style={{background:'#ef4444'}}></span><span className="text-red-700 font-bold">Loss</span></span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-0.5" style={{background:'#6366f1'}}></span><span className="text-indigo-700 font-bold">Spot: {spot?.toLocaleString()}</span></span>
           {hoverPt && (
-            <span className={`font-mono font-black px-2 py-0.5 rounded-md ${hoverPt.pnl >= 0 ? 'text-emerald-300 bg-emerald-500/20' : 'text-red-300 bg-red-500/20'}`}>
-              {hoverPt.s.toLocaleString()} | {hoverPt.pnl >= 0 ? '+' : ''}₹{Math.round(hoverPt.pnl).toLocaleString()}
+            <span className={`font-mono font-black px-2 py-0.5 rounded-md text-[11px] ${hoverPt.pnl >= 0 ? 'text-emerald-800 bg-emerald-100 border border-emerald-300' : 'text-red-800 bg-red-100 border border-red-300'}`}>
+              {hoverPt.s.toLocaleString()} → {hoverPt.pnl >= 0 ? '+' : ''}₹{Math.round(hoverPt.pnl).toLocaleString()}
             </span>
           )}
         </div>
       </div>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair" style={{ maxHeight: 280 }}
         onMouseMove={handleMouseMove} onMouseLeave={() => setHover(null)}>
-        <rect x="0" y="0" width={W} height={H} rx="8" fill="#0f172a" />
+        <defs>
+          <linearGradient id="profitFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#10b981" stopOpacity="0.08" />
+          </linearGradient>
+          <linearGradient id="lossFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ef4444" stopOpacity="0.08" />
+            <stop offset="100%" stopColor="#ef4444" stopOpacity="0.3" />
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width={W} height={H} rx="8" fill="#fafbfc" />
         {yLabels.map((yl, i) => (
           <g key={`y${i}`}>
-            <line x1={PAD.l} y1={yl.yPos} x2={W - PAD.r} y2={yl.yPos} stroke="#334155" strokeWidth="0.5" />
-            <text x={PAD.l - 8} y={yl.yPos + 3} textAnchor="end" fontSize="9" fill="#94a3b8" fontFamily="monospace" fontWeight="600">
+            <line x1={PAD.l} y1={yl.yPos} x2={W - PAD.r} y2={yl.yPos} stroke="#e5e7eb" strokeWidth="0.7" />
+            <text x={PAD.l - 8} y={yl.yPos + 3} textAnchor="end" fontSize="9" fill="#374151" fontFamily="monospace" fontWeight="700">
               {yl.val >= 0 ? '' : '-'}₹{Math.abs(Math.round(yl.val)).toLocaleString()}
             </text>
           </g>
         ))}
         {xLabels.map((xl, i) => (
           <g key={`x${i}`}>
-            <line x1={xl.xPos} y1={PAD.t} x2={xl.xPos} y2={H - PAD.b} stroke="#334155" strokeWidth="0.5" />
-            <text x={xl.xPos} y={H - PAD.b + 14} textAnchor="middle" fontSize="9" fill="#94a3b8" fontFamily="monospace" fontWeight="600">{xl.val}</text>
+            <line x1={xl.xPos} y1={PAD.t} x2={xl.xPos} y2={H - PAD.b} stroke="#e5e7eb" strokeWidth="0.7" />
+            <text x={xl.xPos} y={H - PAD.b + 14} textAnchor="middle" fontSize="9" fill="#374151" fontFamily="monospace" fontWeight="700">{xl.val}</text>
           </g>
         ))}
 
         {minPnl < 0 && maxPnl > 0 && (
-          <line x1={PAD.l} y1={zeroY} x2={W - PAD.r} y2={zeroY} stroke="#64748b" strokeWidth="1" strokeDasharray="4,3" />
+          <line x1={PAD.l} y1={zeroY} x2={W - PAD.r} y2={zeroY} stroke="#9ca3af" strokeWidth="1.2" strokeDasharray="6,3" />
         )}
 
-        <path d={profitPath.join(' ')} fill="rgba(16,185,129,0.3)" />
-        <path d={lossPath.join(' ')} fill="rgba(239,68,68,0.25)" />
-        <path d={pathD} fill="none" stroke="#a855f7" strokeWidth="3" strokeLinejoin="round" />
+        <path d={profitPath.join(' ')} fill="url(#profitFill)" />
+        <path d={lossPath.join(' ')} fill="url(#lossFill)" />
+        <path d={pathD} fill="none" stroke="#7c3aed" strokeWidth="2.5" strokeLinejoin="round" />
 
-        {/* SPOT line + label pill */}
-        <line x1={spotX} y1={PAD.t} x2={spotX} y2={H - PAD.b} stroke="#6366f1" strokeWidth="1.5" strokeDasharray="4,3" />
+        {/* SPOT line + label */}
+        <line x1={spotX} y1={PAD.t} x2={spotX} y2={H - PAD.b} stroke="#6366f1" strokeWidth="1.5" strokeDasharray="5,3" />
         <g transform={`translate(${spotX}, ${PAD.t - 2})`}>
-          <rect x="-28" y="-16" width="56" height="18" rx="9" fill="#6366f1" />
-          <text x="0" y="-4" textAnchor="middle" fontSize="9" fill="white" fontWeight="800" fontFamily="monospace">SPOT</text>
+          <rect x="-28" y="-17" width="56" height="19" rx="9" fill="#6366f1" />
+          <text x="0" y="-5" textAnchor="middle" fontSize="9" fill="white" fontWeight="800" fontFamily="monospace">SPOT</text>
         </g>
 
-        {/* Max Profit pill */}
-        <circle cx={x(maxProfitPt.s)} cy={y(maxProfitPt.pnl)} r="6" fill="#10b981" stroke="white" strokeWidth="3" />
-        <g transform={`translate(${x(maxProfitPt.s)}, ${y(maxProfitPt.pnl) - 16})`}>
-          <rect x={-40} y="-14" width="80" height="20" rx="10" fill="#059669" />
-          <text x="0" y="0" textAnchor="middle" fontSize="11" fill="white" fontWeight="900" fontFamily="monospace">
+        {/* Max Profit badge */}
+        <circle cx={x(maxProfitPt.s)} cy={y(maxProfitPt.pnl)} r="5" fill="#10b981" stroke="white" strokeWidth="2.5" />
+        <g transform={`translate(${x(maxProfitPt.s)}, ${y(maxProfitPt.pnl) - 14})`}>
+          <rect x={-42} y="-14" width="84" height="21" rx="10" fill="#059669" />
+          <text x="0" y="0" textAnchor="middle" fontSize="12" fill="white" fontWeight="900" fontFamily="monospace">
             +₹{Math.round(maxProfitPt.pnl).toLocaleString()}
           </text>
         </g>
 
-        {/* Max Loss pill */}
+        {/* Max Loss badge */}
         {maxLossPt.pnl < 0 && (
           <>
-            <circle cx={x(maxLossPt.s)} cy={y(maxLossPt.pnl)} r="6" fill="#ef4444" stroke="white" strokeWidth="3" />
+            <circle cx={x(maxLossPt.s)} cy={y(maxLossPt.pnl)} r="5" fill="#ef4444" stroke="white" strokeWidth="2.5" />
             <g transform={`translate(${x(maxLossPt.s)}, ${y(maxLossPt.pnl) + 22})`}>
-              <rect x={-40} y="-14" width="80" height="20" rx="10" fill="#dc2626" />
-              <text x="0" y="0" textAnchor="middle" fontSize="11" fill="white" fontWeight="900" fontFamily="monospace">
+              <rect x={-42} y="-14" width="84" height="21" rx="10" fill="#dc2626" />
+              <text x="0" y="0" textAnchor="middle" fontSize="12" fill="white" fontWeight="900" fontFamily="monospace">
                 -₹{Math.abs(Math.round(maxLossPt.pnl)).toLocaleString()}
               </text>
             </g>
           </>
         )}
 
-        {/* Cursor crosshair + tooltip */}
+        {/* Hover crosshair + tooltip */}
         {hoverPt && (
           <>
-            <line x1={x(hoverPt.s)} y1={PAD.t} x2={x(hoverPt.s)} y2={H - PAD.b} stroke={accentColor} strokeWidth="1" strokeDasharray="2,2" opacity="0.7" />
-            <line x1={PAD.l} y1={y(hoverPt.pnl)} x2={W - PAD.r} y2={y(hoverPt.pnl)} stroke={accentColor} strokeWidth="1" strokeDasharray="2,2" opacity="0.4" />
-            <circle cx={x(hoverPt.s)} cy={y(hoverPt.pnl)} r="7" fill={hoverPt.pnl >= 0 ? '#10b981' : '#ef4444'} stroke="white" strokeWidth="3" />
-            <g transform={`translate(${Math.min(x(hoverPt.s) + 12, W - PAD.r - 140)}, ${Math.max(y(hoverPt.pnl) - 46, PAD.t)})`}>
-              <rect x="0" y="0" width="135" height="40" rx="8" fill="#0f172a" opacity="0.95" />
-              <rect x="0" y="0" width="135" height="40" rx="8" fill="none" stroke={hoverPt.pnl >= 0 ? '#10b981' : '#ef4444'} strokeWidth="1.5" opacity="0.6" />
-              <text x="10" y="16" fontSize="10" fill="#cbd5e1" fontFamily="monospace" fontWeight="600">Price: {hoverPt.s.toLocaleString()}</text>
-              <text x="10" y="32" fontSize="12" fill={hoverPt.pnl >= 0 ? '#34d399' : '#f87171'} fontWeight="900" fontFamily="monospace">
+            <line x1={x(hoverPt.s)} y1={PAD.t} x2={x(hoverPt.s)} y2={H - PAD.b} stroke="#6366f1" strokeWidth="1" strokeDasharray="3,2" opacity="0.5" />
+            <line x1={PAD.l} y1={y(hoverPt.pnl)} x2={W - PAD.r} y2={y(hoverPt.pnl)} stroke="#6366f1" strokeWidth="1" strokeDasharray="3,2" opacity="0.3" />
+            <circle cx={x(hoverPt.s)} cy={y(hoverPt.pnl)} r="6" fill={hoverPt.pnl >= 0 ? '#10b981' : '#ef4444'} stroke="white" strokeWidth="2.5" />
+            <g transform={`translate(${Math.min(x(hoverPt.s) + 12, W - PAD.r - 150)}, ${Math.max(y(hoverPt.pnl) - 48, PAD.t)})`}>
+              <rect x="0" y="0" width="145" height="44" rx="8" fill="white" stroke="#e5e7eb" strokeWidth="1" />
+              <rect x="0" y="0" width="145" height="44" rx="8" fill="none" stroke={hoverPt.pnl >= 0 ? '#10b981' : '#ef4444'} strokeWidth="1.5" opacity="0.5" />
+              <text x="12" y="17" fontSize="10" fill="#6b7280" fontFamily="monospace" fontWeight="600">Price: {hoverPt.s.toLocaleString()}</text>
+              <text x="12" y="35" fontSize="13" fill={hoverPt.pnl >= 0 ? '#059669' : '#dc2626'} fontWeight="900" fontFamily="monospace">
                 P&L: {hoverPt.pnl >= 0 ? '+' : ''}₹{Math.round(hoverPt.pnl).toLocaleString()}
               </text>
             </g>
           </>
         )}
 
-        <text x={W / 2} y={H - 4} textAnchor="middle" fontSize="10" fill="#cbd5e1" fontWeight="bold">Underlying Price at Expiry</text>
-        <text x={12} y={H / 2} textAnchor="middle" fontSize="10" fill="#cbd5e1" fontWeight="bold" transform={`rotate(-90,12,${H / 2})`}>P&L (₹)</text>
+        <text x={W / 2} y={H - 4} textAnchor="middle" fontSize="10" fill="#6b7280" fontWeight="bold">Underlying Price at Expiry</text>
+        <text x={12} y={H / 2} textAnchor="middle" fontSize="10" fill="#6b7280" fontWeight="bold" transform={`rotate(-90,12,${H / 2})`}>P&L (₹)</text>
       </svg>
     </div>
   );
