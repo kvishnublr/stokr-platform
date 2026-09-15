@@ -88,7 +88,7 @@ public class RatioButterflyScanner {
                 if (maxLoss <= 0) maxLoss = 1;
 
                 double costLimit = dte <= 3 ? step * 0.3 : dte <= 7 ? step * 0.6 : step * 1.5;
-                log.info("RATIO {} {}{} body={} cost={} costLimit={} maxProfit={} maxLoss={}",
+                log.debug("RATIO {} {}{} body={} cost={} costLimit={} maxProfit={} maxLoss={}",
                     underlying, optType, bodyOffset, sellStrike, round2(cost), round2(costLimit), round2(maxProfit), round2(maxLoss));
                 if (cost > costLimit) continue;
 
@@ -96,7 +96,7 @@ public class RatioButterflyScanner {
                 maxLoss += txnCost;
                 double riskReward = maxProfit / maxLoss;
                 double rrMin = dte <= 3 ? 3.0 : dte <= 7 ? 2.0 : 1.0;
-                log.info("RATIO {} {}{} rr={} rrMin={}", underlying, optType, bodyOffset, round2(riskReward), rrMin);
+                log.debug("RATIO {} {}{} rr={} rrMin={}", underlying, optType, bodyOffset, round2(riskReward), rrMin);
                 if (riskReward < rrMin) continue;
 
                 Map<String, Object> opp = new LinkedHashMap<>();
