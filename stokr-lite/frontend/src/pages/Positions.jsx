@@ -99,7 +99,8 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
     });
 
     // Exclude active OPEN positions from history
-    return [...fno, ...cash].filter(p => p.status !== 'OPEN');
+    const activeSet = new Set(['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED']);
+    return [...fno, ...cash].filter(p => !activeSet.has(p.status));
   }, [fnoHistory, cashHistory, lotScaleMode]);
 
   // Apply Asset, Mode, Strategy, Date Range, and Search Filters

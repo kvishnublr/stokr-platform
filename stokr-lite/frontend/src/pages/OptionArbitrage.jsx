@@ -1116,7 +1116,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
   // to a live broker doesn't leave old paper positions looking like they might be real --
   // "Live Positions" was showing paper trades with no way to tell them apart or filter
   // them out. Still overridable via the pills below.
-  const [internalBrokerFilter, setInternalBrokerFilter] = useState(executionBroker);
+  const [internalBrokerFilter, setInternalBrokerFilter] = useState('ALL');
   const prevExecBroker = useRef(executionBroker);
   useEffect(() => {
     if (executionBroker !== prevExecBroker.current) {
@@ -1148,7 +1148,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
 
   const isPaper = (p) => !p.broker || p.broker === 'PAPER';
   const isActiveStatus = (p) => p.status === 'OPEN' || p.status === 'RUNNING' || p.status === 'EXECUTING' || p.status === 'PARTIAL' || p.status === 'DETECTED';
-  const allPositions = (data?.positions || []).filter(p => !isPaper(p) || isActiveStatus(p) || isToday(p));
+  const allPositions = (data?.positions || []).filter(p => isActiveStatus(p));
   const positions = brokerFilter === 'ALL' ? allPositions
     : brokerFilter === 'PAPER' ? allPositions.filter(isPaper)
     : allPositions.filter(p => !isPaper(p));
