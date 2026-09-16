@@ -634,7 +634,7 @@ export default function Positions() {
   // Fetch Histories unconditionally
   const { data: fnoHistoryData, refetch: refetchFno } = useQuery({
     queryKey: ['fnoHistoryClosed'],
-    queryFn: () => client.get('/option-arbitrage/paper-trades').then(r => r.data?.positions || (Array.isArray(r.data) ? r.data : [])),
+    queryFn: () => client.get('/option-arbitrage/paper-trades').then(r => r.data),
     refetchInterval: 10000,
   });
   
@@ -815,8 +815,8 @@ export default function Positions() {
       {/* History View */}
       {viewState === 'HISTORY' && (
         <UnifiedPerformanceAndHistory 
-          fnoHistory={fnoHistoryData?.positions} 
-          cashHistory={cashHistoryData?.positions}
+          fnoHistory={Array.isArray(fnoHistoryData) ? fnoHistoryData : (fnoHistoryData?.positions || [])} 
+          cashHistory={Array.isArray(cashHistoryData) ? cashHistoryData : (cashHistoryData?.positions || cashHistoryData?.trades || [])}
           assetFilter={assetFilter}
           modeFilter={modeFilter}
           dateRange={dateRange}
