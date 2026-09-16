@@ -6,7 +6,7 @@
 
     <groupId>com.stokr</groupId>
     <artifactId>stokr-platform</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>8.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>stokr-platform</name>
     <description>Modular monolith automated trading platform</description>

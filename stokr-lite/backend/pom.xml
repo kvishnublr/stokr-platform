@@ -13,7 +13,7 @@
 
     <groupId>com.stokr</groupId>
     <artifactId>stokr-lite</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>8.0.0-SNAPSHOT</version>
     <name>Stokr Lite</name>
     <description>Simplified Algo Trading Platform</description>
 
