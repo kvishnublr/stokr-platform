@@ -1846,7 +1846,17 @@ function CashPositionsSection() {
   });
 
   const positions = data?.positions || [];
-  if (positions.length === 0) return null;
+    if (positions.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 text-center shadow-sm">
+        <div className="flex items-center justify-center gap-2 mb-1.5">
+          <span className="text-lg">????</span>
+          <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Cash Equity & Stock Strategy Positions</h4>
+        </div>
+        <p className="text-xs text-slate-500 font-medium">No open cash equity trades right now. Live stock positions populate automatically during market hours (9:15 AM - 3:30 PM IST) when strategy signals trigger.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
