@@ -22,7 +22,7 @@ public class BidParityService {
     private final OptionArbAutoExecService autoExecService;
 
     private static final double RISK_FREE_RATE = 0.065;
-    private static final double MIN_PARITY_DEVIATION_BID = 1.5;
+    private static final double MIN_PARITY_DEVIATION_BID = 2.5;
     private static final double MIN_EDGE_AFTER_COSTS = 0.0;
     private static final int MIN_VOLUME = 500;
     private static final int MIN_OI = 2000;
@@ -132,10 +132,14 @@ public class BidParityService {
         
         // Fetch future quote to validate volume
         double fut = 0;
+        double futBid = 0;
+        double futAsk = 0;
         long futVolume = 0;
         OptionChainService.OptionQuote futQuote = optionChainService.fetchQuotes(List.of(futKey)).get(futKey.replace("NFO:", ""));
         if (futQuote != null && futQuote.lastPrice > 0) {
             fut = futQuote.lastPrice;
+            futBid = futQuote.bid > 0 ? futQuote.bid : futQuote.lastPrice;
+            futAsk = futQuote.ask > 0 ? futQuote.ask : futQuote.lastPrice;
             futVolume = futQuote.volume;
         }
 
@@ -215,13 +219,13 @@ public class BidParityService {
             // that isn't actually achievable at real market prices.
             double synthetic1 = BlackScholesCalculator.syntheticFutures(
                 ceQuote.bid, peQuote.ask, strike, RISK_FREE_RATE, yearsToExpiry);
-            double parityDev1 = synthetic1 - fut;
+            double parityDev1 = synthetic1 - (futAsk > 0 ? futAsk : fut);
 
             // Reversal (BUY CE + SELL PE + SELL FUT) buys the call at its ask and sells the
             // put at its bid -- same reasoning, mirrored.
             double synthetic2 = BlackScholesCalculator.syntheticFutures(
                 ceQuote.ask, peQuote.bid, strike, RISK_FREE_RATE, yearsToExpiry);
-            double parityDev2 = fut - synthetic2;
+            double parityDev2 = (futBid > 0 ? futBid : fut) - synthetic2;
 
             boolean isConvergent = parityDev1 >= MIN_PARITY_DEVIATION_BID;
             boolean isReversal = parityDev2 >= MIN_PARITY_DEVIATION_BID;
@@ -242,12 +246,12 @@ public class BidParityService {
                 edgePoints = parityDev1;
                 action = "BUY FUT + SELL CE + BUY PE";
                 legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s @ %.1f",
-                    strike, ceQuote.bid, strike, peQuote.ask, futKey, fut);
+                    strike, ceQuote.bid, strike, peQuote.ask, futKey, futAsk > 0 ? futAsk : fut);
             } else {
                 edgePoints = parityDev2;
                 action = "BUY CE + SELL PE + SELL FUT";
                 legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %s @ %.1f",
-                    strike, ceQuote.ask, strike, peQuote.bid, futKey, fut);
+                    strike, ceQuote.ask, strike, peQuote.bid, futKey, futBid > 0 ? futBid : fut);
             }
 
             double grossEdge = edgePoints * lotSize;

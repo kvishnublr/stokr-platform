@@ -71,7 +71,14 @@ public class SyntheticFuturesArbService {
             instruments.add(optionChainService.buildNfoSymbol(underlying, expiry, strike, "CE"));
             instruments.add(optionChainService.buildNfoSymbol(underlying, expiry, strike, "PE"));
         }
+        if (futKey != null && !futKey.isBlank()) {
+            instruments.add(futKey);
+        }
         Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
+        String cleanFutKey = (futKey != null && futKey.startsWith("NFO:")) ? futKey.substring(4) : (futKey != null ? futKey : "");
+        OptionChainService.OptionQuote futQ = quotes.get(cleanFutKey);
+        double futBid = (futQ != null && futQ.bid > 0) ? futQ.bid : fut;
+        double futAsk = (futQ != null && futQ.ask > 0) ? futQ.ask : fut;
 
         double yearsToExpiry = Math.max(
             Duration.between(LocalDate.now().atStartOfDay(), expiry.atStartOfDay()).toDays(), 0.5) / 365.0;
@@ -91,9 +98,9 @@ public class SyntheticFuturesArbService {
             // Proceeds = CE_bid - PE_ask + Strike
             double synthShort = strike + ce.bid - pe.ask;
 
-            // Compare with actual futures
-            double longEdge = fut - synthLong;  // positive = buy synthetic, sell real futures
-            double shortEdge = synthShort - fut; // positive = sell synthetic, buy real futures
+            // Compare with actual futures bid/ask (sell real futures at futBid, buy real futures at futAsk)
+            double longEdge = futBid - synthLong;  // positive = buy synthetic, sell real futures at futBid
+            double shortEdge = synthShort - futAsk; // positive = sell synthetic, buy real futures at futAsk
 
             // Transaction costs estimate (4 legs: CE + PE + FUT entry + exit)
             double txnCost = ArbitrageCosts.PER_LEG_BROKERAGE * 6 + 50; // ~170
@@ -108,7 +115,7 @@ public class SyntheticFuturesArbService {
                 opp.put("strike", strike);
                 opp.put("direction", "BUY_SYNTHETIC");
                 opp.put("action", String.format("BUY CE %d @ %.1f + SELL PE %d @ %.1f + SELL FUT @ %.1f",
-                    strike, ce.ask, strike, pe.bid, fut));
+                    strike, ce.ask, strike, pe.bid, futBid));
                 opp.put("synthPrice", round2(synthLong));
                 opp.put("futPrice", round2(fut));
                 opp.put("edgePoints", round2(longEdge));
@@ -123,7 +130,7 @@ public class SyntheticFuturesArbService {
                 opp.put("legList", List.of(
                     Map.of("strike", strike, "optionType", "CE", "side", "BUY", "qty", 1, "price", ce.ask),
                     Map.of("strike", strike, "optionType", "PE", "side", "SELL", "qty", 1, "price", pe.bid),
-                    Map.of("strike", 0, "optionType", "FUT", "side", "SELL", "qty", 1, "price", fut)
+                    Map.of("strike", 0, "optionType", "FUT", "side", "SELL", "qty", 1, "price", futBid)
                 ));
                 results.add(opp);
             }
@@ -135,7 +142,7 @@ public class SyntheticFuturesArbService {
                 opp.put("strike", strike);
                 opp.put("direction", "SELL_SYNTHETIC");
                 opp.put("action", String.format("SELL CE %d @ %.1f + BUY PE %d @ %.1f + BUY FUT @ %.1f",
-                    strike, ce.bid, strike, pe.ask, fut));
+                    strike, ce.bid, strike, pe.ask, futAsk));
                 opp.put("synthPrice", round2(synthShort));
                 opp.put("futPrice", round2(fut));
                 opp.put("edgePoints", round2(shortEdge));
@@ -150,7 +157,7 @@ public class SyntheticFuturesArbService {
                 opp.put("legList", List.of(
                     Map.of("strike", strike, "optionType", "CE", "side", "SELL", "qty", 1, "price", ce.bid),
                     Map.of("strike", strike, "optionType", "PE", "side", "BUY", "qty", 1, "price", pe.ask),
-                    Map.of("strike", 0, "optionType", "FUT", "side", "BUY", "qty", 1, "price", fut)
+                    Map.of("strike", 0, "optionType", "FUT", "side", "BUY", "qty", 1, "price", futAsk)
                 ));
                 results.add(opp);
             }

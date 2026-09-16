@@ -582,8 +582,8 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                         var futQuotes = optionChainService.fetchQuotes(List.of(futSymbol));
                         if (futQuotes.containsKey(futSymbol)) {
                             var futQ = futQuotes.get(futSymbol);
-                            // REVERSAL buys FUT, CONVERSION sells FUT
-                            futLive = isReversal ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice);
+                            boolean isBuyFut = opp.getAction() != null && opp.getAction().contains("BUY FUT");
+                            futLive = isBuyFut ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice);
                         }
                     } catch (Exception ignored) {}
                 }
@@ -944,8 +944,12 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
 
             // Stop-loss: close position if loss exceeds threshold
             if (stopLossEnabled && targetEdge > 0 && pnlPerLot < 0) {
+                java.time.LocalDateTime entryTime = pos.getEnteredAt() != null ? pos.getEnteredAt() : pos.getCreatedAt();
+                boolean inGracePeriod = entryTime != null &&
+                    java.time.Duration.between(entryTime, java.time.LocalDateTime.now()).getSeconds() < 30;
+
                 double lossPct = Math.abs(pnlPerLot / targetEdge) * 100;
-                if (lossPct >= stopLossPct) {
+                if (!inGracePeriod && lossPct >= stopLossPct) {
                     shouldExit = true;
                     exitReason = "STOP_LOSS";
                     log.info("STOP_LOSS: {} {} strike {} — loss {}% exceeds threshold {}% (P&L ₹{})",

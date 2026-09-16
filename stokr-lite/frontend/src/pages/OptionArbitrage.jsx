@@ -1092,7 +1092,7 @@ function PositionTriggersPanel({ positionId }) {
 }
 
 /* Live Positions Section — standalone, always visible, 2s tick-by-tick refresh */
-function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
+function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFilter, assetFilter }) {
   const { liveBrokerPref } = useGlobalExecutionBroker();
   const [collapsed, setCollapsed] = useState(!defaultExpanded);
   const [rollingId, setRollingId] = useState(null);
@@ -1116,14 +1116,17 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   // to a live broker doesn't leave old paper positions looking like they might be real --
   // "Live Positions" was showing paper trades with no way to tell them apart or filter
   // them out. Still overridable via the pills below.
-  const [brokerFilter, setBrokerFilter] = useState(executionBroker);
+  const [internalBrokerFilter, setInternalBrokerFilter] = useState(executionBroker);
   const prevExecBroker = useRef(executionBroker);
   useEffect(() => {
     if (executionBroker !== prevExecBroker.current) {
-      setBrokerFilter(executionBroker);
+      setInternalBrokerFilter(executionBroker);
       prevExecBroker.current = executionBroker;
     }
   }, [executionBroker]);
+
+  const brokerFilter = modeFilter || internalBrokerFilter;
+  const setBrokerFilter = setInternalBrokerFilter;
 
   const { data, refetch } = useQuery({
     queryKey: ['livePositions'],
@@ -1144,9 +1147,8 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   const isToday = (p) => typeof p.enteredAt === 'string' && p.enteredAt.slice(0, 10) === todayIST;
 
   const isPaper = (p) => !p.broker || p.broker === 'PAPER';
-  // LIVE positions are actual money and must ALWAYS be shown in My Positions as long as they are OPEN.
-  // Only PAPER positions should be filtered by today to avoid cluttering with stale simulated trades.
-  const allPositions = (data?.positions || []).filter(p => !isPaper(p) || p.status === 'OPEN' || isToday(p));
+  const isActiveStatus = (p) => p.status === 'OPEN' || p.status === 'RUNNING' || p.status === 'EXECUTING' || p.status === 'PARTIAL' || p.status === 'DETECTED';
+  const allPositions = (data?.positions || []).filter(p => !isPaper(p) || isActiveStatus(p) || isToday(p));
   const positions = brokerFilter === 'ALL' ? allPositions
     : brokerFilter === 'PAPER' ? allPositions.filter(isPaper)
     : allPositions.filter(p => !isPaper(p));
@@ -1320,7 +1322,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
                   const mxLoss = p.maxLoss || 0;
-                  const canShowPayoff = Array.isArray(p.legList) && p.legList.length >= 1;
+                  const canShowPayoff = true;
                   const isExpanded = expandedPosId === p.id;
                   const rowBg = isExpanded ? 'bg-indigo-50/40' : captured >= 90 ? 'bg-amber-50/50' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40';
                   return (
@@ -1342,7 +1344,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                       <td className="px-2 py-2.5 font-black text-slate-800 text-xs">{p.underlying}</td>
                       <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-700">{p.strike}</td>
                       <td className="px-2 py-2.5 text-[10px] font-mono text-slate-500 whitespace-nowrap">
-                        {p.expiryDate ? new Date(p.expiryDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '--'}
+                        {(p.expiryDate || p.expiry) ? new Date((p.expiryDate || p.expiry) + (String(p.expiryDate || p.expiry).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '--'}
                       </td>
                       <td className="px-2 py-2.5">
                         {p.isMultiLeg ? (
@@ -3758,9 +3760,23 @@ function blackScholesPrice(S, K, t, r, v, type) {
 
 
 
-function DetailedOpportunityExpandedRow({ item, executionBroker, setPendingLiveDeploy, title = "Signal Breakdown" }) {
+export function DetailedOpportunityExpandedRow({ item, executionBroker, setPendingLiveDeploy, title = "Signal Breakdown" }) {
   let oppToPass = item;
-  if ((!Array.isArray(item.legList) || item.legList.length < 2) && typeof item.legs === 'string') {
+  if (!Array.isArray(oppToPass.legList) || oppToPass.legList.length === 0) {
+    const isReversal = String(oppToPass.action || oppToPass.strategyType || '').toUpperCase().includes('REVERSAL');
+    const synthesized = [];
+    const ceP = Number(oppToPass.ceEntryPrice || oppToPass.cePrice || oppToPass.ceAsk || 0);
+    const peP = Number(oppToPass.peEntryPrice || oppToPass.pePrice || oppToPass.peBid || 0);
+    const futP = Number(oppToPass.futEntryPrice || oppToPass.futuresPrice || 0);
+    const stk = Number(oppToPass.strike || oppToPass.atmStrike || 0);
+    if (ceP > 0) synthesized.push({ side: isReversal ? 'BUY' : 'SELL', optionType: 'CE', strike: stk, price: ceP, qty: 1 });
+    if (peP > 0) synthesized.push({ side: isReversal ? 'SELL' : 'BUY', optionType: 'PE', strike: stk, price: peP, qty: 1 });
+    if (futP > 0) synthesized.push({ side: isReversal ? 'SELL' : 'BUY', optionType: 'FUT', strike: 0, price: futP, qty: 1 });
+    if (synthesized.length > 0) {
+      oppToPass = { ...oppToPass, legList: synthesized };
+    }
+  }
+  if ((!Array.isArray(oppToPass.legList) || oppToPass.legList.length < 2) && typeof item.legs === 'string') {
     const legStrs = item.legs.split('|').map(s => s.trim()).filter(Boolean);
     const legList = legStrs.map(ls => {
       let side = ls.includes('BUY') ? 'BUY' : 'SELL';
@@ -3860,7 +3876,7 @@ function DetailedOpportunityExpandedRow({ item, executionBroker, setPendingLiveD
         <div className="bg-white border border-indigo-100 rounded-xl overflow-hidden shadow-sm">
           <div className="bg-slate-50 border-b border-indigo-100 px-3 py-2 flex justify-between items-center">
             <span className="text-xs font-black text-slate-600 uppercase">Execution Legs</span>
-            <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">{oppToPass.expiryDate || oppToPass.expiry || '--'}</span>
+            <span className="inline-flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700 text-white font-black text-xs px-3 py-1 rounded-full shadow-md border border-indigo-300">📅 EXPIRY: {oppToPass.expiryDate || oppToPass.expiry || '--'}</span>
           </div>
           {hasLegs ? (
             <table className="w-full text-left text-xs">
@@ -4029,8 +4045,9 @@ function ArbitrageSignalPayoffChart({ opp }) {
   const totalMax = maxProfitPerShare * lotSize;
   const totalMin = maxLossPerShare * lotSize;
 
-  const expiryLabel = opp.expiryDate
-    ? new Date(opp.expiryDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  const expVal = opp.expiryDate || opp.expiry;
+  const expiryLabel = expVal
+    ? new Date(expVal + (String(expVal).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     : null;
 
   return (
@@ -4040,7 +4057,7 @@ function ArbitrageSignalPayoffChart({ opp }) {
           Payoff at Expiry — guaranteed by the convexity bound, not a probability estimate
         </div>
         {expiryLabel && (
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-violet-50 text-violet-700 border-violet-200" title="This payoff is priced off THIS contract expiry -- comparing against another tool with a different expiry selected will show different premiums even for identical strikes.">
+          <span className="inline-flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700 text-white font-black text-xs px-3 py-1 rounded-full shadow-md border border-indigo-300" title="This payoff is priced off THIS contract expiry -- comparing against another tool with a different expiry selected will show different premiums even for identical strikes.">
             📅 Expiry {expiryLabel}
           </span>
         )}
@@ -4064,7 +4081,7 @@ function ArbitrageSignalPayoffChart({ opp }) {
           <div className="text-[9px] text-indigo-600">cost: ₹{chart.cost.toFixed(2)}/share</div>
         </div>
       </div>
-      <div className="relative overflow-x-auto">
+      <div className="relative w-full flex flex-col items-center justify-center mx-auto my-3 overflow-x-auto text-center">
         <svg ref={chartRef} viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full h-[180px] cursor-crosshair"
           onMouseMove={handleMove} onMouseLeave={() => setHover(null)}>
           <defs>
