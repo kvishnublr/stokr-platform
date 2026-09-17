@@ -1040,7 +1040,7 @@ function RatioContent({ opps, onEnter }) {
             <div><div className="text-[9px] text-slate-400 font-semibold">Buy 1x</div><div className="text-xs font-mono text-slate-600">{o.buyStrike} @ ₹{o.buyPrice}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">Sell 3x</div><div className="text-xs font-mono font-bold text-red-600">{o.sellStrike} @ ₹{o.sellPrice}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">Buy 2x</div><div className="text-xs font-mono text-slate-600">{o.farBuyStrike} @ ₹{o.farBuyPrice}</div></div>
-            <div><div className="text-[9px] text-slate-400 font-semibold">Net Cost</div><div className={`text-sm font-black ${o.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>₹{Math.round(o.netCostRs).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">{o.netCostRs <= 0 ? 'Net Credit' : 'Net Cost'}</div><div className={`text-sm font-black ${o.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{o.netCostRs <= 0 ? `+₹${Math.abs(Math.round(o.netCostRs)).toLocaleString()}` : `₹${Math.round(o.netCostRs).toLocaleString()}`}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">Max Reward</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">R:R</div><div className="text-sm font-black text-violet-600">1:{Math.round(o.riskReward)}</div></div>
           </div>
@@ -1059,7 +1059,7 @@ function RatioContent({ opps, onEnter }) {
           <th className="px-4 py-3 text-left">Buy 1x</th>
           <th className="px-4 py-3 text-left">Sell 3x</th>
           <th className="px-4 py-3 text-left">Buy 2x</th>
-          <SortTh field="netCostRs" label="Net Cost" sort={sort} className="text-right" />
+          <SortTh field="netCostRs" label="Net Premium" sort={sort} className="text-right" />
           <SortTh field="maxLoss" label="Max Risk" sort={sort} className="text-right" />
           <SortTh field="maxProfit" label="Max Reward" sort={sort} className="text-right" />
           <SortTh field="riskReward" label="R:R" sort={sort} className="text-right" />
@@ -1076,7 +1076,7 @@ function RatioContent({ opps, onEnter }) {
             <td className="px-4 py-3 font-mono text-slate-600">{o.buyStrike} <span className="text-slate-300">@</span> ₹{o.buyPrice}</td>
             <td className="px-4 py-3 font-mono font-bold text-red-600">{o.sellStrike} <span className="text-red-300">@</span> ₹{o.sellPrice}</td>
             <td className="px-4 py-3 font-mono text-slate-600">{o.farBuyStrike} <span className="text-slate-300">@</span> ₹{o.farBuyPrice}</td>
-            <td className={`px-4 py-3 text-right font-mono font-bold ${o.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>₹{Math.round(o.netCostRs).toLocaleString()}</td>
+            <td className={`px-4 py-3 text-right font-mono font-bold ${o.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{o.netCostRs <= 0 ? `+₹${Math.abs(Math.round(o.netCostRs)).toLocaleString()} Cr` : `₹${Math.round(o.netCostRs).toLocaleString()} Db`}</td>
             <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</td>
             <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</td>
             <td className="px-4 py-3 text-right"><RRBadge value={o.riskReward} /></td>
@@ -1206,7 +1206,7 @@ function SkewContent({ opps, onEnter }) {
         )} />
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <Stat label="IV Skew Edge" value={`${b.skewEdge}%`} color="text-cyan-600" icon="📊" />
-        <Stat label="Net Cost" value={`₹${Math.round(b.netCostRs).toLocaleString()}`} sub={b.netCostRs > 0 ? 'Debit' : 'Credit'} color={b.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'} icon="💵" />
+        <Stat label={b.netCostRs <= 0 ? "Net Credit" : "Net Cost"} value={b.netCostRs <= 0 ? `+₹${Math.abs(Math.round(b.netCostRs)).toLocaleString()}` : `₹${Math.round(b.netCostRs).toLocaleString()}`} sub={b.netCostRs <= 0 ? 'Credit received' : 'Net debit'} color={b.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'} icon="💵" />
         <Stat label="If Flat" value={`₹${Math.round(b.scenarioFlat).toLocaleString()}`} color="text-emerald-600" icon="➡️" />
         <Stat label="If Up" value={`₹${Math.round(b.scenarioUp).toLocaleString()}`} color="text-emerald-600" icon="📈" />
         <Stat label="If Down" value={`₹${Math.round(b.scenarioDown).toLocaleString()}`} color="text-red-500" icon="📉" />
@@ -1219,7 +1219,7 @@ function SkewContent({ opps, onEnter }) {
           <SortTh field="putSellIV" label="Put IV" sort={sort} className="text-right" />
           <SortTh field="callBuyIV" label="Call IV" sort={sort} className="text-right" />
           <SortTh field="skewEdge" label="Skew" sort={sort} className="text-right" />
-          <SortTh field="netCostRs" label="Net Cost" sort={sort} className="text-right" />
+          <SortTh field="netCostRs" label="Net Premium" sort={sort} className="text-right" />
           <SortTh field="scenarioFlat" label="Flat P&L" sort={sort} className="text-right" />
           <SortTh field="scenarioUp" label="Up P&L" sort={sort} className="text-right" />
           <SortTh field="scenarioDown" label="Down P&L" sort={sort} className="text-right" />
@@ -1238,7 +1238,7 @@ function SkewContent({ opps, onEnter }) {
             <td className="px-4 py-3 text-right">
               <span className="px-2.5 py-1 rounded-lg bg-cyan-50 text-cyan-700 border border-cyan-200 text-[10px] font-black">{o.skewEdge}%</span>
             </td>
-            <td className={`px-4 py-3 text-right font-mono font-bold ${o.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>₹{Math.round(o.netCostRs).toLocaleString()}</td>
+            <td className={`px-4 py-3 text-right font-mono font-bold ${o.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{o.netCostRs <= 0 ? `+₹${Math.abs(Math.round(o.netCostRs)).toLocaleString()} Cr` : `₹${Math.round(o.netCostRs).toLocaleString()} Db`}</td>
             <td className="px-4 py-3 text-right font-mono text-emerald-600">₹{Math.round(o.scenarioFlat).toLocaleString()}</td>
             <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.scenarioUp).toLocaleString()}</td>
             <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.scenarioDown).toLocaleString()}</td>
