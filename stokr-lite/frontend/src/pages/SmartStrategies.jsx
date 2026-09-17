@@ -482,18 +482,50 @@ function EmptyState({ tab, marketOpen, lastScannedAt }) {
 }
 
 /* ──── PAYOFF CHART ──── */
-function computePayoff(legs, lotSize, spot) {
+function computePayoff(legs, lotSize, spot, opp) {
   if (!legs || legs.length === 0) return [];
   const strikes = legs.map(l => l.strike);
   const minS = Math.min(...strikes, spot);
   const maxS = Math.max(...strikes, spot);
-  const range = maxS - minS || 100;
+  const range = maxS - minS || (spot * 0.05);
+
+  const isCalendar = (opp && (opp.strategyType === 'CALENDAR_SPREAD_EDGE' || opp.adaptiveType === 'CALENDAR')) ||
+    (legs.length === 2 && legs[0].strike === legs[1].strike && legs[0].optionType === legs[1].optionType && legs[0].side !== legs[1].side);
+
   const hasNakedShort = legs.some(l => l.side === 'SELL');
-  const mult = hasNakedShort ? 2.5 : 0.5;
+  const mult = isCalendar ? 1.5 : (hasNakedShort ? 2.5 : 0.5);
   const lo = minS - range * mult;
   const hi = maxS + range * mult;
   const step = (hi - lo) / 120;
   const points = [];
+
+  if (isCalendar) {
+    const k = strikes[0];
+    const buyLeg = legs.find(l => l.side === 'BUY');
+    const sellLeg = legs.find(l => l.side === 'SELL');
+    const buyPrice = buyLeg ? buyLeg.price : 0;
+    const sellPrice = sellLeg ? sellLeg.price : 0;
+    const netDebitPerShare = buyPrice - sellPrice;
+    
+    const targetMaxProfitRs = opp && typeof opp.maxProfit === 'number' && opp.maxProfit > 0
+      ? opp.maxProfit
+      : Math.max(sellPrice * 0.8, buyPrice * 0.25, Math.abs(netDebitPerShare) * 0.75) * lotSize;
+    
+    const peakProfitPerShare = targetMaxProfitRs / lotSize;
+    const peakTimeValue = netDebitPerShare + peakProfitPerShare;
+    const sigma = k * 0.018;
+
+    for (let s = lo; s <= hi; s += step) {
+      const timeVal = peakTimeValue * Math.exp(-Math.pow((s - k) / sigma, 2));
+      const intrinsicSell = buyLeg && buyLeg.optionType === 'CE' ? Math.max(0, s - k) : Math.max(0, k - s);
+      const nearPnl = sellPrice - intrinsicSell;
+      const farPnl = (intrinsicSell + timeVal) - buyPrice;
+      const pnlPerShare = nearPnl + farPnl;
+      points.push({ s: Math.round(s), pnl: pnlPerShare * lotSize });
+    }
+    return points;
+  }
+
   for (let s = lo; s <= hi; s += step) {
     let pnl = 0;
     for (const leg of legs) {
@@ -507,8 +539,8 @@ function computePayoff(legs, lotSize, spot) {
   return points;
 }
 
-function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
-  const points = useMemo(() => computePayoff(legs, lotSize, spot), [legs, lotSize, spot]);
+function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
+  const points = useMemo(() => computePayoff(legs, lotSize, spot, opp), [legs, lotSize, spot, opp]);
   const svgRef = useRef(null);
   const [hover, setHover] = useState(null);
 
@@ -691,7 +723,7 @@ function PayoffChart({ legs, lotSize, spot, accentColor = '#7c3aed' }) {
 
 function AdvancedPayoff({ opp, legs, lotSize, spot, accentColor }) {
   if (!legs || legs.length === 0) return null;
-  const points = useMemo(() => computePayoff(legs, lotSize, spot), [legs, lotSize, spot]);
+  const points = useMemo(() => computePayoff(legs, lotSize, spot, opp), [legs, lotSize, spot, opp]);
   const maxProfit = points.length > 0 ? Math.max(...points.map(p => p.pnl)) : 0;
   const maxLoss = points.length > 0 ? Math.min(...points.map(p => p.pnl)) : 0;
   const isRiskFree = maxLoss >= 0;
@@ -766,7 +798,7 @@ function AdvancedPayoff({ opp, legs, lotSize, spot, accentColor }) {
         <div className="lg:col-span-2 grid grid-cols-2 gap-2">
           <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl border border-emerald-200/60 p-3 flex flex-col justify-center">
             <div className="text-[9px] font-black text-emerald-500/80 uppercase tracking-wider">Max Profit</div>
-            <div className="text-lg font-black text-emerald-600 mt-1">+₹{Math.round(maxProfit).toLocaleString()}</div>
+            <div className="text-lg font-black text-emerald-600 mt-1">{maxProfit >= 0 ? "+₹" : "-₹"}{Math.abs(Math.round(maxProfit)).toLocaleString()}</div>
           </div>
           <div className={`rounded-xl border p-3 flex flex-col justify-center ${isRiskFree
             ? 'bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200/60'
@@ -801,7 +833,7 @@ function AdvancedPayoff({ opp, legs, lotSize, spot, accentColor }) {
       </div>
 
       {/* Payoff Chart */}
-      <PayoffChart legs={legs} lotSize={lotSize} spot={spot} accentColor={accentColor} />
+      <PayoffChart opp={opp} legs={legs} lotSize={lotSize} spot={spot} accentColor={accentColor} />
     </div>
   );
 }
@@ -2341,7 +2373,7 @@ function EnterTradeModal({ opp, onClose }) {
                   </div>
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-slate-400">Reward ({lots} lot{lots > 1 ? 's' : ''})</span>
-                    <span className="font-mono font-black text-emerald-400">+₹{Math.round(maxProfit).toLocaleString()}</span>
+                    <span className="font-mono font-black text-emerald-400">{maxProfit >= 0 ? "+₹" : "-₹"}{Math.abs(Math.round(maxProfit)).toLocaleString()}</span>
                   </div>
                   <div className="flex items-center justify-between text-[11px] pt-2 border-t border-white/10">
                     <span className="text-slate-400">R:R</span>
