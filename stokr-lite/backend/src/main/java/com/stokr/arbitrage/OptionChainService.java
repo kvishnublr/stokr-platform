@@ -206,12 +206,23 @@ public class OptionChainService {
                             }
 
                             quotes.put(cleanKey, q);
+                            globalQuoteCache.put(rawKey, new CachedQuote(now, q));
+                            globalQuoteCache.put(cleanKey, new CachedQuote(now, q));
                         }
                     }
                 }
             }
         } catch (Exception e) {
             log.error("Failed to fetch quotes from Zerodha: {}", e.getMessage());
+        }
+
+        for (String inst : toFetch) {
+            String key = addExchangePrefix(inst);
+            CachedQuote cq = globalQuoteCache.get(key);
+            if (cq == null) cq = globalQuoteCache.get(stripExchangePrefix(key));
+            if (cq != null && !quotes.containsKey(stripExchangePrefix(key))) {
+                quotes.put(stripExchangePrefix(key), cq.quote);
+            }
         }
 
         return quotes;

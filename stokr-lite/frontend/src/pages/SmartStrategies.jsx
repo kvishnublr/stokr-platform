@@ -1003,7 +1003,16 @@ function TabContent({ tab, underlying, tabInfo, onEnter }) {
           <span className="text-lg">📊</span>
           <div>
             <span className="text-[11px] font-bold text-blue-700">LTP-based estimates</span>
-            <span className="text-[10px] text-blue-500 ml-2">Market closed — prices based on Last Traded Price. Actual bid/ask may differ when market opens.</span>
+            <span className="text-[10px] text-blue-500 ml-2">Market closed — prices based on Last Traded Price / Bid-Ask quotes. Actual live execution prices may differ when market reopens.</span>
+          </div>
+        </div>
+      )}
+      {data?.marketClosed && (
+        <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-purple-50 border border-purple-200/60">
+          <span className="text-lg">🌙</span>
+          <div>
+            <span className="text-[11px] font-bold text-purple-700">Market Closed — Showing Bid/Ask Strategy Candidates</span>
+            <span className="text-[10px] text-purple-500 ml-2">Displaying candidates & payoff curves computed from Bid/Ask quotes. Auto-execution is safely paused until market reopens.</span>
           </div>
         </div>
       )}

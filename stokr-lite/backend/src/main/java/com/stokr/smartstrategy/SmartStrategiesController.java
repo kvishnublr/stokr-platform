@@ -279,6 +279,7 @@ public class SmartStrategiesController {
     }
 
     private void tryAutoExec(List<Map<String, Object>> opps) {
+        if (!isMarketOpen()) return;
         if (opps == null || opps.isEmpty()) return;
         List<Map<String, Object>> actionable = opps.stream()
             .filter(o -> o.containsKey("legList") && o.get("legList") != null)

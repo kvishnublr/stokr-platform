@@ -38,14 +38,7 @@ public class MorningRangeThetaScanner {
 
     public List<Map<String, Object>> scan(String underlying) {
         LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        // Don't scan before range is frozen (10:15)
-        if (now.isBefore(LocalTime.of(10, 15))) {
-            return List.of();
-        }
-        // Don't scan after 2:30 PM — too late for new entries
-        if (now.isAfter(LocalTime.of(14, 30))) {
-            return List.of();
-        }
+        // Off-market scanner allowed to calculate candidate payoffs 24/7
 
         List<String> targets = "ALL".equalsIgnoreCase(underlying)
             ? List.of("NIFTY", "BANKNIFTY") : List.of(underlying);
