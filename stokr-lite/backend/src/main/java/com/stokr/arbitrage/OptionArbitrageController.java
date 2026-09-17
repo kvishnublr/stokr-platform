@@ -1857,35 +1857,13 @@ public class OptionArbitrageController {
                 map.put("peCurrent", 0);
                 map.put("futCurrent", 0);
             } else {
-                String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
-                boolean ceLong = action.contains("BUY CE");
+                pnl = autoExecService.computePnl(p, quotes);
                 var ceQ = p.getCeSymbol() != null ? quotes.get(p.getCeSymbol()) : null;
                 var peQ = p.getPeSymbol() != null ? quotes.get(p.getPeSymbol()) : null;
                 var futQ = p.getFutSymbol() != null ? quotes.get(p.getFutSymbol()) : null;
-                double ceCurrent = ceQ != null ? (ceLong ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice)) : 0;
-                double peCurrent = peQ != null ? (ceLong ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice)) : 0;
-                double futCurrent = futQ != null ? (ceLong ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice)) : 0;
-
-                double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
-                double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
-                double futEntry = p.getFutEntryPrice() != null ? p.getFutEntryPrice().doubleValue() : 0;
-
-                double legacyPnl = 0;
-                if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
-                    if (ceLong) {
-                        if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceCurrent - ceEntry;
-                        if (peCurrent > 0 && peEntry > 0) legacyPnl += peEntry - peCurrent;
-                        if (futCurrent > 0 && futEntry > 0) legacyPnl += futEntry - futCurrent;
-                    } else {
-                        if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceEntry - ceCurrent;
-                        if (peCurrent > 0 && peEntry > 0) legacyPnl += peCurrent - peEntry;
-                        if (futCurrent > 0 && futEntry > 0) legacyPnl += futCurrent - futEntry;
-                    }
-                }
-                pnl = legacyPnl * lotSize * lots;
-                map.put("ceCurrent", ceCurrent);
-                map.put("peCurrent", peCurrent);
-                map.put("futCurrent", futCurrent);
+                map.put("ceCurrent", ceQ != null ? ceQ.lastPrice : 0);
+                map.put("peCurrent", peQ != null ? peQ.lastPrice : 0);
+                map.put("futCurrent", futQ != null ? futQ.lastPrice : 0);
             }
             map.put("currentPnl", Math.round(pnl));
 

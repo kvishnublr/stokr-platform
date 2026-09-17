@@ -2009,7 +2009,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         return ArbitrageCosts.netEdge(ceEntry, peEntry, futEntry, lotSize, grossEdge, action);
     }
 
-    private double computePnl(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes) {
+    public double computePnl(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes) {
         double ceBid = 0, ceAsk = 0, peBid = 0, peAsk = 0, futBid = 0, futAsk = 0;
         double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
 
@@ -2035,24 +2035,19 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         double pnl = 0;
 
         if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
-            if (action.contains("BUY CE +")) {
-                // BUY CE + SELL PE + SELL FUT (Conversion)
-                if (ceCurrent > 0 && ceEntry > 0) pnl += ceBid - ceEntry;
-                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peAsk;
-                if (action.contains("SELL FUT")) {
-                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futAsk;
-                } else if (action.contains("BUY FUT")) {
-                    if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
-                }
-            } else if (action.contains("SELL CE +")) {
-                // SELL CE + BUY PE + BUY FUT (Reversal)
+            boolean isReversal = action.contains("BUY FUT") || action.contains("SELL CE") || action.contains("REVERSAL");
+            boolean isConversion = action.contains("SELL FUT") || action.contains("BUY CE") || action.contains("CONVERSION");
+
+            if (isReversal) {
+                // Reversal: BUY FUT + BUY PE + SELL CE
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceAsk;
                 if (peCurrent > 0 && peEntry > 0) pnl += peBid - peEntry;
-                if (action.contains("SELL FUT")) {
-                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futAsk;
-                } else if (action.contains("BUY FUT")) {
-                    if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
-                }
+                if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
+            } else if (isConversion) {
+                // Conversion: SELL FUT + SELL PE + BUY CE
+                if (ceCurrent > 0 && ceEntry > 0) pnl += ceBid - ceEntry;
+                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peAsk;
+                if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futAsk;
             } else {
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceBid - ceEntry;
                 if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peAsk;
