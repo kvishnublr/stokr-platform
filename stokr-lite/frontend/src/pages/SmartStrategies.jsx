@@ -836,10 +836,13 @@ function TopPickCards({ opps, topKeys, onEnter, accentColor, renderCardContent }
             <div key={key} className="tp-card tp-card-bg" onClick={() => setExpandedKey(isOpen ? null : key)}>
               <div className="relative z-[2] p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5 flex-wrap">
                     <span className={`tp-rank-chip rank-${rank}`}>#{rank} TOP PICK</span>
-                    <span className="text-xs font-black text-slate-700">{o.underlying}</span>
-                    <span className="text-[10px] text-slate-400">{o.expiry || o.expiryDate}</span>
+                    <span className="text-xs font-black text-slate-800">{o.underlying}</span>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-purple-100/90 text-purple-900 text-[11px] font-bold border border-purple-300 shadow-2xs">
+                      📅 Expiry: <span className="font-mono">{o.expiry || o.expiryDate || o.nearExpiry || 'Monthly'}</span>
+                      {o.dte !== undefined && o.dte !== null && <span className="text-[10px] text-purple-700 font-semibold">({o.dte}d)</span>}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                     <button onClick={() => onEnter?.(o)} className="tp-badge">
@@ -1032,10 +1035,11 @@ function RatioContent({ opps, onEnter }) {
     <div className="space-y-5">
       <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#7c3aed"
         renderCardContent={(o, rank) => (
-          <div className="grid grid-cols-6 gap-3 text-center">
+          <div className="grid grid-cols-2 sm:grid-cols-7 gap-3 text-center">
             <div><div className="text-[9px] text-slate-400 font-semibold">Type</div><div className="text-xs font-black text-slate-700">{o.optionType}</div></div>
-            <div><div className="text-[9px] text-slate-400 font-semibold">Buy</div><div className="text-xs font-mono text-slate-600">{o.buyStrike} @ ₹{o.buyPrice}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Buy 1x</div><div className="text-xs font-mono text-slate-600">{o.buyStrike} @ ₹{o.buyPrice}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">Sell 3x</div><div className="text-xs font-mono font-bold text-red-600">{o.sellStrike} @ ₹{o.sellPrice}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Buy 2x</div><div className="text-xs font-mono text-slate-600">{o.farBuyStrike} @ ₹{o.farBuyPrice}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">Net Cost</div><div className={`text-sm font-black ${o.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>₹{Math.round(o.netCostRs).toLocaleString()}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">Max Reward</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">R:R</div><div className="text-sm font-black text-violet-600">1:{Math.round(o.riskReward)}</div></div>
@@ -1121,10 +1125,10 @@ function BWBContent({ opps, onEnter }) {
       ) : (<>
         <TopPickCards opps={filtered} topKeys={topKeys} onEnter={onEnter} accentColor={bwbType === 'PE' ? '#10b981' : '#3b82f6'}
           renderCardContent={(o) => (
-            <div className="grid grid-cols-6 gap-3 text-center">
-              <div><div className="text-[9px] text-slate-400 font-semibold">Near Wing</div><div className="text-xs font-mono text-slate-600">{o.nearWingStrike}</div></div>
-              <div><div className="text-[9px] text-slate-400 font-semibold">Body 2x</div><div className="text-xs font-mono font-bold text-red-600">{o.bodyStrike}</div></div>
-              <div><div className="text-[9px] text-slate-400 font-semibold">Far Wing</div><div className="text-xs font-mono text-slate-600">{o.farWingStrike}</div></div>
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 text-center">
+              <div><div className="text-[9px] text-slate-400 font-semibold">Near Wing</div><div className="text-xs font-mono text-slate-600">{o.nearWingStrike} @ ₹{o.nearWingPrice}</div></div>
+              <div><div className="text-[9px] text-slate-400 font-semibold">Body 2x</div><div className="text-xs font-mono font-bold text-red-600">{o.bodyStrike} @ ₹{o.bodyPrice}</div></div>
+              <div><div className="text-[9px] text-slate-400 font-semibold">Far Wing</div><div className="text-xs font-mono text-slate-600">{o.farWingStrike} @ ₹{o.farWingPrice}</div></div>
               <div><div className="text-[9px] text-slate-400 font-semibold">Credit</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.creditRs).toLocaleString()}</div></div>
               <div><div className="text-[9px] text-slate-400 font-semibold">Max Profit</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</div></div>
               <div><div className="text-[9px] text-slate-400 font-semibold">Max Loss</div><div className="text-sm font-black text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</div></div>
@@ -1614,6 +1618,7 @@ function IronCondorContent({ opps, onEnter }) {
           <SortTh field="breakEvenRangePct" label="BE Range" sort={sort} className="text-center" />
           <SortTh field="score" label="Score" sort={sort} className="text-center" />
           <SortTh field="estimatedWinRate" label="Win%" sort={sort} className="text-center" />
+          <SortTh field="expiry" label="Expiry" sort={sort} className="text-center" />
           <th className="px-2 py-3 text-center w-8"></th>
           <th className="px-2 py-3 text-center w-8"></th>
         </tr>
@@ -1652,6 +1657,7 @@ function IronCondorContent({ opps, onEnter }) {
             </td>
             <td className="px-3 py-3 text-center"><ScoreMeter score={o.score} /></td>
             <td className="px-3 py-3 text-center font-mono font-bold text-emerald-600">{Math.round(o.estimatedWinRate)}%</td>
+            <td className="px-3 py-3 text-center font-mono text-[10px] text-slate-500">{o.expiry || o.expiryDate}</td>
           </>)}
         />
       </TableShell>
