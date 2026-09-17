@@ -487,13 +487,12 @@ function computePayoff(legs, lotSize, spot, opp) {
   const strikes = legs.map(l => l.strike);
   const minS = Math.min(...strikes, spot);
   const maxS = Math.max(...strikes, spot);
-  const range = maxS - minS || (spot * 0.05);
-
   const isCalendar = (opp && (opp.strategyType === 'CALENDAR_SPREAD_EDGE' || opp.adaptiveType === 'CALENDAR')) ||
     (legs.length === 2 && legs[0].strike === legs[1].strike && legs[0].optionType === legs[1].optionType && legs[0].side !== legs[1].side);
 
+  const range = Math.max(maxS - minS, spot * 0.035);
   const hasNakedShort = legs.some(l => l.side === 'SELL');
-  const mult = isCalendar ? 1.5 : (hasNakedShort ? 2.5 : 0.5);
+  const mult = isCalendar ? 1.5 : (hasNakedShort ? 2.5 : 0.8);
   const lo = minS - range * mult;
   const hi = maxS + range * mult;
   const step = (hi - lo) / 120;
@@ -513,7 +512,7 @@ function computePayoff(legs, lotSize, spot, opp) {
     
     const peakProfitPerShare = targetMaxProfitRs / lotSize;
     const peakTimeValue = netDebitPerShare + peakProfitPerShare;
-    const sigma = k * 0.018;
+    const sigma = k * 0.008;
 
     for (let s = lo; s <= hi; s += step) {
       const timeVal = peakTimeValue * Math.exp(-Math.pow((s - k) / sigma, 2));
@@ -724,9 +723,14 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
 function AdvancedPayoff({ opp, legs, lotSize, spot, accentColor }) {
   if (!legs || legs.length === 0) return null;
   const points = useMemo(() => computePayoff(legs, lotSize, spot, opp), [legs, lotSize, spot, opp]);
+  const isCalendar = (opp && (opp.strategyType === 'CALENDAR_SPREAD_EDGE' || opp.adaptiveType === 'CALENDAR')) ||
+    (legs.length === 2 && legs[0].strike === legs[1].strike && legs[0].optionType === legs[1].optionType && legs[0].side !== legs[1].side);
+
   const maxProfit = points.length > 0 ? Math.max(...points.map(p => p.pnl)) : 0;
-  const maxLoss = points.length > 0 ? Math.min(...points.map(p => p.pnl)) : 0;
-  const isRiskFree = maxLoss >= 0;
+  const netDebitRs = legs.reduce((sum, l) => sum + (l.side === 'BUY' ? l.price : -l.price) * (l.qty || 1), 0) * lotSize;
+  const calculatedMaxLoss = points.length > 0 ? Math.min(...points.map(p => p.pnl)) : 0;
+  const maxLoss = isCalendar ? Math.min(-Math.abs(netDebitRs), calculatedMaxLoss) : calculatedMaxLoss;
+  const isRiskFree = maxLoss >= 0 && !isCalendar;
   const rr = maxLoss < 0 ? Math.abs(maxProfit / maxLoss) : Infinity;
   const netCredit = legs.reduce((sum, l) => sum + (l.side === 'SELL' ? l.price : -l.price) * (l.qty || 1), 0);
   const expiry = opp.expiry || opp.expiryDate || '--';
