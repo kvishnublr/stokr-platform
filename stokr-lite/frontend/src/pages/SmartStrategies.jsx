@@ -833,7 +833,12 @@ function TopPickCards({ opps, topKeys, onEnter, accentColor, renderCardContent }
           const rank = topKeys.get(key);
           const isOpen = expandedKey === key;
           return (
-            <div key={key} className="tp-card tp-card-bg" onClick={() => setExpandedKey(isOpen ? null : key)}>
+            <div key={key} className="tp-card tp-card-bg" onClick={(e) => {
+              setExpandedKey(isOpen ? null : key);
+              if (!isOpen && e.currentTarget) {
+                setTimeout(() => e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+              }
+            }}>
               <div className="relative z-[2] p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5 flex-wrap">
@@ -2202,8 +2207,8 @@ function EnterTradeModal({ opp, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-6 pb-6 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-[900px] max-w-[95vw] max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-[900px] max-w-[95vw] max-h-[88vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="shrink-0 px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-violet-900 to-indigo-900 rounded-t-2xl">
           <div className="flex items-center justify-between">
