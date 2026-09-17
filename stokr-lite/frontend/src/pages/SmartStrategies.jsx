@@ -482,6 +482,44 @@ function EmptyState({ tab, marketOpen, lastScannedAt }) {
 }
 
 /* ──── PAYOFF CHART ──── */
+/* ???? CAPITAL REQUIRED (NSE SPAN HEDGED MARGIN ENGINE) ???? */
+function computeCapitalRequired(legs, lotSize, spot, opp) {
+  if (!legs || legs.length === 0) return 0;
+
+  const buyLegs = legs.filter(l => l.side === 'BUY');
+  const sellLegs = legs.filter(l => l.side === 'SELL');
+  const buyQty = buyLegs.reduce((sum, l) => sum + (l.qty || 1), 0);
+  const sellQty = sellLegs.reduce((sum, l) => sum + (l.qty || 1), 0);
+  
+  const totalPremiumBuy = buyLegs.reduce((sum, l) => sum + (l.price || 0) * (l.qty || 1), 0) * lotSize;
+  const totalPremiumSell = sellLegs.reduce((sum, l) => sum + (l.price || 0) * (l.qty || 1), 0) * lotSize;
+  const netDebit = Math.max(0, totalPremiumBuy - totalPremiumSell);
+
+  const stratType = opp?.strategyType || opp?.type || opp?.adaptiveType || '';
+
+  if (stratType.includes('CALENDAR') || (legs.length === 2 && legs[0].strike === legs[1].strike && legs[0].side !== legs[1].side)) {
+    const calendarMarginBuffer = spot * lotSize * 0.025;
+    return Math.round(netDebit + calendarMarginBuffer);
+  }
+
+  if (sellLegs.length === 0) {
+    return Math.round(totalPremiumBuy);
+  }
+
+  const points = computePayoff(legs, lotSize, spot, opp);
+  const minPnl = points.length > 0 ? Math.min(...points.map(p => p.pnl)) : 0;
+  const maxLoss = minPnl < 0 ? Math.abs(minPnl) : 0;
+
+  if (buyQty >= sellQty) {
+    return Math.max(Math.round(maxLoss + netDebit), Math.round(totalPremiumBuy * 0.4));
+  }
+
+  const unhedgedShortQty = sellQty - buyQty;
+  const nakedShortMarginPerLot = spot * lotSize * 0.12;
+
+  return Math.round(maxLoss + (unhedgedShortQty * nakedShortMarginPerLot) + netDebit);
+}
+
 function computePayoff(legs, lotSize, spot, opp) {
   if (!legs || legs.length === 0) return [];
   const strikes = legs.map(l => l.strike);
@@ -811,6 +849,10 @@ function AdvancedPayoff({ opp, legs, lotSize, spot, accentColor }) {
             <div className={`text-lg font-black mt-1 ${isRiskFree ? 'text-emerald-600' : 'text-red-600'}`}>
               {isRiskFree ? 'Risk-Free' : `-₹${Math.abs(Math.round(maxLoss)).toLocaleString()}`}
             </div>
+          </div>
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border border-amber-200/60 p-3 flex flex-col justify-center">
+            <div className="text-[9px] font-black text-amber-600/90 uppercase tracking-wider">Capital Req.*</div>
+            <div className="text-lg font-black text-amber-700 mt-1">₹{Math.round(computeCapitalRequired(legs, lotSize, spot, opp)).toLocaleString()}</div>
           </div>
           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200/60 p-3 flex flex-col justify-center">
             <div className="text-[9px] font-black text-blue-500/80 uppercase tracking-wider">Risk:Reward</div>
