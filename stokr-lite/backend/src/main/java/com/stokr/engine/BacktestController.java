@@ -125,19 +125,22 @@ public class BacktestController {
 
             for (SignalEntity signal : signals) {
                 if (signal.getExitType() != null) {
+                    boolean isBuy = signal.getSide() != SignalEntity.Side.SELL;
                     if ("TARGET_HIT".equals(signal.getExitType())) {
                         winCount++;
                         if (signal.getTarget() != null && signal.getEntryPrice() != null) {
-                            double pnl = (signal.getTarget().doubleValue() - signal.getEntryPrice().doubleValue())
-                                / signal.getEntryPrice().doubleValue() * 5000;
-                            totalPnL += pnl;
+                            double diff = isBuy
+                                ? signal.getTarget().doubleValue() - signal.getEntryPrice().doubleValue()
+                                : signal.getEntryPrice().doubleValue() - signal.getTarget().doubleValue();
+                            totalPnL += diff / signal.getEntryPrice().doubleValue() * 5000;
                         }
                     } else if ("SL_HIT".equals(signal.getExitType())) {
                         lossCount++;
                         if (signal.getStopLoss() != null && signal.getEntryPrice() != null) {
-                            double loss = (signal.getEntryPrice().doubleValue() - signal.getStopLoss().doubleValue())
-                                / signal.getEntryPrice().doubleValue() * 5000;
-                            totalPnL -= loss;
+                            double diff = isBuy
+                                ? signal.getEntryPrice().doubleValue() - signal.getStopLoss().doubleValue()
+                                : signal.getStopLoss().doubleValue() - signal.getEntryPrice().doubleValue();
+                            totalPnL -= diff / signal.getEntryPrice().doubleValue() * 5000;
                         }
                     }
                 }
@@ -174,11 +177,16 @@ public class BacktestController {
 
         for (SignalEntity signal : signals) {
             if (signal.getExitType() != null && signal.getEntryPrice() != null) {
+                boolean isBuy = signal.getSide() != SignalEntity.Side.SELL;
                 double tradePnL = 0;
                 if ("TARGET_HIT".equals(signal.getExitType()) && signal.getTarget() != null) {
-                    tradePnL = (signal.getTarget().doubleValue() - signal.getEntryPrice().doubleValue());
+                    tradePnL = isBuy
+                        ? signal.getTarget().doubleValue() - signal.getEntryPrice().doubleValue()
+                        : signal.getEntryPrice().doubleValue() - signal.getTarget().doubleValue();
                 } else if ("SL_HIT".equals(signal.getExitType()) && signal.getStopLoss() != null) {
-                    tradePnL = -(signal.getEntryPrice().doubleValue() - signal.getStopLoss().doubleValue());
+                    tradePnL = isBuy
+                        ? -(signal.getEntryPrice().doubleValue() - signal.getStopLoss().doubleValue())
+                        : -(signal.getStopLoss().doubleValue() - signal.getEntryPrice().doubleValue());
                 }
 
                 runningBalance += tradePnL;
@@ -197,10 +205,15 @@ public class BacktestController {
 
         for (SignalEntity signal : signals) {
             if (signal.getExitType() != null && signal.getEntryPrice() != null) {
+                boolean isBuy = signal.getSide() != SignalEntity.Side.SELL;
                 if ("TARGET_HIT".equals(signal.getExitType()) && signal.getTarget() != null) {
-                    grossProfit += (signal.getTarget().doubleValue() - signal.getEntryPrice().doubleValue());
+                    grossProfit += isBuy
+                        ? signal.getTarget().doubleValue() - signal.getEntryPrice().doubleValue()
+                        : signal.getEntryPrice().doubleValue() - signal.getTarget().doubleValue();
                 } else if ("SL_HIT".equals(signal.getExitType()) && signal.getStopLoss() != null) {
-                    grossLoss += (signal.getEntryPrice().doubleValue() - signal.getStopLoss().doubleValue());
+                    grossLoss += isBuy
+                        ? signal.getEntryPrice().doubleValue() - signal.getStopLoss().doubleValue()
+                        : signal.getStopLoss().doubleValue() - signal.getEntryPrice().doubleValue();
                 }
             }
         }

@@ -26,16 +26,10 @@ public class SignalController {
 
     @GetMapping
     public ResponseEntity<List<SignalEntity>> getMySignals() {
-        Long userId = null;
-        try {
-            userId = SecurityUtils.currentUserId();
-        } catch (Exception e) {
-            // User not authenticated, fetch all signals
-        }
+        Long userId = SecurityUtils.currentUserId();
         List<SignalEntity> signals;
         if (userId == null) {
-            // Unauthenticated: return all signals
-            signals = signalRepository.findTop50ByOrderByCreatedAtDesc();
+            return ResponseEntity.status(401).build();
         } else {
             // Authenticated: return user's signals or public signals
             signals = signalRepository.findTop50ByUserIdOrUserIdIsNullOrderByCreatedAtDesc(userId);

@@ -153,7 +153,7 @@ public class FuturesTradingExecutor {
         // Apply exit slippage
         BigDecimal slippageMultiplier = BigDecimal.ONE.add(SLIPPAGE_EXIT_BPS);
         BigDecimal exitPriceWithSlippage = trade.direction.equals("LONG") ?
-                exitPrice.divide(slippageMultiplier) :
+                exitPrice.divide(slippageMultiplier, 4, java.math.RoundingMode.HALF_UP) :
                 exitPrice.multiply(slippageMultiplier);
 
         // Calculate P&L
