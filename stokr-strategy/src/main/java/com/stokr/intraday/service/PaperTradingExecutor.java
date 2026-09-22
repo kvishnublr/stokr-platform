@@ -26,7 +26,7 @@ import java.util.*;
 public class PaperTradingExecutor {
 
     private final IndexHuntService indexHuntService;
-    private final Map<Long, PaperTrade> activeTrades = new HashMap<>();
+    private final Map<Long, PaperTrade> activeTrades = new java.util.concurrent.ConcurrentHashMap<>();
 
     // Paper trading configuration
     private static final BigDecimal SLIPPAGE_ENTRY_BPS = BigDecimal.valueOf(5);      // 0.05% slippage on entry
@@ -68,8 +68,8 @@ public class PaperTradingExecutor {
             trade.direction = signal.getDirection();
             trade.entryTime = Instant.now();
             trade.entryPremium = actualEntryPremium;
-            trade.slTarget = signal.getOptionSL().multiply(slippageMultiplier); // Apply slippage to SL too
-            trade.t1Target = signal.getOptionT1().multiply(slippageMultiplier); // Apply slippage to T1
+            trade.slTarget = signal.getOptionSL();
+            trade.t1Target = signal.getOptionT1();
             trade.t2Target = signal.getOptionT2();
             trade.qualityScore = signal.getQualityScore();
             trade.lotSize = "NIFTY".equalsIgnoreCase(signal.getIndexName()) ? 25 : 15;
@@ -104,6 +104,11 @@ public class PaperTradingExecutor {
                 continue; // No price data
             }
 
+            // Initialize lastKnownPrice on first tick
+            if (trade.lastKnownPrice == null) {
+                trade.lastKnownPrice = currentPrice;
+            }
+
             // Check timeout (T1 should hit within 15 minutes)
             long holdSeconds = ChronoUnit.SECONDS.between(trade.entryTime, Instant.now());
             if (holdSeconds > TRADE_MAX_HOLD_SECONDS) {
@@ -114,29 +119,35 @@ public class PaperTradingExecutor {
             }
 
             // Simulate option premium movement based on underlying move
-            // Simplified: option premium moves at 2x the underlying move
-            BigDecimal underlyingMovePercent = currentPrice.subtract(trade.lastKnownPrice)
-                    .divide(trade.lastKnownPrice, 6, RoundingMode.HALF_UP);
-            BigDecimal simulatedPremiumMove = underlyingMovePercent.multiply(BigDecimal.valueOf(2));
+            BigDecimal basePrice = trade.lastKnownPrice.compareTo(BigDecimal.ZERO) == 0
+                    ? currentPrice : trade.lastKnownPrice;
+            BigDecimal underlyingMovePercent = currentPrice.subtract(basePrice)
+                    .divide(basePrice, 6, RoundingMode.HALF_UP);
+            BigDecimal delta = "CE".equals(trade.direction) ? BigDecimal.valueOf(0.5) : BigDecimal.valueOf(-0.5);
+            BigDecimal simulatedPremiumMove = underlyingMovePercent.multiply(delta);
             BigDecimal currentOptionPrice = trade.entryPremium
                     .multiply(BigDecimal.ONE.add(simulatedPremiumMove))
                     .setScale(2, RoundingMode.HALF_UP);
 
-            // Check for T1 hit (profit target)
-            if ("CE".equals(trade.direction) && currentOptionPrice.compareTo(trade.t1Target) >= 0) {
-                BigDecimal exitPrice = trade.t1Target.multiply(
-                        BigDecimal.ONE.add(SLIPPAGE_EXIT_BPS.divide(BigDecimal.valueOf(10000), 6, RoundingMode.HALF_UP))
-                );
+            BigDecimal exitSlippage = SLIPPAGE_EXIT_BPS.divide(BigDecimal.valueOf(10000), 6, RoundingMode.HALF_UP);
+
+            // Check for T1 hit (profit target) — both CE and PE
+            boolean t1Hit = "CE".equals(trade.direction)
+                    ? currentOptionPrice.compareTo(trade.t1Target) >= 0
+                    : currentOptionPrice.compareTo(trade.t1Target) <= 0;
+            if (t1Hit) {
+                BigDecimal exitPrice = trade.t1Target.multiply(BigDecimal.ONE.subtract(exitSlippage));
                 closeTrade(trade, "WIN", exitPrice, "T1 hit at " + trade.t1Target);
                 toClose.add(signalId);
                 continue;
             }
 
             // Check for SL hit (loss limit)
-            if (currentOptionPrice.compareTo(trade.slTarget) <= 0) {
-                BigDecimal exitPrice = trade.slTarget.multiply(
-                        BigDecimal.ONE.subtract(SLIPPAGE_EXIT_BPS.divide(BigDecimal.valueOf(10000), 6, RoundingMode.HALF_UP))
-                );
+            boolean slHit = "CE".equals(trade.direction)
+                    ? currentOptionPrice.compareTo(trade.slTarget) <= 0
+                    : currentOptionPrice.compareTo(trade.slTarget) >= 0;
+            if (slHit) {
+                BigDecimal exitPrice = trade.slTarget.multiply(BigDecimal.ONE.subtract(exitSlippage));
                 closeTrade(trade, "LOSS", exitPrice, "SL hit at " + trade.slTarget);
                 toClose.add(signalId);
                 continue;
@@ -225,7 +236,7 @@ public class PaperTradingExecutor {
         public BigDecimal t2Target;
         public BigDecimal qualityScore;
         public int lotSize;
-        public BigDecimal lastKnownPrice = BigDecimal.ZERO; // For monitoring
+        public BigDecimal lastKnownPrice = null;
 
         public long getHoldSeconds() {
             return ChronoUnit.SECONDS.between(entryTime, Instant.now());

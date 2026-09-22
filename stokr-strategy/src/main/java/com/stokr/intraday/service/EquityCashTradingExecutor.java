@@ -44,7 +44,7 @@ public class EquityCashTradingExecutor {
             BigDecimal slippageMultiplier = BigDecimal.ONE.add(SLIPPAGE_ENTRY_BPS);
             BigDecimal entryPriceWithSlippage = signal.getDirection().equals("LONG") ?
                     signal.getEntryLevel().multiply(slippageMultiplier) :
-                    signal.getEntryLevel().divide(slippageMultiplier);
+                    signal.getEntryLevel().divide(slippageMultiplier, 4, java.math.RoundingMode.HALF_UP);
 
             // Determine quantity based on position sizing (₹20k per trade)
             BigDecimal positionSize = BigDecimal.valueOf(20000);

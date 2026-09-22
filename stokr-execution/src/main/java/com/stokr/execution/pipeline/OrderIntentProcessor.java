@@ -446,7 +446,7 @@ public class OrderIntentProcessor {
         return switch (signal.getSignalType()) {
             case BUY -> "BUY";
             case SELL -> "SELL";
-            case EXIT -> "SELL";
+            case EXIT -> signal.getDirection() != null && signal.getDirection().name().equals("SHORT") ? "BUY" : "SELL";
             case HOLD -> "HOLD";
         };
     }

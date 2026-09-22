@@ -279,8 +279,10 @@ public class PressureSmartExitService {
         if (entry <= 0) {
             return null;
         }
+        double qty = sig.getQuantity() != null ? sig.getQuantity().doubleValue() : 1.0;
+        if (qty <= 0) qty = 1.0;
         double mfe = sig.getMaxFavorableExcursion() != null
-                ? sig.getMaxFavorableExcursion().doubleValue()
+                ? sig.getMaxFavorableExcursion().doubleValue() / qty
                 : 0.0;
         double curFav = ctx.isBuy() ? (ctx.currentPrice() - entry) : (entry - ctx.currentPrice());
         double armDist = entry * ctx.profile().trailArmPct() / 100.0;

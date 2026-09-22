@@ -60,16 +60,16 @@ export default function AdvancedBacktest() {
     <div style={{ animation: 'fadeIn 0.5s ease', padding: '24px' }}>
       <style>{`
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .input-group { margin-bottom: '16px'; }
-        .label-text { display: 'block'; fontSize: '12px'; fontWeight: '600'; color: '#6b7280'; marginBottom: '6px'; textTransform: 'uppercase'; }
-        .input-field { width: '100%'; padding: '8px 12px'; borderRadius: '8px'; border: '1px solid #d1d5db'; fontSize: '13px'; }
-        .multi-select { display: 'flex'; flexWrap: 'wrap'; gap: '8px'; }
-        .tag { padding: '4px 12px'; borderRadius: '6px'; backgroundColor: '#e0e7ff'; color: '#4f46e5'; cursor: 'pointer'; fontSize: '12px'; border: '1px solid #c7d2fe'; transition: 'all 0.2s'; }
-        .tag:hover { backgroundColor: '#c7d2fe'; }
-        .tag.active { backgroundColor: '#4f46e5'; color: 'white'; }
-        .button-primary { padding: '10px 20px'; background: 'linear-gradient(135deg, #6366f1, #8b5cf6)'; color: 'white'; border: 'none'; borderRadius: '8px'; cursor: 'pointer'; fontSize: '13px'; fontWeight: '700'; transition: 'all 0.2s'; }
-        .button-primary:hover { transform: 'translateY(-2px)'; boxShadow: '0 8px 16px rgba(99, 102, 241, 0.3)'; }
-        .button-primary:disabled { opacity: '0.5'; cursor: 'not-allowed'; }
+        .input-group { margin-bottom: 16px; }
+        .label-text { display: block; font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 6px; text-transform: uppercase; }
+        .input-field { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #d1d5db; font-size: 13px; }
+        .multi-select { display: flex; flex-wrap: wrap; gap: 8px; }
+        .tag { padding: 4px 12px; border-radius: 6px; background-color: #e0e7ff; color: #4f46e5; cursor: pointer; font-size: 12px; border: 1px solid #c7d2fe; transition: all 0.2s; }
+        .tag:hover { background-color: #c7d2fe; }
+        .tag.active { background-color: #4f46e5; color: white; }
+        .button-primary { padding: 10px 20px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 700; transition: all 0.2s; }
+        .button-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(99, 102, 241, 0.3); }
+        .button-primary:disabled { opacity: 0.5; cursor: not-allowed; }
       `}</style>
 
       {/* Header */}
@@ -87,39 +87,39 @@ export default function AdvancedBacktest() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '24px' }}>
           {/* Date Start */}
           <div>
-            <label style={eval('({ display: "block", fontSize: "12px", fontWeight: "600", color: "#6b7280", marginBottom: "6px", textTransform: "uppercase" })')}>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#6b7280', marginBottom: '6px', textTransform: 'uppercase' }}>
               Start Date
             </label>
             <input
               type="date"
               value={dateStart}
               onChange={(e) => setDateStart(e.target.value)}
-              style={eval('({ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "13px" })')}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px' }}
             />
           </div>
 
           {/* Date End */}
           <div>
-            <label style={eval('({ display: "block", fontSize: "12px", fontWeight: "600", color: "#6b7280", marginBottom: "6px", textTransform: "uppercase" })')}>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#6b7280', marginBottom: '6px', textTransform: 'uppercase' }}>
               End Date
             </label>
             <input
               type="date"
               value={dateEnd}
               onChange={(e) => setDateEnd(e.target.value)}
-              style={eval('({ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "13px" })')}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px' }}
             />
           </div>
 
           {/* Timeframe */}
           <div>
-            <label style={eval('({ display: "block", fontSize: "12px", fontWeight: "600", color: "#6b7280", marginBottom: "6px", textTransform: "uppercase" })')}>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#6b7280', marginBottom: '6px', textTransform: 'uppercase' }}>
               Timeframe
             </label>
             <select
               value={selectedTimeframe}
               onChange={(e) => setSelectedTimeframe(e.target.value)}
-              style={eval('({ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "13px", cursor: "pointer" })')}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px', cursor: 'pointer' }}
             >
               {timeframes.map(tf => <option key={tf} value={tf}>{tf}</option>)}
             </select>
@@ -127,13 +127,13 @@ export default function AdvancedBacktest() {
 
           {/* Strategy */}
           <div>
-            <label style={eval('({ display: "block", fontSize: "12px", fontWeight: "600", color: "#6b7280", marginBottom: "6px", textTransform: "uppercase" })')}>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#6b7280', marginBottom: '6px', textTransform: 'uppercase' }}>
               Strategy
             </label>
             <select
               value={selectedStrategy}
               onChange={(e) => setSelectedStrategy(e.target.value)}
-              style={eval('({ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "13px", cursor: "pointer" })')}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px', cursor: 'pointer' }}
             >
               <option value="ALL">All Strategies</option>
               {strategies.map(s => <option key={s} value={s}>{s}</option>)}
@@ -143,10 +143,10 @@ export default function AdvancedBacktest() {
 
         {/* Symbols */}
         <div style={{ marginBottom: '24px' }}>
-          <label style={eval('({ display: "block", fontSize: "12px", fontWeight: "600", color: "#6b7280", marginBottom: "12px", textTransform: "uppercase" })')}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#6b7280', marginBottom: '12px', textTransform: 'uppercase' }}>
             Select Symbols ({selectedSymbols.length} selected)
           </label>
-          <div style={eval('({ display: "flex", flexWrap: "wrap", gap: "8px" })')}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
             {commonSymbols.map(symbol => (
               <button
                 key={symbol}

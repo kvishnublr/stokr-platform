@@ -41,19 +41,22 @@ public class BacktestController {
 
         for (SignalEntity signal : signals) {
             if (signal.getExitType() != null) {
+                boolean isBuy = signal.getSide() != SignalEntity.Side.SELL;
                 if ("TARGET_HIT".equals(signal.getExitType())) {
                     winCount++;
                     if (signal.getTarget() != null && signal.getEntryPrice() != null) {
-                        double pnl = (signal.getTarget().doubleValue() - signal.getEntryPrice().doubleValue())
-                            / signal.getEntryPrice().doubleValue() * 5000;
-                        totalPnL += pnl;
+                        double diff = isBuy
+                            ? signal.getTarget().doubleValue() - signal.getEntryPrice().doubleValue()
+                            : signal.getEntryPrice().doubleValue() - signal.getTarget().doubleValue();
+                        totalPnL += diff / signal.getEntryPrice().doubleValue() * 5000;
                     }
                 } else if ("SL_HIT".equals(signal.getExitType())) {
                     lossCount++;
                     if (signal.getStopLoss() != null && signal.getEntryPrice() != null) {
-                        double loss = (signal.getEntryPrice().doubleValue() - signal.getStopLoss().doubleValue())
-                            / signal.getEntryPrice().doubleValue() * 5000;
-                        totalPnL -= loss;
+                        double diff = isBuy
+                            ? signal.getEntryPrice().doubleValue() - signal.getStopLoss().doubleValue()
+                            : signal.getStopLoss().doubleValue() - signal.getEntryPrice().doubleValue();
+                        totalPnL -= diff / signal.getEntryPrice().doubleValue() * 5000;
                     }
                 }
             }

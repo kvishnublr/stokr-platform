@@ -43,8 +43,11 @@ public class BrokerNormalizationService {
             return DEFAULT_LOT_SIZE;
         }
         String s = symbol.toUpperCase();
-        if (s.contains("BANKNIFTY") || s.contains("NIFTY_FUT") || s.contains("NIFTY-FUT")) {
+        if (s.contains("BANKNIFTY")) {
             return new BigDecimal("15");
+        }
+        if (s.contains("NIFTY") || s.contains("NIFTY_FUT") || s.contains("NIFTY-FUT")) {
+            return new BigDecimal("25");
         }
         if (s.contains("FUT")) {
             return new BigDecimal("1");

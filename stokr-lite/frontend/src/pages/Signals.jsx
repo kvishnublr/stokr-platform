@@ -31,9 +31,8 @@ function calculatePnL(signal) {
     const sl = Number(signal.stopLoss) || entry;
     exitPrice = (target + sl) / 2;
   } else {
-    // Fallback: use target for profit, SL for loss
     if (!signal.exitType) {
-      exitPrice = Number(signal.target) || entry;
+      return 0;
     }
   }
 
@@ -61,7 +60,8 @@ function AnimatedCounter({ value, duration = 1200 }) {
       setDisplay(Math.floor(value * eased));
       if (p < 1) requestAnimationFrame(animate);
     };
-    requestAnimationFrame(animate);
+    const id = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(id);
   }, [value, duration]);
   return <span>{display.toLocaleString('en-IN')}</span>;
 }
@@ -75,9 +75,9 @@ function StrategyModal({ strategy, signals, onClose }) {
   const executed = strategySignals.filter(s => s.status === 'EXECUTED').length;
   const rejected = strategySignals.filter(s => s.status === 'REJECTED').length;
 
-  // Calculate profit metrics (assuming target achieved = profit, stop loss hit = loss)
-  const profitableSignals = strategySignals.filter(s => s.status === 'EXECUTED').length;
-  const winRate = total > 0 ? ((profitableSignals / total) * 100).toFixed(1) : 0;
+  const profitableSignals = strategySignals.filter(s => s.exitType === 'TARGET_HIT').length;
+  const closedSignals = strategySignals.filter(s => s.exitType != null).length;
+  const winRate = closedSignals > 0 ? ((profitableSignals / closedSignals) * 100).toFixed(1) : 0;
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, animation: 'fadeIn 0.3s ease' }}>

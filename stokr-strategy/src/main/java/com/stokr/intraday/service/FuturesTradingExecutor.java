@@ -46,7 +46,7 @@ public class FuturesTradingExecutor {
             BigDecimal slippageMultiplier = BigDecimal.ONE.add(SLIPPAGE_ENTRY_BPS);
             BigDecimal entryPriceWithSlippage = signal.getDirection().equals("LONG") ?
                     signal.getEntryLevel().multiply(slippageMultiplier) :
-                    signal.getEntryLevel().divide(slippageMultiplier);
+                    signal.getEntryLevel().divide(slippageMultiplier, 4, java.math.RoundingMode.HALF_UP);
 
             // Get lot size
             int lotSize = signal.getSymbolName().equals("NIFTY") ? LOT_SIZE_NIFTY : LOT_SIZE_BANKNIFTY;
@@ -164,8 +164,7 @@ public class FuturesTradingExecutor {
             pnl = trade.entryPrice.subtract(exitPriceWithSlippage);
         }
 
-        // Multiply by lot size and tick value (100 for rupee conversion)
-        BigDecimal totalPnL = pnl.multiply(BigDecimal.valueOf(trade.lotSize * 100));
+        BigDecimal totalPnL = pnl.multiply(BigDecimal.valueOf(trade.lotSize));
 
         trade.exitPrice = exitPriceWithSlippage;
         trade.exitTime = Instant.now();

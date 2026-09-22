@@ -119,8 +119,8 @@ services:
       - .env
     environment:
       POSTGRES_DB: ${DB_NAME:-stokr_platform}
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-root}
+      POSTGRES_USER: ${DB_USER:-stokr}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-stokr}
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:

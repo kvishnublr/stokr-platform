@@ -224,7 +224,12 @@ public class PositionSizingService {
                 BigDecimal riskBudget = cfg.getAllocatedCapital()
                         .multiply(cfg.getMaxRiskPerTradePct())
                         .divide(BigDecimal.valueOf(100), 8, RoundingMode.FLOOR);
-                yield riskBudget.divide(price, 0, RoundingMode.FLOOR).max(BigDecimal.ONE);
+                BigDecimal riskPerUnit = price.multiply(cfg.getMaxRiskPerTradePct())
+                        .divide(BigDecimal.valueOf(100), 8, RoundingMode.FLOOR);
+                if (riskPerUnit.compareTo(BigDecimal.ZERO) <= 0) {
+                    yield BigDecimal.ONE;
+                }
+                yield riskBudget.divide(riskPerUnit, 0, RoundingMode.FLOOR).max(BigDecimal.ONE);
             }
             default -> cfg.getFixedQty() != null ? cfg.getFixedQty() : BigDecimal.ONE;
         };

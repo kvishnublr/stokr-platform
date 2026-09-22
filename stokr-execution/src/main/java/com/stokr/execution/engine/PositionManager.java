@@ -21,6 +21,7 @@ public class PositionManager {
 
     private final Map<String, Position> positions = new HashMap<>();
     private final UUID userId;
+    private BigDecimal closedPositionsPnl = BigDecimal.ZERO;
 
     public PositionManager(UUID userId) {
         this.userId = userId;
@@ -76,6 +77,7 @@ public class PositionManager {
         pos.exitTime = exitTime;
 
         if (pos.getNetQty().compareTo(BigDecimal.ZERO) == 0) {
+            closedPositionsPnl = closedPositionsPnl.add(pos.realizedPnl);
             positions.remove(symbol);
             log.info("position.closed userId={} symbol={} realizedPnl={}", userId, symbol, realizedPnl);
         }
@@ -110,9 +112,10 @@ public class PositionManager {
      * Get total realized P&L.
      */
     public BigDecimal getTotalRealizedPnl() {
-        return positions.values().stream()
+        BigDecimal openPnl = positions.values().stream()
                 .map(p -> p.realizedPnl)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return closedPositionsPnl.add(openPnl);
     }
 
     /**

@@ -40,9 +40,6 @@ public class SignalController {
             // Authenticated: return user's signals or public signals
             signals = signalRepository.findTop50ByUserIdOrUserIdIsNullOrderByCreatedAtDesc(userId);
         }
-        if (signals.isEmpty()) {
-            return ResponseEntity.ok(getMockSignals());
-        }
         return ResponseEntity.ok(signals);
     }
 
@@ -59,14 +56,6 @@ public class SignalController {
         long todayCount = signalRepository.countByCreatedAtAfter(todayStart);
         long activeCount = signalRepository.countByStatus("GENERATED");
         long totalCount = signalRepository.countAllBy();
-
-        if (totalCount == 0) {
-            return ResponseEntity.ok(Map.of(
-                    "today", 10L,
-                    "active", 5L,
-                    "total", 10L
-            ));
-        }
 
         return ResponseEntity.ok(Map.of(
                 "today", todayCount,

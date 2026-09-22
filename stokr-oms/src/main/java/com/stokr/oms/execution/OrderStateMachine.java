@@ -21,6 +21,7 @@ public final class OrderStateMachine {
         put(OrderState.SUBMITTED, OrderState.ACCEPTED, OrderState.REJECTED, OrderState.FAILED);
         put(OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED, OrderState.FILLED, OrderState.CANCEL_REQUESTED, OrderState.FAILED);
         put(OrderState.PARTIALLY_FILLED, OrderState.PARTIALLY_FILLED, OrderState.FILLED, OrderState.CANCEL_REQUESTED, OrderState.FAILED);
+        put(OrderState.CANCEL_REQUESTED, OrderState.CANCELLED, OrderState.FILLED, OrderState.PARTIALLY_FILLED, OrderState.FAILED);
     }
 
     private static void put(OrderState from, OrderState... tos) {
