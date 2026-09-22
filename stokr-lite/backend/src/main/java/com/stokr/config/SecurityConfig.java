@@ -44,6 +44,7 @@ public class SecurityConfig {
                         AntPathRequestMatcher.antMatcher("/api/brokers/*/callback"),
                         AntPathRequestMatcher.antMatcher("/api/broker/*/callback"),
                         AntPathRequestMatcher.antMatcher("/api/zerodha/callback"),
+                        AntPathRequestMatcher.antMatcher("/api/market/**"),
                         AntPathRequestMatcher.antMatcher("/actuator/health"),
                         AntPathRequestMatcher.antMatcher("/"),
                         AntPathRequestMatcher.antMatcher("/index.html"),
