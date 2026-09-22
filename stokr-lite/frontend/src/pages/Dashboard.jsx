@@ -104,37 +104,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Market Ticker */}
-      <div className="ticker-container-aurora" style={{ marginBottom: '28px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11px', fontWeight: 750, textTransform: 'uppercase', letterSpacing: '1.2px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-          <div className="animate-pulse-dot" style={{ width: '6px', height: '6px', background: '#10b981', borderRadius: '50%' }} />
-          Real-time Market
-        </div>
-        <div style={{ display: 'flex', gap: '32px', animation: 'scroll-infinite 35s linear infinite', padding: '4px 0' }}>
-          {['NIFTY50|23,847|↑1.24%','RELIANCE|2,847|↑2.18%','TCS|3,612|↓0.45%','HDFCBANK|1,687|↑0.92%','INFY|1,524|↑1.67%','ICICIBANK|1,198|↓0.31%','SBIN|842|↑1.85%'].map((item, i) => {
-            const [sym, price, change] = item.split('|');
-            const isUp = change.startsWith('↑');
-            return (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', whiteSpace: 'nowrap', padding: '6px 14px', borderRadius: '10px', background: 'rgba(99,102,241,0.04)' }}>
-                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{sym}</span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', fontWeight: 600, color: '#64748b' }}>{price}</span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', background: isUp ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.1)', color: isUp ? '#059669' : '#dc2626' }}>{change}</span>
-              </div>
-            );
-          })}
-          {['NIFTY50|23,847|↑1.24%','RELIANCE|2,847|↑2.18%','TCS|3,612|↓0.45%','HDFCBANK|1,687|↑0.92%','INFY|1,524|↑1.67%','ICICIBANK|1,198|↓0.31%','SBIN|842|↑1.85%'].map((item, i) => {
-            const [sym, price, change] = item.split('|');
-            const isUp = change.startsWith('↑');
-            return (
-              <div key={`dup-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '12px', whiteSpace: 'nowrap', padding: '6px 14px', borderRadius: '10px', background: 'rgba(99,102,241,0.04)' }}>
-                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{sym}</span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', fontWeight: 600, color: '#64748b' }}>{price}</span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', background: isUp ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.1)', color: isUp ? '#059669' : '#dc2626' }}>{change}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {/* Market Ticker - removed: was showing hardcoded fake data */}
 
       {/* Stats Grid */}
       <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '18px', marginBottom: '28px' }}>
@@ -142,7 +112,7 @@ export default function Dashboard() {
         <StatBox icon="✅" label="Active" value={active.length} color="#059669" gradient="linear-gradient(90deg, #10b981, #34d399)" />
         <StatBox icon="📄" label="Paper Mode" value={paper.length} color="#d97706" gradient="linear-gradient(90deg, #f59e0b, #fbbf24)" />
         <StatBox icon="⏹️" label="Stopped" value={stopped.length} color="#2563eb" gradient="linear-gradient(90deg, #3b82f6, #60a5fa)" />
-        <StatBox icon="📊" label="Strategies" value={(signalStats?.total || 0) + (active.length + stopped.length)} color="#e11d48" gradient="linear-gradient(90deg, #f472b6, #fb7185)" />
+        <StatBox icon="📊" label="Signals" value={signalStats?.total || 0} color="#e11d48" gradient="linear-gradient(90deg, #f472b6, #fb7185)" />
       </div>
 
       {/* PnL + Signal Stats Row */}

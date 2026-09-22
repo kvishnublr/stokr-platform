@@ -155,10 +155,11 @@ public class PaperTradingService {
         double totalPnl = executed.stream()
             .filter(s -> s.getEntryPrice() != null && s.getTarget() != null && s.getStopLoss() != null)
             .mapToDouble(s -> {
+                double dir = "SELL".equalsIgnoreCase(s.getSide()) ? -1.0 : 1.0;
                 if ("TARGET_HIT".equals(s.getExitType())) {
-                    return s.getTarget().subtract(s.getEntryPrice()).doubleValue();
+                    return dir * s.getTarget().subtract(s.getEntryPrice()).doubleValue();
                 } else if ("SL_HIT".equals(s.getExitType()) || "BTST_GAP_EXIT".equals(s.getExitType())) {
-                    return s.getStopLoss().subtract(s.getEntryPrice()).doubleValue();
+                    return dir * s.getStopLoss().subtract(s.getEntryPrice()).doubleValue();
                 }
                 return 0;
             }).sum();
@@ -200,13 +201,14 @@ public class PaperTradingService {
             if (s.getEntryPrice() == null) continue;
             double tradePnl = 0;
 
+            double dir = "SELL".equalsIgnoreCase(s.getSide()) ? -1.0 : 1.0;
             if ("TARGET_HIT".equals(s.getExitType()) && s.getTarget() != null) {
-                tradePnl = s.getTarget().subtract(s.getEntryPrice()).doubleValue();
+                tradePnl = dir * s.getTarget().subtract(s.getEntryPrice()).doubleValue();
             } else if ("TRAIL_HIT".equals(s.getExitType()) && s.getStopLoss() != null) {
-                tradePnl = s.getStopLoss().subtract(s.getEntryPrice()).doubleValue();
-                if (tradePnl <= 0) tradePnl = 0; // trail below entry = no profit
+                tradePnl = dir * s.getStopLoss().subtract(s.getEntryPrice()).doubleValue();
+                if (tradePnl <= 0) tradePnl = 0;
             } else if ("SL_HIT".equals(s.getExitType()) || "BTST_GAP_EXIT".equals(s.getExitType())) {
-                tradePnl = s.getStopLoss().subtract(s.getEntryPrice()).doubleValue();
+                tradePnl = dir * s.getStopLoss().subtract(s.getEntryPrice()).doubleValue();
             } else if ("EOD_EXIT".equals(s.getExitType())) {
                 // Use entry vs exit time to approximate
                 tradePnl = 0;
