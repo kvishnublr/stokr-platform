@@ -41,17 +41,10 @@ public class SecurityConfig {
                         AntPathRequestMatcher.antMatcher("/api/auth/login"),
                         AntPathRequestMatcher.antMatcher("/api/auth/register"),
                         AntPathRequestMatcher.antMatcher("/api/auth/refresh"),
-                        AntPathRequestMatcher.antMatcher("/api/signals/**"),
-                        AntPathRequestMatcher.antMatcher("/api/market/**"),
-                        AntPathRequestMatcher.antMatcher("/actuator/**"),
                         AntPathRequestMatcher.antMatcher("/api/brokers/*/callback"),
                         AntPathRequestMatcher.antMatcher("/api/broker/*/callback"),
-                        AntPathRequestMatcher.antMatcher("/webhooks/**"),
-                        AntPathRequestMatcher.antMatcher("/api/zerodha/**"),
-                        AntPathRequestMatcher.antMatcher("/api/admin/candles/**"),
-                        AntPathRequestMatcher.antMatcher("/api/backtest/**"),
-                        AntPathRequestMatcher.antMatcher("/api/option-arbitrage/**"),
-                        AntPathRequestMatcher.antMatcher("/api/smart-strategies/**"),
+                        AntPathRequestMatcher.antMatcher("/api/zerodha/callback"),
+                        AntPathRequestMatcher.antMatcher("/actuator/health"),
                         AntPathRequestMatcher.antMatcher("/"),
                         AntPathRequestMatcher.antMatcher("/index.html"),
                         AntPathRequestMatcher.antMatcher("/assets/**"),
@@ -79,9 +72,8 @@ public class SecurityConfig {
         var config = new CorsConfiguration();
         config.setAllowedOrigins(List.of(
                 "http://localhost:5173", "http://localhost:3000",
-                "https://stokr.in", "http://stokr.in",
-                "https://www.stokr.in", "http://www.stokr.in",
-                "http://173.249.55.84:8081", "http://173.249.55.84:8082", "http://173.249.55.84"));
+                "https://stokr.in", "https://www.stokr.in",
+                "http://173.249.55.84:8081", "http://173.249.55.84:8082"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

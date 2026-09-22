@@ -33,9 +33,8 @@ function calculatePnL(signal, ltpMap, investmentAmount = 10000) {
   } else if (signal.exitType === 'SL_HIT' && signal.stopLoss) {
     exitPrice = Number(signal.stopLoss) || 0;
   } else if (signal.exitType === 'IN_BETWEEN') {
-    const target = Number(signal.target) || entry;
-    const sl = Number(signal.stopLoss) || entry;
-    exitPrice = (target + sl) / 2;
+    if (signal.exitPrice) exitPrice = Number(signal.exitPrice);
+    else return { pnl: null, qty };
   } else if (!signal.exitType && signal.status === 'EXECUTED') {
     const ltp = ltpMap?.[signal.symbol];
     if (ltp && ltp > 0) exitPrice = ltp;
@@ -113,14 +112,16 @@ function AnimatedCounter({ value, duration = 1200 }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
     let start = null;
+    let raf;
     const animate = (ts) => {
       if (!start) start = ts;
       const p = Math.min((ts - start) / duration, 1);
       const eased = 1 - Math.pow(1 - p, 3);
       setDisplay(Math.floor(value * eased));
-      if (p < 1) requestAnimationFrame(animate);
+      if (p < 1) raf = requestAnimationFrame(animate);
     };
-    requestAnimationFrame(animate);
+    raf = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(raf);
   }, [value, duration]);
   return <span>{display.toLocaleString('en-IN')}</span>;
 }
@@ -134,9 +135,9 @@ function StrategyModal({ strategy, signals, onClose }) {
   const executed = strategySignals.filter(s => s.status === 'EXECUTED').length;
   const rejected = strategySignals.filter(s => s.status === 'REJECTED').length;
 
-  // Calculate profit metrics (assuming target achieved = profit, stop loss hit = loss)
-  const profitableSignals = strategySignals.filter(s => s.status === 'EXECUTED').length;
-  const winRate = total > 0 ? ((profitableSignals / total) * 100).toFixed(1) : 0;
+  const closedSignals = strategySignals.filter(s => s.exitType);
+  const profitableSignals = closedSignals.filter(s => s.exitType === 'TARGET_HIT' || s.exitType === 'TRAIL_HIT').length;
+  const winRate = closedSignals.length > 0 ? ((profitableSignals / closedSignals.length) * 100).toFixed(1) : 0;
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, animation: 'fadeIn 0.3s ease' }}>
@@ -913,9 +914,9 @@ export default function Signals() {
                 <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase' }}>Win Rate</div>
                 <div style={{ fontSize: '22px', fontWeight: 800, color: 'white' }}>
                   {(() => {
-                    let profitable = 0;
-                    filtered.forEach(s => { const r = calculatePnL(s, ltpMap, investmentAmount); if (r && r.pnl > 0) profitable++; });
-                    const rate = filtered.length > 0 ? ((profitable / filtered.length) * 100).toFixed(1) : 0;
+                    let profitable = 0; let closed = 0;
+                    filtered.forEach(s => { const r = calculatePnL(s, ltpMap, investmentAmount); if (r && r.pnl !== null) { closed++; if (r.pnl > 0) profitable++; } });
+                    const rate = closed > 0 ? ((profitable / closed) * 100).toFixed(1) : 0;
                     return rate + '%';
                   })()}
                 </div>

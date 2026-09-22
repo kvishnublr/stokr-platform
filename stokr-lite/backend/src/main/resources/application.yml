@@ -44,7 +44,7 @@ spring:
 
 # JWT Configuration
 jwt:
-  secret: ${JWT_SECRET:4uJj9/XZRn3bB7mTGI9uJVC3p8XLDwKgbA/RG7Osz90=}
+  secret: ${JWT_SECRET:#{T(java.util.UUID).randomUUID().toString()}}
   expiration: 86400000        # 24 hours in ms
   refresh-expiration: 604800000  # 7 days in ms
 
@@ -95,7 +95,7 @@ server:
   servlet:
     context-path: /
   error:
-    include-message: always
+    include-message: never
 
 # Actuator
 management:
