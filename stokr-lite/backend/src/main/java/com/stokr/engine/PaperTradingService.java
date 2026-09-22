@@ -155,7 +155,7 @@ public class PaperTradingService {
         double totalPnl = executed.stream()
             .filter(s -> s.getEntryPrice() != null && s.getTarget() != null && s.getStopLoss() != null)
             .mapToDouble(s -> {
-                double dir = "SELL".equalsIgnoreCase(s.getSide()) ? -1.0 : 1.0;
+                double dir = s.getSide() == SignalEntity.Side.SELL ? -1.0 : 1.0;
                 if ("TARGET_HIT".equals(s.getExitType())) {
                     return dir * s.getTarget().subtract(s.getEntryPrice()).doubleValue();
                 } else if ("SL_HIT".equals(s.getExitType()) || "BTST_GAP_EXIT".equals(s.getExitType())) {
@@ -201,7 +201,7 @@ public class PaperTradingService {
             if (s.getEntryPrice() == null) continue;
             double tradePnl = 0;
 
-            double dir = "SELL".equalsIgnoreCase(s.getSide()) ? -1.0 : 1.0;
+            double dir = s.getSide() == SignalEntity.Side.SELL ? -1.0 : 1.0;
             if ("TARGET_HIT".equals(s.getExitType()) && s.getTarget() != null) {
                 tradePnl = dir * s.getTarget().subtract(s.getEntryPrice()).doubleValue();
             } else if ("TRAIL_HIT".equals(s.getExitType()) && s.getStopLoss() != null) {
