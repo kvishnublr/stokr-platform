@@ -198,7 +198,35 @@ public class ExpiryThetaCrushScanner {
         opp.put("thetaDecayExpected", round2(dailyDecay));
         opp.put("window", dte + " days to expiry -- PREVIEW ONLY");
         opp.put("isOptimalWindow", false);
+        opp.put("winRate", "75-85%");
         opp.put("action", "PREVIEW: ATM straddle " + atmStrike + " @ " + round2(straddleValue) + " -- enter on expiry day");
+
+        // Add legList for payoff chart display in preview mode
+        int wingOffset = 3 * step;
+        int ceWingStrike = atmStrike + wingOffset;
+        int peWingStrike = atmStrike - wingOffset;
+        OptionChainService.OptionQuote ceWQ = getQuote(quotes, underlying, expiry, ceWingStrike, "CE");
+        OptionChainService.OptionQuote peWQ = getQuote(quotes, underlying, expiry, peWingStrike, "PE");
+        double ceWAsk = ceWQ != null ? ceWQ.effectiveAsk() : 0;
+        double peWAsk = peWQ != null ? peWQ.effectiveAsk() : 0;
+        opp.put("legList", List.of(
+            Map.of("strike", atmStrike, "optionType", "CE", "side", "SELL", "qty", 1, "price", ceQ.effectiveBid(),
+                "symbol", getSymbol(quotes, underlying, expiry, atmStrike, "CE")),
+            Map.of("strike", atmStrike, "optionType", "PE", "side", "SELL", "qty", 1, "price", peQ.effectiveBid(),
+                "symbol", getSymbol(quotes, underlying, expiry, atmStrike, "PE")),
+            Map.of("strike", ceWingStrike, "optionType", "CE", "side", "BUY", "qty", 1, "price", ceWAsk,
+                "symbol", getSymbol(quotes, underlying, expiry, ceWingStrike, "CE")),
+            Map.of("strike", peWingStrike, "optionType", "PE", "side", "BUY", "qty", 1, "price", peWAsk,
+                "symbol", getSymbol(quotes, underlying, expiry, peWingStrike, "PE"))
+        ));
+        double wingCost = ceWAsk + peWAsk;
+        double netCredit = straddleValue - wingCost;
+        opp.put("netCredit", round2(netCredit));
+        opp.put("netCreditRs", round2(netCredit * lotSize));
+        double maxLoss = Math.max(wingOffset - netCredit, 0) * lotSize;
+        opp.put("maxLoss", round2(maxLoss));
+        opp.put("expectedProfitRs", round2(dailyDecay * lotSize - 80));
+
         opp.put("edgePoints", round2(dailyDecay));
         opp.put("edgeAfterCosts", round2(dailyDecay * lotSize - 80));
         results.add(opp);
