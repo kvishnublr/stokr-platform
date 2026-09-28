@@ -69,6 +69,10 @@ broker:
 stokr:
   ui:
     base-url: ${STOKR_UI_BASE_URL:http://localhost:5173}
+  market:
+    # NSE trading holidays (yyyy-MM-dd, comma-separated). Weekends are always closed.
+    # Scanners show LTP-based previews and auto-entry/execution stay off on these days.
+    holidays: ${STOKR_MARKET_HOLIDAYS:}
 
 # Trading Configuration
 trading:

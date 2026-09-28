@@ -6,7 +6,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -303,6 +302,9 @@ public class SmartStrategiesController {
         if (!marketOpen) {
             resp.put("ltpBased", true);
         }
+        // Scanners price from bid/ask while the market is open and from LTP otherwise (QuotePolicy).
+        String priceSource = marketOpen ? "BID_ASK" : "LTP";
+        for (Map<String, Object> o : opps) o.putIfAbsent("priceSource", priceSource);
         resp.put("lastScannedAt", ZonedDateTime.now(ZoneId.of("Asia/Kolkata"))
             .format(DateTimeFormatter.ofPattern("hh:mm:ss a")));
         return resp;
@@ -348,10 +350,7 @@ public class SmartStrategiesController {
     }
 
     private boolean isMarketOpen() {
-        LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        LocalTime open = LocalTime.of(9, 15);
-        LocalTime close = LocalTime.of(15, 30);
-        return !now.isBefore(open) && !now.isAfter(close);
+        return com.stokr.marketdata.MarketCalendar.isMarketOpenNow();
     }
 
     private record CachedResult(Map<String, Object> data, long ts) {}

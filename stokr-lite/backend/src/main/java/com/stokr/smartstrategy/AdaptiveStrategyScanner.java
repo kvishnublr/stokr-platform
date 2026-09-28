@@ -1,5 +1,7 @@
 package com.stokr.smartstrategy;
 
+import com.stokr.arbitrage.QuotePolicy;
+import com.stokr.marketdata.MarketCalendar;
 import com.stokr.arbitrage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -182,7 +184,7 @@ public class AdaptiveStrategyScanner {
 
             double riskReward = netCreditRs / (maxLoss + txnCost);
             double profitZonePct = credit / spot * 100;
-            double winRate = Math.min(85, 40 + profitZonePct * 15);
+            double winRate = pop(quotes, underlying, expiry, atmStrike, spot, atmStrike - credit, atmStrike + credit);
 
             // Adaptive score: favors high IV, sideways, good R:R
             double score = computeAdaptiveScore("IRON_BUTTERFLY", ivRank, regime, riskReward, winRate, netCreditRs, dte);
@@ -254,14 +256,19 @@ public class AdaptiveStrategyScanner {
 
                 double narrowWidth = Math.abs(buyStrike - sellStrike);
                 double wideWidth = Math.abs(hedgeStrike - sellStrike);
-                double maxProfit = (narrowWidth + credit) * lotSize;
-                double maxLoss = (wideWidth - credit) * lotSize;
+                double maxProfit = OptionPayoffs.bwbMaxProfit((int) narrowWidth, credit) * lotSize;
+                // Beyond the hedge the near-ATM long still pays narrowWidth: loss = wide − narrow − credit.
+                // Non-positive would violate convexity ⇒ stale quotes, skip.
+                double maxLoss = OptionPayoffs.bwbMaxLoss((int) narrowWidth, (int) wideWidth, credit) * lotSize;
                 double txnCost = txnCostBase * 4 + 60;
                 double netCredit = credit * lotSize - txnCost;
                 if (maxLoss <= 0 || maxProfit <= txnCost) continue;
 
                 double riskReward = maxProfit / (maxLoss + txnCost);
-                double winRate = Math.min(80, 45 + (credit / narrowWidth) * 40);
+                double be = OptionPayoffs.bwbBreakeven(!isBull, sellStrike, (int) narrowWidth, credit);
+                double winRate = isBull
+                    ? pop(quotes, underlying, expiry, atmStrike, spot, be, Double.NaN)
+                    : pop(quotes, underlying, expiry, atmStrike, spot, Double.NaN, be);
                 double score = computeAdaptiveScore("RATIO_SPREAD", ivRank, regime, riskReward, winRate, netCredit, dte);
 
                 String reason = isBull
@@ -344,10 +351,10 @@ public class AdaptiveStrategyScanner {
                 double netCreditRs = creditRs - txnCost;
                 if (netCreditRs < 50 || maxLoss <= 0) continue;
 
-                double profitZoneWidth = callSellStrike - putSellStrike;
-                double profitZonePct = profitZoneWidth / spot * 100;
+                double profitZonePct = (callSellStrike - putSellStrike) / spot * 100;
                 double riskReward = netCreditRs / (maxLoss + txnCost);
-                double winRate = Math.min(88, 45 + profitZonePct * 4);
+                double winRate = pop(quotes, underlying, expiry, atmStrike, spot,
+                    putSellStrike - credit, callSellStrike + credit);
                 double score = computeAdaptiveScore("DYNAMIC_CONDOR", ivRank, regime, riskReward, winRate, netCreditRs, dte);
 
                 String reason = String.format("Expected move: ±%.0f pts (%.1f%%) → strikes at boundary",
@@ -426,15 +433,21 @@ public class AdaptiveStrategyScanner {
 
             double sellWidth = Math.abs(sellStrike - sellHedge);
             double buyWidth = Math.abs(buyStrike - buyHedge);
-            double maxLossSell = (sellWidth - sellCredit) * lotSize;
-            double maxProfitBuy = (buyWidth - buyCost) * lotSize;
             double txnCost = txnCostBase * 4 + 60;
             double netCreditRs = netCredit * lotSize - txnCost;
             if (netCreditRs < 30) continue;
 
-            double maxLoss = maxLossSell; // defined risk on sell side
-            double riskReward = (netCreditRs + maxProfitBuy) / (maxLoss + txnCost);
-            double winRate = Math.min(75, 45 + (putSkew > 1.4 ? putSkew - 1 : 1 / putSkew - 1) * 20);
+            // Whole-structure expiry P&L: the bought spread's cost is lost whenever the sold side is
+            // tested, and its full width is earned (plus the net credit) when the other side runs.
+            double maxLoss = (sellWidth - netCredit) * lotSize;       // sold spread fully ITM
+            double maxProfitTotal = (buyWidth + netCredit) * lotSize;  // bought spread fully ITM
+            if (maxLoss <= 0) continue;
+            double riskReward = (maxProfitTotal - txnCost) / (maxLoss + txnCost);
+            boolean sellPuts = "PE".equals(sellType);
+            double be = sellPuts ? sellStrike - netCredit : sellStrike + netCredit;
+            double winRate = sellPuts
+                ? pop(quotes, underlying, expiry, atmStrike, spot, be, Double.NaN)
+                : pop(quotes, underlying, expiry, atmStrike, spot, Double.NaN, be);
             double skewEdge = Math.abs(putSkew - 1.0) * 100;
             double score = computeAdaptiveScore("SKEW_EXPLOITER", ivRank, regime, riskReward, winRate, netCreditRs, dte);
 
@@ -457,12 +470,12 @@ public class AdaptiveStrategyScanner {
             opp.put("creditRs", r2(netCredit * lotSize));
             opp.put("netCreditRs", r2(netCreditRs));
             opp.put("maxLoss", r2(maxLoss + txnCost));
-            opp.put("maxProfit", r2(netCreditRs + maxProfitBuy));
+            opp.put("maxProfit", r2(maxProfitTotal - txnCost));
             opp.put("riskRewardRatio", r2(riskReward));
             opp.put("estimatedWinRate", r2(winRate));
             opp.put("scenarioFlat", r2(netCreditRs));
-            opp.put("scenarioUp", putsExpensive ? r2(netCreditRs + maxProfitBuy) : r2(-maxLoss - txnCost));
-            opp.put("scenarioDown", putsExpensive ? r2(-maxLoss - txnCost) : r2(netCreditRs + maxProfitBuy));
+            opp.put("scenarioUp", putsExpensive ? r2(maxProfitTotal - txnCost) : r2(-maxLoss - txnCost));
+            opp.put("scenarioDown", putsExpensive ? r2(-maxLoss - txnCost) : r2(maxProfitTotal - txnCost));
             opp.put("legList", List.of(
                 makeLeg(quotes, underlying, expiry, sellStrike, sellType, "SELL", 1, sellQ.effectiveBid()),
                 makeLeg(quotes, underlying, expiry, sellHedge, sellType, "BUY", 1, sellHedgeQ.effectiveAsk()),
@@ -498,8 +511,11 @@ public class AdaptiveStrategyScanner {
                 if (buyQ == null || sell1Q == null || sell2Q == null || hedgeQ == null) continue;
 
                 double debit = buyQ.effectiveAsk() + hedgeQ.effectiveAsk() - sell1Q.effectiveBid() - sell2Q.effectiveBid();
-                double maxProfit = Math.abs(sellStrike1 - buyStrike) * lotSize; // profit at first sell strike
-                double maxLoss = Math.max(debit * lotSize, Math.abs(hedgeStrike - sellStrike2) * lotSize);
+                double maxProfit = Math.abs(sellStrike1 - buyStrike) * lotSize; // gross, at the first sell strike
+                // Legs net to zero beyond the hedge: payoff there is (K1−K0) − (K3−K2) − debit; below the
+                // long it is −debit. Worst case is the larger of the two losses.
+                double gap = Math.abs(hedgeStrike - sellStrike2) - Math.abs(sellStrike1 - buyStrike);
+                double maxLoss = (debit + Math.max(0, gap)) * lotSize;
                 double txnCost = txnCostBase * 4 + 60;
 
                 if (debit > maxProfit / lotSize || maxLoss <= 0) continue;
@@ -507,7 +523,14 @@ public class AdaptiveStrategyScanner {
                 if (netDebit > maxProfit * 0.7) continue; // only if debit < 70% of max profit
 
                 double riskReward = maxProfit / (netDebit + txnCost);
-                double winRate = Math.min(70, 35 + Math.abs(futPremium) * 15);
+                double width1 = Math.abs(sellStrike1 - buyStrike);
+                double beNear = bullish ? buyStrike + debit : buyStrike - debit;
+                double beFar = gap + debit > 0
+                    ? (bullish ? sellStrike2 + width1 - debit : sellStrike2 - width1 + debit)
+                    : Double.NaN; // still profitable beyond the hedge
+                double winRate = bullish
+                    ? pop(quotes, underlying, expiry, atmStrike, spot, beNear, beFar)
+                    : pop(quotes, underlying, expiry, atmStrike, spot, beFar, beNear);
                 double score = computeAdaptiveScore("MOMENTUM_LADDER", ivRank, regime, riskReward, winRate, maxProfit - netDebit, dte);
 
                 String reason = String.format("%s momentum — ladder profits from continued %s move",
@@ -578,8 +601,7 @@ public class AdaptiveStrategyScanner {
             if (netCreditRs < 50 || maxLoss <= 0) continue;
 
             double riskReward = netCreditRs / (maxLoss + txnCost);
-            double ivCrushBenefit = (ivRank - 50) * 0.5; // higher IV → more benefit from crush
-            double winRate = Math.min(80, 50 + ivCrushBenefit);
+            double winRate = pop(quotes, underlying, expiry, atmStrike, spot, putWing - credit, callWing + credit);
             double score = computeAdaptiveScore("VOL_CRUSH", ivRank, regime, riskReward, winRate, netCreditRs, dte);
 
             Map<String, Object> opp = buildBase(underlying, expiry, dte, lotSize, spot, ivRank, regime, score);
@@ -612,6 +634,15 @@ public class AdaptiveStrategyScanner {
     }
 
     // ═══════════════ SCORING ENGINE ═══════════════
+    /** Model probability of profit (%) at expiry for the zone (low, high); NaN = unbounded side. */
+    private double pop(Map<String, OptionChainService.OptionQuote> quotes, String underlying, LocalDate expiry,
+                       int atmStrike, double spot, double low, double high) {
+        double years = PopModel.yearsToExpiry(expiry);
+        double iv = PopModel.atmIv(getQuote(quotes, underlying, expiry, atmStrike, "CE"),
+            getQuote(quotes, underlying, expiry, atmStrike, "PE"), spot, atmStrike, years);
+        return PopModel.popPct(spot, low, high, years, iv);
+    }
+
     private double computeAdaptiveScore(String type, double ivRank, String regime, double rr, double winRate, double netPnl, long dte) {
         double score = 0;
 
@@ -674,12 +705,8 @@ public class AdaptiveStrategyScanner {
     private OptionChainService.OptionQuote getQuote(Map<String, OptionChainService.OptionQuote> quotes,
             String underlying, LocalDate expiry, int strike, String optType) {
         for (String c : optionChainService.buildNfoSymbolCandidates(underlying, expiry, strike, optType)) {
-            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) {
-                OptionChainService.OptionQuote q = quotes.get(c);
-                if (q.bid <= 0) q.bid = q.lastPrice;
-                if (q.ask <= 0) q.ask = q.lastPrice;
-                return q;
-            }
+            OptionChainService.OptionQuote q = QuotePolicy.usable(quotes.get(c), MarketCalendar.isMarketOpenNow());
+            if (q != null) return q;
         }
         return null;
     }

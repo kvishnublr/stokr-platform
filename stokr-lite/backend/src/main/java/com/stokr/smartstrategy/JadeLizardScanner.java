@@ -1,5 +1,7 @@
 package com.stokr.smartstrategy;
 
+import com.stokr.arbitrage.QuotePolicy;
+import com.stokr.marketdata.MarketCalendar;
 import com.stokr.arbitrage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,6 +69,10 @@ public class JadeLizardScanner {
         // Iron Lizard = Sell OTM Put + Buy far OTM Put + Sell OTM Call + Buy further OTM Call
         // = Bull Put Spread + Bear Call Spread (with asymmetric widths)
         // Zero upside risk when: credit >= call spread width
+        double years = PopModel.yearsToExpiry(expiry);
+        double atmIv = PopModel.atmIv(getQuote(quotes, underlying, expiry, atmStrike, "CE"),
+            getQuote(quotes, underlying, expiry, atmStrike, "PE"), spot, atmStrike, years);
+
         // Downside risk CAPPED by bought put (no naked exposure)
         for (int putDist = 2; putDist <= 5; putDist++) {
             for (int callDist = 2; callDist <= 5; callDist++) {
@@ -111,11 +117,9 @@ public class JadeLizardScanner {
                     // Breakeven on downside
                     double breakEvenDown = putSellStrike - credit;
 
-                    // Win rate estimate based on distance from spot
-                    double putDistPct = (spot - putSellStrike) / spot * 100;
-                    double callDistPct = (callSellStrike - spot) / spot * 100;
-                    double minDistPct = Math.min(putDistPct, callDistPct);
-                    double estimatedWinRate = Math.min(88, 50 + minDistPct * 5);
+                    // Upside breakeven exists only when the credit does not cover the call spread
+                    double breakEvenUp = zeroUpsideRisk ? Double.NaN : callSellStrike + credit;
+                    double estimatedWinRate = PopModel.popPct(spot, breakEvenDown, breakEvenUp, years, atmIv);
 
                     Map<String, Object> opp = new LinkedHashMap<>();
                     opp.put("strategyType", "JADE_LIZARD");
@@ -146,6 +150,8 @@ public class JadeLizardScanner {
                     opp.put("maxProfit", round2(netCreditRs));
                     opp.put("breakEvenDown", round2(breakEvenDown));
                     opp.put("estimatedWinRate", round2(estimatedWinRate));
+                    opp.put("breakEvenUp", Double.isNaN(breakEvenUp) ? null : round2(breakEvenUp));
+                    opp.put("atmIv", round2(atmIv * 100));
                     opp.put("riskRewardRatio", round2(netCreditRs / (maxLoss + txnCost)));
                     opp.put("riskLevel", zeroUpsideRisk ? "ZERO_UPSIDE" : "LOW");
                     opp.put("scenarioFlat", round2(netCreditRs));
@@ -177,12 +183,8 @@ public class JadeLizardScanner {
     private OptionChainService.OptionQuote getQuote(Map<String, OptionChainService.OptionQuote> quotes,
             String underlying, LocalDate expiry, int strike, String optType) {
         for (String c : optionChainService.buildNfoSymbolCandidates(underlying, expiry, strike, optType)) {
-            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) {
-                OptionChainService.OptionQuote q = quotes.get(c);
-                if (q.bid <= 0) q.bid = q.lastPrice;
-                if (q.ask <= 0) q.ask = q.lastPrice;
-                return q;
-            }
+            OptionChainService.OptionQuote q = QuotePolicy.usable(quotes.get(c), MarketCalendar.isMarketOpenNow());
+            if (q != null) return q;
         }
         return null;
     }

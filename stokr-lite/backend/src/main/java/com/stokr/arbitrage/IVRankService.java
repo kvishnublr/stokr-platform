@@ -42,7 +42,7 @@ public class IVRankService {
     @Scheduled(cron = "0 */30 9-15 * * MON-FRI")
     public void recordIVSnapshots() {
         LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (now.isBefore(LocalTime.of(9, 15)) || now.isAfter(LocalTime.of(15, 30))) return;
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || now.isBefore(LocalTime.of(9, 15)) || now.isAfter(LocalTime.of(15, 30))) return;
 
         for (String underlying : List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")) {
             try {
@@ -114,29 +114,42 @@ public class IVRankService {
         return result;
     }
 
-    private double computeRealizedVol(String underlying, int days) {
-        try {
-            // Use stored daily close from iv_history or fallback to a reasonable default
-            List<Double> ivValues = jdbc.queryForList(
-                "SELECT atm_iv FROM iv_history WHERE underlying = ? ORDER BY snapshot_time DESC LIMIT ?",
-                Double.class, underlying, days * 2);
-            if (ivValues.size() < 2) return 0.15; // default 15% if no history
+    /** Underlyings with daily index candles in candle_data (symbol naming used by the candle loader). */
+    private static final Map<String, String> CANDLE_SYMBOLS = Map.of("NIFTY", "NIFTY_50");
 
-            // Use the last N close IVs as a proxy for realized vol
-            // In production, this would use actual intraday price returns
-            double sum = 0, sumSq = 0;
-            int n = Math.min(ivValues.size(), days);
-            for (int i = 0; i < n; i++) {
-                sum += ivValues.get(i);
-            }
-            double mean = sum / n;
-            for (int i = 0; i < n; i++) {
-                sumSq += Math.pow(ivValues.get(i) - mean, 2);
-            }
-            return Math.sqrt(sumSq / n); // std dev of recent IV as proxy
+    /**
+     * Annualised close-to-close realized volatility over the last {@code days} daily returns, from
+     * the index's own price candles. Returns 0 when there is no price history — the previous version
+     * used the standard deviation of stored IV snapshots, which is not a volatility of price at all
+     * and made IV/RV look rich almost permanently.
+     */
+    private double computeRealizedVol(String underlying, int days) {
+        String symbol = CANDLE_SYMBOLS.get(underlying);
+        if (symbol == null) return 0;
+        try {
+            List<Double> closes = jdbc.queryForList(
+                "SELECT close FROM candle_data WHERE symbol = ? AND timeframe = 'daily' ORDER BY timestamp DESC LIMIT ?",
+                Double.class, symbol, days + 1);
+            return realizedVol(closes);
         } catch (Exception e) {
-            return 0.15; // safe default
+            log.debug("Realized vol unavailable for {}: {}", underlying, e.getMessage());
+            return 0;
         }
+    }
+
+    /** Annualised (√252) sample stdev of log returns; closes in any consistent order. 0 if &lt; 2 returns. */
+    static double realizedVol(List<Double> closes) {
+        if (closes == null || closes.size() < 3) return 0;
+        List<Double> rets = new ArrayList<>();
+        for (int i = 1; i < closes.size(); i++) {
+            double a = closes.get(i - 1), b = closes.get(i);
+            if (a > 0 && b > 0) rets.add(Math.log(a / b));
+        }
+        if (rets.size() < 2) return 0;
+        double mean = rets.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+        double ss = 0;
+        for (double r : rets) ss += (r - mean) * (r - mean);
+        return Math.sqrt(ss / (rets.size() - 1)) * Math.sqrt(252);
     }
 
     private double computeIVRank(String underlying, double currentIV) {

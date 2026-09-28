@@ -68,8 +68,7 @@ public class BrokerMarketDataService implements MarketDataService {
 
     @Override
     public boolean isMarketOpen() {
-        LocalTime now = LocalTime.now(IST);
-        return !now.isBefore(LocalTime.of(9, 15)) && !now.isAfter(LocalTime.of(15, 30));
+        return MarketCalendar.isMarketOpenNow();
     }
 
     private List<Candle> toCandles(String symbol, List<CandleData> rows) {

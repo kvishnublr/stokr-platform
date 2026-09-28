@@ -1,5 +1,7 @@
 package com.stokr.smartstrategy;
 
+import com.stokr.arbitrage.QuotePolicy;
+import com.stokr.marketdata.MarketCalendar;
 import com.stokr.arbitrage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,6 +66,10 @@ public class IronCondorScanner {
         }
         Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
+        double years = PopModel.yearsToExpiry(expiry);
+        double atmIv = PopModel.atmIv(getQuote(quotes, underlying, expiry, atmStrike, "CE"),
+            getQuote(quotes, underlying, expiry, atmStrike, "PE"), spot, atmStrike, years);
+
         // Iron Condor = Sell OTM Put + Buy further OTM Put (bull put spread)
         //             + Sell OTM Call + Buy further OTM Call (bear call spread)
         for (int putDist = 2; putDist <= 6; putDist++) {
@@ -118,9 +124,8 @@ public class IronCondorScanner {
 
                     double score = round2(rrScore + rangeScore + oiScore + symScore);
 
-                    double putDistPct = (spot - putSellStrike) / spot * 100;
-                    double callDistPct = (callSellStrike - spot) / spot * 100;
-                    double estimatedWinRate = Math.min(85, 50 + (putDistPct + callDistPct) * 2);
+                    // Model probability of expiring between the breakevens (lognormal, ATM IV)
+                    double estimatedWinRate = PopModel.popPct(spot, breakEvenDown, breakEvenUp, years, atmIv);
 
                     Map<String, Object> opp = new LinkedHashMap<>();
                     opp.put("strategyType", "IRON_CONDOR");
@@ -149,6 +154,7 @@ public class IronCondorScanner {
                     opp.put("breakEvenRange", round2(breakEvenRange));
                     opp.put("breakEvenRangePct", round2(breakEvenRangePct));
                     opp.put("estimatedWinRate", round2(estimatedWinRate));
+                    opp.put("atmIv", round2(atmIv * 100));
                     opp.put("score", score);
                     opp.put("riskLevel", rewardRiskRatio >= 0.5 ? "LOW" : "MEDIUM");
                     opp.put("scenarioFlat", round2(creditRs - txnCost));
@@ -178,12 +184,8 @@ public class IronCondorScanner {
     private OptionChainService.OptionQuote getQuote(Map<String, OptionChainService.OptionQuote> quotes,
             String underlying, LocalDate expiry, int strike, String optType) {
         for (String c : optionChainService.buildNfoSymbolCandidates(underlying, expiry, strike, optType)) {
-            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) {
-                OptionChainService.OptionQuote q = quotes.get(c);
-                if (q.bid <= 0) q.bid = q.lastPrice;
-                if (q.ask <= 0) q.ask = q.lastPrice;
-                return q;
-            }
+            OptionChainService.OptionQuote q = QuotePolicy.usable(quotes.get(c), MarketCalendar.isMarketOpenNow());
+            if (q != null) return q;
         }
         return null;
     }

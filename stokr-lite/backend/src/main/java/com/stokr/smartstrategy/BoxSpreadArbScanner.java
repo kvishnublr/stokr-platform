@@ -1,5 +1,7 @@
 package com.stokr.smartstrategy;
 
+import com.stokr.arbitrage.QuotePolicy;
+import com.stokr.marketdata.MarketCalendar;
 import com.stokr.arbitrage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +13,8 @@ import java.util.*;
 
 @Service
 public class BoxSpreadArbScanner {
+
+    private static final double EXECUTION_SLIPPAGE_PTS_PER_LEG = 0.5;
 
     private static final Logger log = LoggerFactory.getLogger(BoxSpreadArbScanner.class);
 
@@ -150,9 +154,13 @@ public class BoxSpreadArbScanner {
         opp.put("txnCostRs", round2(txnCost));
         opp.put("returnPct", round2(netEdge / (Math.abs(cost) * lotSize) * 100));
         opp.put("annualizedReturn", round2(netEdge / (Math.abs(cost) * lotSize) * 365.0 / dte * 100));
-        opp.put("riskLevel", "ZERO");
+        // The expiry payoff is locked (European, cash-settled), but entry is not: four legs fill one
+        // at a time and quotes move. Budget half a point of slippage per leg plus costs as the
+        // realistic worst case, so risk limits never treat a box as free.
+        opp.put("riskLevel", "EXECUTION");
         opp.put("maxProfit", round2(netEdge));
-        opp.put("maxLoss", 0);
+        opp.put("maxLoss", round2(EXECUTION_SLIPPAGE_PTS_PER_LEG * 4 * lotSize + txnCost));
+        opp.put("maxLossBasis", "EXECUTION_RISK");
 
         if (isLong) {
             opp.put("action", String.format("BUY %dCE @ %.1f | SELL %dCE @ %.1f | SELL %dPE @ %.1f | BUY %dPE @ %.1f",
@@ -189,12 +197,8 @@ public class BoxSpreadArbScanner {
     private OptionChainService.OptionQuote getQuote(Map<String, OptionChainService.OptionQuote> quotes,
             String underlying, LocalDate expiry, int strike, String optType) {
         for (String c : optionChainService.buildNfoSymbolCandidates(underlying, expiry, strike, optType)) {
-            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) {
-                OptionChainService.OptionQuote q = quotes.get(c);
-                if (q.bid <= 0) q.bid = q.lastPrice;
-                if (q.ask <= 0) q.ask = q.lastPrice;
-                return q;
-            }
+            OptionChainService.OptionQuote q = QuotePolicy.usable(quotes.get(c), MarketCalendar.isMarketOpenNow());
+            if (q != null) return q;
         }
         return null;
     }

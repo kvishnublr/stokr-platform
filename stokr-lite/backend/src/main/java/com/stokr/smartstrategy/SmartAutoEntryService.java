@@ -1,5 +1,6 @@
 package com.stokr.smartstrategy;
 
+import com.stokr.marketdata.MarketCalendar;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -175,7 +176,7 @@ public class SmartAutoEntryService {
                 }
 
                 // Portfolio risk check
-                PortfolioRiskManager.RiskCheck riskCheck = riskManager.canEnterTrade(opp);
+                PortfolioRiskManager.RiskCheck riskCheck = riskManager.canEnterTrade(opp, lotsForScore(opp));
                 if (!riskCheck.allowed()) {
                     log.info("SMART_AUTO: Blocked by risk: {} — {}", key, riskCheck.reason());
                     continue;
@@ -228,40 +229,30 @@ public class SmartAutoEntryService {
         req.put("legList", opp.get("legList"));
         req.put("action", opp.get("action"));
 
-        double maxLoss = 0;
-        if (opp.get("maxLoss") instanceof Number n) maxLoss = n.doubleValue();
-        else if (opp.get("maxLossDown") instanceof Number n) maxLoss = n.doubleValue();
+        req.put("maxLoss", PortfolioRiskManager.maxLossPerLot(opp));
+        req.put("maxProfit", maxProfitPerLot(opp));
+        req.put("lots", lotsForScore(opp));
 
-        double maxProfit = 0;
-        if (opp.get("creditRs") instanceof Number n) maxProfit = n.doubleValue();
-        else if (opp.get("edgeAfterCosts") instanceof Number n) maxProfit = n.doubleValue();
-        else if (opp.get("maxProfit") instanceof Number n) maxProfit = n.doubleValue();
-
-        req.put("maxLoss", maxLoss);
-        req.put("maxProfit", maxProfit);
-
-        // Score-based lot sizing: higher score = more conviction
-        double score = opp.get("compositeScore") instanceof Number n ? n.doubleValue() : 0;
-        int lots = score >= 80 ? 2 : 1;
-        req.put("lots", lots);
-
-        // Strategy-specific exit rules for maximum gain
+        // Strategy-specific exit rules. Time exits apply only to the expiry-day trade: multi-day
+        // structures (condors, butterflies, calendars, skew) are built around decay into expiry, and
+        // forcing them flat at 15:25 every day pays four legs of spread for a few hours of noise.
+        // Positions still open on expiry are settled by the end-of-day expiry job.
         TimingWindow timing = getTimingWindow();
         switch (strategyType) {
             case "BOX_SPREAD_ARB" -> {
-                // Arb — hold to expiry, no SL (risk-free at expiry), no time exit
-                req.put("slPct", 200.0);
-                req.put("targetPct", 95.0);
+                // Payoff is locked at expiry — no SL/target (an early exit only pays the spread twice)
+                req.put("slPct", 0.0);
+                req.put("targetPct", 0.0);
                 req.put("timeExitMinutes", 0);
             }
             case "IRON_CONDOR", "JADE_LIZARD" -> {
-                // Premium sellers — book profit at 50-60% of credit, tight SL
+                // Premium sellers — book profit at 50-60% of credit, SL at a fraction of max loss
                 req.put("slPct", "THETA_BOOST".equals(timing.phase) ? 35.0 : 45.0);
                 req.put("targetPct", "THETA_BOOST".equals(timing.phase) ? 50.0 : 60.0);
-                req.put("timeExitMinutes", 5);
+                req.put("timeExitMinutes", 0);
             }
             case "EXPIRY_THETA_CRUSH" -> {
-                // Theta crush — book fast, decay is rapid
+                // Expiry-day trade — book fast, and be flat 3 minutes before close
                 req.put("slPct", 30.0);
                 req.put("targetPct", 40.0);
                 req.put("timeExitMinutes", 3);
@@ -270,27 +261,37 @@ public class SmartAutoEntryService {
                 // Butterflies — let winners run more, defined risk
                 req.put("slPct", 60.0);
                 req.put("targetPct", 70.0);
-                req.put("timeExitMinutes", 5);
-            }
-            case "SKEW_HARVEST", "CALENDAR_SPREAD_EDGE" -> {
-                // Edge plays — moderate
-                req.put("slPct", 50.0);
-                req.put("targetPct", 60.0);
-                req.put("timeExitMinutes", 5);
+                req.put("timeExitMinutes", 0);
             }
             default -> {
+                // SKEW_HARVEST, CALENDAR_SPREAD_EDGE — moderate
                 req.put("slPct", 50.0);
                 req.put("targetPct", 60.0);
-                req.put("timeExitMinutes", 5);
+                req.put("timeExitMinutes", 0);
             }
         }
 
         return req;
     }
 
+    /** Score-based lot sizing: higher score = more conviction. */
+    static int lotsForScore(Map<String, Object> opp) {
+        double score = opp.get("compositeScore") instanceof Number n ? n.doubleValue() : 0;
+        return score >= 80 ? 2 : 1;
+    }
+
+    /** Per-lot profit used for the target %, preferring the structure's true maximum. */
+    static double maxProfitPerLot(Map<String, Object> opp) {
+        for (String key : List.of("maxProfit", "netCreditRs", "creditRs", "edgeAfterCosts", "netEdgeRs")) {
+            if (opp.get(key) instanceof Number n && n.doubleValue() > 0) return n.doubleValue();
+        }
+        return 0;
+    }
+
     private boolean isMarketHours() {
-        LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        return !now.isBefore(LocalTime.of(9, 20)) && now.isBefore(LocalTime.of(15, 15));
+        // Trading day (weekday, not a configured holiday) and inside the entry window.
+        return MarketCalendar.isWithin(ZonedDateTime.now(MarketCalendar.IST),
+            LocalTime.of(9, 20), LocalTime.of(15, 15));
     }
 
     private String now() {

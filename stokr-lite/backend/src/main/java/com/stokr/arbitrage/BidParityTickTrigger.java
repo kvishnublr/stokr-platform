@@ -144,7 +144,7 @@ public class BidParityTickTrigger {
         scanExecutor.submit(() -> {
             try {
                 LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-                if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30))) return;
+                if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30))) return;
                 java.util.List<java.util.Map<String, Object>> results = bidParityService.scanBidParitySingle(underlying);
                 if (!results.isEmpty()) {
                     try { autoExecService.evaluateAndExecuteFromMaps(results); }

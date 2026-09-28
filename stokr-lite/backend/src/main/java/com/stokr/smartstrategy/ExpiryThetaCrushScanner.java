@@ -1,5 +1,7 @@
 package com.stokr.smartstrategy;
 
+import com.stokr.arbitrage.QuotePolicy;
+import com.stokr.marketdata.MarketCalendar;
 import com.stokr.arbitrage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -81,6 +83,9 @@ public class ExpiryThetaCrushScanner {
         Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
         boolean isOptimalWindow = nowIST.isAfter(LocalTime.of(13, 30));
+        double years = PopModel.yearsToExpiry(expiry);
+        double atmIv = PopModel.atmIv(getQuote(quotes, underlying, expiry, atmStrike, "CE"),
+            getQuote(quotes, underlying, expiry, atmStrike, "PE"), spot, atmStrike, years);
         String window = isOptimalWindow ? "OPTIMAL (post 1:30 PM)" : "EARLY (pre 1:30 PM)";
 
         for (int offset = 0; offset <= 1; offset++) {
@@ -133,6 +138,14 @@ public class ExpiryThetaCrushScanner {
             opp.put("maxLoss", round2(maxLoss + txnCost));
             opp.put("minutesToClose", (int) minutesToClose);
             opp.put("window", window);
+            // Profit zone at expiry is (put short − credit, call short + credit). The decay figures
+            // above are a rule of thumb (70% / 40% of credit), not a forecast.
+            double beDown = peStrike - netCredit, beUp = ceStrike + netCredit;
+            opp.put("breakEvenDown", round2(beDown));
+            opp.put("breakEvenUp", round2(beUp));
+            opp.put("estimatedWinRate", PopModel.popPct(spot, beDown, beUp, years, atmIv));
+            opp.put("atmIv", round2(atmIv * 100));
+            opp.put("decayAssumption", "Rule of thumb: " + (int) (decayRate * 100) + "% of credit decays by close");
             opp.put("isOptimalWindow", isOptimalWindow);
             opp.put("winRate", isOptimalWindow ? "90-95%" : "75-85%");
             opp.put("action", String.format("SELL %dCE @ %.1f + SELL %dPE @ %.1f | BUY %dCE @ %.1f + BUY %dPE @ %.1f",
@@ -236,12 +249,8 @@ public class ExpiryThetaCrushScanner {
     private OptionChainService.OptionQuote getQuote(Map<String, OptionChainService.OptionQuote> quotes,
             String underlying, LocalDate expiry, int strike, String optType) {
         for (String c : optionChainService.buildNfoSymbolCandidates(underlying, expiry, strike, optType)) {
-            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) {
-                OptionChainService.OptionQuote q = quotes.get(c);
-                if (q.bid <= 0) q.bid = q.lastPrice;
-                if (q.ask <= 0) q.ask = q.lastPrice;
-                return q;
-            }
+            OptionChainService.OptionQuote q = QuotePolicy.usable(quotes.get(c), MarketCalendar.isMarketOpenNow());
+            if (q != null) return q;
         }
         return null;
     }
