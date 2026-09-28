@@ -520,6 +520,81 @@ function computeCapitalRequired(legs, lotSize, spot, opp) {
   return Math.round(maxLoss + (unhedgedShortQty * nakedShortMarginPerLot) + netDebit);
 }
 
+// ── "Today" (T+0) curve ─────────────────────────────────────────────────────
+// Mark-to-market P&L if the underlying moved to each price right now, with each leg's time to
+// its own expiry unchanged. Same Black-Scholes (r = 6.5%) as the backend scanners.
+const TODAY_RATE = 0.065;
+const YEAR_MS = 365 * 24 * 3600 * 1000;
+
+function normCdf(x) {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x) / Math.SQRT2);
+  const erf = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t
+    * Math.exp(-(x * x) / 2);
+  return x >= 0 ? 0.5 * (1 + erf) : 0.5 * (1 - erf);
+}
+
+function bsPrice(call, S, K, T, sigma) {
+  if (T <= 0 || sigma <= 0) return Math.max(0, call ? S - K : K - S);
+  const sq = sigma * Math.sqrt(T);
+  const d1 = (Math.log(S / K) + (TODAY_RATE + 0.5 * sigma * sigma) * T) / sq;
+  const d2 = d1 - sq;
+  const df = Math.exp(-TODAY_RATE * T);
+  return call ? S * normCdf(d1) - K * df * normCdf(d2) : K * df * normCdf(-d2) - S * normCdf(-d1);
+}
+
+/** Implied vol by bisection (price is monotonic in sigma); null when the price is outside model bounds. */
+function impliedVol(call, price, S, K, T) {
+  if (!(price > 0) || !(T > 0)) return null;
+  let lo = 0.005, hi = 4;
+  if (price <= bsPrice(call, S, K, T, lo) || price >= bsPrice(call, S, K, T, hi)) return null;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (bsPrice(call, S, K, T, mid) > price) hi = mid; else lo = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/** Years until 15:30 IST on the leg's expiry (calendar legs carry their own), floored at 1 minute. */
+function legYears(leg, opp) {
+  const d = leg.expiry || opp?.expiryDate || opp?.expiry;
+  if (!d) return null;
+  const ms = new Date(`${String(d).slice(0, 10)}T15:30:00+05:30`).getTime();
+  if (Number.isNaN(ms)) return null;
+  return Math.max(ms - Date.now(), 60000) / YEAR_MS;
+}
+
+/** T+0 P&L at each price in `points`, or null if any leg lacks an expiry (e.g. illustrative legs). */
+function computeTodayPayoff(legs, lotSize, spot, opp, points) {
+  if (!legs || legs.length === 0 || !(spot > 0) || points.length === 0) return null;
+  const fallbackIv = opp?.atmIv > 0 ? opp.atmIv / 100 : 0.15;
+  const meta = [];
+  for (const l of legs) {
+    const T = legYears(l, opp);
+    if (T == null) return null;
+    const call = l.optionType === 'CE';
+    // Each leg's own IV (from its entry price at today's spot) keeps the skew in the curve.
+    const iv = impliedVol(call, l.price, spot, l.strike, T) || fallbackIv;
+    meta.push({ call, T, iv, strike: l.strike, price: l.price, qty: l.qty || 1, buy: l.side === 'BUY' });
+  }
+  return points.map(p => {
+    let pnl = 0;
+    for (const m of meta) {
+      const v = bsPrice(m.call, p.s, m.strike, m.T, m.iv);
+      pnl += (m.buy ? v - m.price : m.price - v) * m.qty;
+    }
+    return { s: p.s, pnl: pnl * lotSize };
+  });
+}
+
+/** Evenly spaced prices plus every strike and spot, so kinks and peaks are never sampled past. */
+function pricePoints(lo, hi, n, extras) {
+  const set = new Set();
+  const step = (hi - lo) / n;
+  for (let i = 0; i <= n; i++) set.add(Math.round(lo + i * step));
+  for (const e of extras) if (e >= lo && e <= hi) set.add(Math.round(e));
+  return [...set].sort((a, b) => a - b);
+}
+
 function computePayoff(legs, lotSize, spot, opp) {
   if (!legs || legs.length === 0) return [];
   const strikes = legs.map(l => l.strike);
@@ -563,7 +638,7 @@ function computePayoff(legs, lotSize, spot, opp) {
     return points;
   }
 
-  for (let s = lo; s <= hi; s += step) {
+  for (const s of pricePoints(lo, hi, 240, [...strikes, spot])) {
     let pnl = 0;
     for (const leg of legs) {
       const { strike, optionType, side, qty = 1, price } = leg;
@@ -578,6 +653,7 @@ function computePayoff(legs, lotSize, spot, opp) {
 
 function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
   const points = useMemo(() => computePayoff(legs, lotSize, spot, opp), [legs, lotSize, spot, opp]);
+  const todayPoints = useMemo(() => computeTodayPayoff(legs, lotSize, spot, opp, points), [legs, lotSize, spot, opp, points]);
   const svgRef = useRef(null);
   const [hover, setHover] = useState(null);
 
@@ -589,8 +665,13 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
     const PAD_L = 70, PAD_R = 40;
     const plotW = 700 - PAD_L - PAD_R;
     if (svgX < PAD_L || svgX > 700 - PAD_R) { setHover(null); return; }
-    const ratio = (svgX - PAD_L) / plotW;
-    const idx = Math.min(Math.max(0, Math.round(ratio * (points.length - 1))), points.length - 1);
+    // Samples include every strike, so they are not evenly spaced: pick the nearest price.
+    const lo = points[0].s, hi = points[points.length - 1].s;
+    const target = lo + ((svgX - PAD_L) / plotW) * (hi - lo);
+    let idx = 0;
+    for (let i = 1; i < points.length; i++) {
+      if (Math.abs(points[i].s - target) < Math.abs(points[idx].s - target)) idx = i;
+    }
     setHover({ idx, svgX });
   }, [points]);
 
@@ -599,8 +680,9 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
   const W = 700, H = 260, PAD = { t: 30, r: 40, b: 40, l: 70 };
   const plotW = W - PAD.l - PAD.r, plotH = H - PAD.t - PAD.b;
 
-  const minPnl = Math.min(...points.map(p => p.pnl));
-  const maxPnl = Math.max(...points.map(p => p.pnl));
+  const allPnl = todayPoints ? [...points, ...todayPoints].map(p => p.pnl) : points.map(p => p.pnl);
+  const minPnl = Math.min(...allPnl);
+  const maxPnl = Math.max(...allPnl);
   const pnlRange = maxPnl - minPnl || 1;
   const minS = points[0].s, maxS = points[points.length - 1].s;
   const sRange = maxS - minS || 1;
@@ -612,6 +694,9 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
   const spotX = x(spot);
 
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.s).toFixed(1)},${y(p.pnl).toFixed(1)}`).join(' ');
+  const todayD = todayPoints
+    ? todayPoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.s).toFixed(1)},${y(p.pnl).toFixed(1)}`).join(' ')
+    : null;
 
   const profitPath = [];
   const lossPath = [];
@@ -653,18 +738,24 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
   const maxLossPt = points.reduce((a, b) => b.pnl < a.pnl ? b : a);
 
   const hoverPt = hover ? points[hover.idx] : null;
+  const hoverToday = hover && todayPoints ? todayPoints[hover.idx] : null;
+  const fmtPnl = v => `${v >= 0 ? '+' : '-'}₹${Math.abs(Math.round(v)).toLocaleString()}`;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-black text-gray-800 tracking-tight">Payoff at Expiry</span>
-        <div className="flex items-center gap-4 text-[10px]">
+        <span className="text-sm font-black text-gray-800 tracking-tight">Payoff</span>
+        <div className="flex items-center gap-4 text-[10px] flex-wrap justify-end">
+          <span className="flex items-center gap-1.5"><span className="w-4 h-0.5" style={{background:'#7c3aed'}}></span><span className="text-violet-700 font-bold">Expiry</span></span>
+          {todayPoints && (
+            <span className="flex items-center gap-1.5" title="Mark-to-market P&L if the underlying moved there now (Black-Scholes, each leg's own IV)"><span className="w-4 h-0.5" style={{background:'#2563eb'}}></span><span className="text-blue-700 font-bold">Today (T+0)</span></span>
+          )}
           <span className="flex items-center gap-1.5"><span className="w-3 h-2.5 rounded-sm" style={{background:'#10b981'}}></span><span className="text-emerald-700 font-bold">Profit</span></span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-2.5 rounded-sm" style={{background:'#ef4444'}}></span><span className="text-red-700 font-bold">Loss</span></span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-0.5" style={{background:'#6366f1'}}></span><span className="text-indigo-700 font-bold">Spot: {spot?.toLocaleString()}</span></span>
           {hoverPt && (
             <span className={`font-mono font-black px-2 py-0.5 rounded-md text-[11px] ${hoverPt.pnl >= 0 ? 'text-emerald-800 bg-emerald-100 border border-emerald-300' : 'text-red-800 bg-red-100 border border-red-300'}`}>
-              {hoverPt.s.toLocaleString()} → {hoverPt.pnl >= 0 ? '+' : ''}₹{Math.round(hoverPt.pnl).toLocaleString()}
+              {hoverPt.s.toLocaleString()} → {fmtPnl(hoverPt.pnl)}{hoverToday ? ` · today ${fmtPnl(hoverToday.pnl)}` : ''}
             </span>
           )}
         </div>
@@ -704,6 +795,7 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
         <path d={profitPath.join(' ')} fill="url(#profitFill)" />
         <path d={lossPath.join(' ')} fill="url(#lossFill)" />
         <path d={pathD} fill="none" stroke="#7c3aed" strokeWidth="2.5" strokeLinejoin="round" />
+        {todayD && <path d={todayD} fill="none" stroke="#2563eb" strokeWidth="2" strokeLinejoin="round" opacity="0.9" />}
 
         {/* SPOT line + label */}
         <line x1={spotX} y1={PAD.t} x2={spotX} y2={H - PAD.b} stroke="#6366f1" strokeWidth="1.5" strokeDasharray="5,3" />
@@ -740,18 +832,24 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
             <line x1={x(hoverPt.s)} y1={PAD.t} x2={x(hoverPt.s)} y2={H - PAD.b} stroke="#6366f1" strokeWidth="1" strokeDasharray="3,2" opacity="0.5" />
             <line x1={PAD.l} y1={y(hoverPt.pnl)} x2={W - PAD.r} y2={y(hoverPt.pnl)} stroke="#6366f1" strokeWidth="1" strokeDasharray="3,2" opacity="0.3" />
             <circle cx={x(hoverPt.s)} cy={y(hoverPt.pnl)} r="6" fill={hoverPt.pnl >= 0 ? '#10b981' : '#ef4444'} stroke="white" strokeWidth="2.5" />
-            <g transform={`translate(${Math.min(x(hoverPt.s) + 12, W - PAD.r - 150)}, ${Math.max(y(hoverPt.pnl) - 48, PAD.t)})`}>
-              <rect x="0" y="0" width="145" height="44" rx="8" fill="white" stroke="#e5e7eb" strokeWidth="1" />
-              <rect x="0" y="0" width="145" height="44" rx="8" fill="none" stroke={hoverPt.pnl >= 0 ? '#10b981' : '#ef4444'} strokeWidth="1.5" opacity="0.5" />
+            {hoverToday && <circle cx={x(hoverToday.s)} cy={y(hoverToday.pnl)} r="5" fill="#2563eb" stroke="white" strokeWidth="2" />}
+            <g transform={`translate(${Math.min(x(hoverPt.s) + 12, W - PAD.r - 160)}, ${Math.max(y(hoverPt.pnl) - 48, PAD.t)})`}>
+              <rect x="0" y="0" width="155" height={hoverToday ? 62 : 44} rx="8" fill="white" stroke="#e5e7eb" strokeWidth="1" />
+              <rect x="0" y="0" width="155" height={hoverToday ? 62 : 44} rx="8" fill="none" stroke={hoverPt.pnl >= 0 ? '#10b981' : '#ef4444'} strokeWidth="1.5" opacity="0.5" />
               <text x="12" y="17" fontSize="10" fill="#6b7280" fontFamily="monospace" fontWeight="600">Price: {hoverPt.s.toLocaleString()}</text>
-              <text x="12" y="35" fontSize="13" fill={hoverPt.pnl >= 0 ? '#059669' : '#dc2626'} fontWeight="900" fontFamily="monospace">
-                P&L: {hoverPt.pnl >= 0 ? '+' : ''}₹{Math.round(hoverPt.pnl).toLocaleString()}
+              {hoverToday && (
+                <text x="12" y="35" fontSize="12" fill="#1d4ed8" fontWeight="800" fontFamily="monospace">
+                  Today:  {fmtPnl(hoverToday.pnl)}
+                </text>
+              )}
+              <text x="12" y={hoverToday ? 53 : 35} fontSize={hoverToday ? 12 : 13} fill={hoverPt.pnl >= 0 ? '#059669' : '#dc2626'} fontWeight="900" fontFamily="monospace">
+                {hoverToday ? 'Expiry: ' : 'P&L: '}{fmtPnl(hoverPt.pnl)}
               </text>
             </g>
           </>
         )}
 
-        <text x={W / 2} y={H - 4} textAnchor="middle" fontSize="10" fill="#6b7280" fontWeight="bold">Underlying Price at Expiry</text>
+        <text x={W / 2} y={H - 4} textAnchor="middle" fontSize="10" fill="#6b7280" fontWeight="bold">Underlying Price</text>
         <text x={12} y={H / 2} textAnchor="middle" fontSize="10" fill="#6b7280" fontWeight="bold" transform={`rotate(-90,12,${H / 2})`}>P&L (₹)</text>
       </svg>
     </div>
