@@ -79,7 +79,13 @@ public class BrokerController {
             }
             try {
                 var margin = adapter.getAvailableMargin(account.getAccessToken());
-                String msg = broker + " connected. Available margin: \u20B9" + String.format("%.2f", margin);
+                String marginError = adapter.lastMarginError();
+                if (marginError != null) {
+                    // A failed balance call must not read as "connected with \u20B90".
+                    return ResponseEntity.ok(Map.of("ok", false,
+                        "message", broker + " margin check failed: " + marginError, "broker", broker.toUpperCase()));
+                }
+                String msg = broker + " connected. Available margin: \u20B9" + String.format("%,.2f", margin);
                 return ResponseEntity.ok(Map.of("ok", true, "message", msg, "broker", broker.toUpperCase()));
             } catch (Exception e) {
                 return ResponseEntity.ok(Map.of("ok", false, "message", broker + " API error: " + e.getMessage(), "broker", broker.toUpperCase()));

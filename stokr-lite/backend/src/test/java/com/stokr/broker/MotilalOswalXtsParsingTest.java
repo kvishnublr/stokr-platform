@@ -79,6 +79,14 @@ class MotilalOswalXtsParsingTest {
     }
 
     @Test
+    void recognisesExpiredSessionResponses() throws Exception {
+        assertTrue(MotilalOswalAdapter.isSessionError(json(
+            "{\"type\":\"error\",\"code\":\"e-session-0002\",\"description\":\"Invalid Token\"}")));
+        assertFalse(MotilalOswalAdapter.isSessionError(json(
+            "{\"type\":\"error\",\"code\":\"e-rms-0001\",\"description\":\"Insufficient balance\"}")));
+    }
+
+    @Test
     void searchNeverGuessesAnotherContract() throws Exception {
         JsonNode results = json("""
             [{"ExchangeInstrumentID":111,"DisplayName":"NIFTY 29SEP2026 CE 23500"},

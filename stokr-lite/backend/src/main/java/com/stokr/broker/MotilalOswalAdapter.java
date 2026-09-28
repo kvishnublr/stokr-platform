@@ -365,27 +365,66 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         return 0;
     }
 
+    /** Why the last margin fetch returned 0, or null when it succeeded. */
+    private volatile String lastMarginError;
+
+    @Override
+    public String lastMarginError() { return lastMarginError; }
+
     @Override
     public BigDecimal getAvailableMargin(String accessToken) {
         log.info("MOFSL-XTS: fetching available margin");
         ResolvedAccount resolved = ensureToken(accessToken);
-        try {
-            String respJson = xtsGet("/interactive/user/balance?clientID=" + resolved.userId, resolved.token);
-            JsonNode root = MAPPER.readTree(respJson);
-            if ("success".equalsIgnoreCase(root.path("type").asText(""))) {
-                Double margin = parseAvailableMargin(root.path("result"));
-                if (margin != null) {
-                    log.info("MOFSL-XTS: available margin={}", margin);
-                    return BigDecimal.valueOf(margin);
+        String error = null;
+        // Attempt 1: as logged in. Attempt 2: after a forced re-login when XTS rejects the session
+        // (tokens are reset overnight but our cache would keep serving the stale one), or with the
+        // client code when XTS rejects the user ID as clientID.
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                String respJson = xtsGet("/interactive/user/balance?clientID=" + resolved.userId, resolved.token);
+                JsonNode root = MAPPER.readTree(respJson);
+                if ("success".equalsIgnoreCase(root.path("type").asText(""))) {
+                    Double margin = parseAvailableMargin(root.path("result"));
+                    if (margin != null) {
+                        log.info("MOFSL-XTS: available margin={}", margin);
+                        lastMarginError = null;
+                        return BigDecimal.valueOf(margin);
+                    }
+                    String body = respJson.length() > 300 ? respJson.substring(0, 300) + "…" : respJson;
+                    error = "balance response had no recognisable margin field: " + body;
+                    break;
                 }
-                log.warn("MOFSL-XTS: balance response had no recognisable margin field");
-            } else {
-                log.warn("MOFSL-XTS margin fetch failed: {}", root.path("description").asText());
+                String desc = root.path("description").asText(respJson);
+                error = desc;
+                if (attempt == 1 && isSessionError(root)) {
+                    log.info("MOFSL-XTS: session rejected ({}), re-logging in", desc);
+                    final String staleToken = resolved.token;
+                    sessionCache.values().removeIf(c -> c.token.equals(staleToken));
+                    resolved = ensureToken(null);
+                    continue;
+                }
+                if (attempt == 1 && resolved.clientCode != null && !resolved.clientCode.isBlank()
+                        && !resolved.clientCode.equals(resolved.userId)) {
+                    resolved = new ResolvedAccount(resolved.token, resolved.clientCode, resolved.clientCode,
+                            resolved.apiKey, resolved.apiSecret);
+                    continue;
+                }
+                break;
+            } catch (Exception e) {
+                error = e.getMessage();
+                break;
             }
-        } catch (Exception e) {
-            log.warn("MOFSL-XTS getAvailableMargin failed: {}", e.getMessage());
         }
+        log.warn("MOFSL-XTS margin fetch failed: {}", error);
+        lastMarginError = error;
         return BigDecimal.ZERO;
+    }
+
+    /** XTS signals an expired/invalid session with an e-session-* code or a token message. */
+    static boolean isSessionError(JsonNode root) {
+        String code = root.path("code").asText("").toLowerCase();
+        String desc = root.path("description").asText("").toLowerCase();
+        return code.startsWith("e-session") || desc.contains("token") || desc.contains("session");
     }
 
     /**
