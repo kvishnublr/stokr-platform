@@ -1,5 +1,7 @@
 package com.stokr.smartstrategy;
 
+import com.stokr.arbitrage.QuotePolicy;
+import com.stokr.marketdata.MarketCalendar;
 import com.stokr.arbitrage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -176,12 +178,8 @@ public class CalendarSpreadEdgeScanner {
     private OptionChainService.OptionQuote getQuote(Map<String, OptionChainService.OptionQuote> quotes,
             String underlying, LocalDate expiry, int strike, String optType) {
         for (String c : optionChainService.buildNfoSymbolCandidates(underlying, expiry, strike, optType)) {
-            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) {
-                OptionChainService.OptionQuote q = quotes.get(c);
-                if (q.bid <= 0) q.bid = q.lastPrice;
-                if (q.ask <= 0) q.ask = q.lastPrice;
-                return q;
-            }
+            OptionChainService.OptionQuote q = QuotePolicy.usable(quotes.get(c), MarketCalendar.isMarketOpenNow());
+            if (q != null) return q;
         }
         return null;
     }

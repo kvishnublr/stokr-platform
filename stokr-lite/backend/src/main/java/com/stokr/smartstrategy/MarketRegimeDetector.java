@@ -32,7 +32,8 @@ public class MarketRegimeDetector {
     public record RegimeData(
         Regime regime,
         double spotPrice,
-        double sma20,
+        double prevClose,
+        double dayChangePct,
         double dayRange,
         double avgDayRange,
         double ivRank,
@@ -95,7 +96,9 @@ public class MarketRegimeDetector {
 
     private RegimeData detectRegime(String underlying) {
         String spotKey = SPOT_KEYS.getOrDefault(underlying, "NSE:NIFTY 50");
-        double[] spotFut = spotFetcher.getSpotAndFutures(spotKey, null);
+        // Spot only: passing a null futures key threw inside the fetcher's cache lookup, so every
+        // detection failed and callers silently ran on default weights.
+        double[] spotFut = spotFetcher.getSpotAndFutures(spotKey, spotKey);
         if (spotFut == null || spotFut[0] <= 0) return null;
         double spot = spotFut[0];
 
@@ -107,39 +110,33 @@ public class MarketRegimeDetector {
             atmIV = ivSnapshot.get("atmIV") instanceof Number n ? n.doubleValue() : 15;
         }
 
-        double dayHigh = spot * 1.005;
-        double dayLow = spot * 0.995;
-        if (spotFut.length > 1 && spotFut[1] > 0) {
-            double fut = spotFut[1];
-            dayHigh = Math.max(spot, fut) * 1.002;
-            dayLow = Math.min(spot, fut) * 0.998;
-        }
-
-        double dayRange = (dayHigh - dayLow) / spot * 100;
+        // Real session data from the quote's OHLC. Previously the day range was invented from
+        // spot ±0.2-0.5% and "trend" was the futures premium (interest carry), which read as
+        // TRENDING_UP for most of every expiry cycle regardless of price action.
+        double[] ohlc = spotFetcher.getCachedOhlc(spotKey); // {open, high, low, prevClose}
+        double prevClose = ohlc != null && ohlc[3] > 0 ? ohlc[3] : 0;
+        double dayRange = ohlc != null && ohlc[1] > 0 && ohlc[2] > 0 ? (ohlc[1] - ohlc[2]) / spot * 100 : 0;
+        double dayChangePct = prevClose > 0 ? (spot - prevClose) / prevClose * 100 : 0;
         double avgDayRange = underlying.equals("BANKNIFTY") ? 1.5 : 1.0;
 
-        double sma20 = spot;
-        double trendStrength = 0;
-        if (spotFut.length > 1 && spotFut[1] > 0) {
-            double fut = spotFut[1];
-            trendStrength = (fut - spot) / spot * 100;
-            sma20 = (spot + fut) / 2.0;
-        }
-
-        Regime regime;
-        if (ivRank > 70 && dayRange > avgDayRange * 1.5) {
-            regime = Regime.HIGH_VOLATILE;
-        } else if (trendStrength > 0.15) {
-            regime = Regime.TRENDING_UP;
-        } else if (trendStrength < -0.15) {
-            regime = Regime.TRENDING_DOWN;
-        } else {
-            regime = Regime.SIDEWAYS;
-        }
+        Regime regime = classify(ivRank, dayRange, avgDayRange, dayChangePct);
 
         Map<String, Double> weights = computeStrategyWeights(regime, ivRank);
 
-        return new RegimeData(regime, spot, sma20, dayRange, avgDayRange, ivRank, atmIV, weights, System.currentTimeMillis());
+        return new RegimeData(regime, spot, prevClose, dayChangePct, dayRange, avgDayRange, ivRank, atmIV, weights,
+            System.currentTimeMillis());
+    }
+
+    /** Session move (vs previous close) beyond which the day is treated as trending. */
+    static final double TREND_THRESHOLD_PCT = 0.5;
+
+    static Regime classify(double ivRank, double dayRangePct, double avgDayRangePct, double dayChangePct) {
+        if (dayRangePct > avgDayRangePct * 2 || (ivRank > 70 && dayRangePct > avgDayRangePct * 1.5)) {
+            return Regime.HIGH_VOLATILE;
+        }
+        if (dayChangePct > TREND_THRESHOLD_PCT) return Regime.TRENDING_UP;
+        if (dayChangePct < -TREND_THRESHOLD_PCT) return Regime.TRENDING_DOWN;
+        return Regime.SIDEWAYS;
     }
 
     private Map<String, Double> computeStrategyWeights(Regime regime, double ivRank) {
@@ -217,7 +214,8 @@ public class MarketRegimeDetector {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("regime", data.regime.name());
         map.put("spotPrice", data.spotPrice);
-        map.put("sma20", Math.round(data.sma20 * 100.0) / 100.0);
+        map.put("prevClose", Math.round(data.prevClose * 100.0) / 100.0);
+        map.put("dayChangePct", Math.round(data.dayChangePct * 100.0) / 100.0);
         map.put("dayRange", Math.round(data.dayRange * 100.0) / 100.0);
         map.put("ivRank", data.ivRank);
         map.put("atmIV", data.atmIV);

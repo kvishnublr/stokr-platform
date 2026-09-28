@@ -36,7 +36,7 @@ public class CondorAutoRollService {
         Map<String, Object> settings = autoExecService.getSettings();
 
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
 
         List<LivePosition> condors = positionRepo.findAllOpen().stream()
             .filter(p -> "CONDOR_SPREAD".equals(p.getStrategyType()) || "IRON_CONDOR".equals(p.getStrategyType()))

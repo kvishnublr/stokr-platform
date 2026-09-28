@@ -1,5 +1,7 @@
 package com.stokr.smartstrategy;
 
+import com.stokr.arbitrage.QuotePolicy;
+import com.stokr.marketdata.MarketCalendar;
 import com.stokr.arbitrage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,6 +68,9 @@ public class RatioButterflyScanner {
         Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
         log.info("Ratio [{}]: spot={}, atm={}, expiry={}, dte={}, quotes={}", underlying, spot, atmStrike, expiry, dte, quotes.size());
+        double years = PopModel.yearsToExpiry(expiry);
+        double atmIv = PopModel.atmIv(getQuote(quotes, underlying, expiry, atmStrike, "CE"),
+            getQuote(quotes, underlying, expiry, atmStrike, "PE"), spot, atmStrike, years);
         for (String optType : List.of("CE", "PE")) {
             int dir = "CE".equals(optType) ? 1 : -1;
             for (int bodyOffset = 1; bodyOffset <= 6; bodyOffset++) {
@@ -83,9 +88,10 @@ public class RatioButterflyScanner {
                 double cost = buyAsk - 3 * sellBid + 2 * farAsk;
                 int wingWidth = Math.abs(sellStrike - buyStrike);
                 double maxProfit = (wingWidth - cost) * lotSize;
-                // Max loss: 1 uncovered short beyond the far wing. Risk = wingWidth + net debit paid.
-                double maxLoss = (wingWidth + Math.max(cost, 0)) * lotSize;
-                if (maxLoss <= 0) maxLoss = 1;
+                // Beyond the far wing the legs net to zero options, locking in a loss of
+                // wingWidth + cost (a net credit reduces it). Non-positive ⇒ bad quotes, skip.
+                double maxLoss = OptionPayoffs.ratioButterflyMaxLoss(buyStrike, sellStrike, cost) * lotSize;
+                if (maxLoss <= 0) continue;
 
                 double costLimit = dte <= 3 ? step * 0.3 : dte <= 7 ? step * 0.6 : step * 1.5;
                 log.debug("RATIO {} {}{} body={} cost={} costLimit={} maxProfit={} maxLoss={}",
@@ -120,8 +126,9 @@ public class RatioButterflyScanner {
                 opp.put("maxLoss", round2(maxLoss));
                 opp.put("riskReward", round2(riskReward));
                 opp.put("sweetSpot", sellStrike);
-                opp.put("breakEvenLow", "CE".equals(optType) ? round2(buyStrike + cost) : round2(farBuyStrike + cost));
-                opp.put("breakEvenHigh", "CE".equals(optType) ? round2(farBuyStrike - cost) : round2(buyStrike - cost));
+                OptionPayoffs.Range be = OptionPayoffs.ratioButterflyBreakevens("CE".equals(optType), buyStrike, sellStrike, cost);
+                opp.put("breakEvenLow", Double.isNaN(be.low()) ? null : round2(be.low()));
+                opp.put("breakEvenHigh", Double.isNaN(be.high()) ? null : round2(be.high()));
                 opp.put("action", String.format("BUY 1x%d%s @ %.1f | SELL 3x%d%s @ %.1f | BUY 2x%d%s @ %.1f",
                     buyStrike, optType, buyAsk, sellStrike, optType, sellBid, farBuyStrike, optType, farAsk));
                 opp.put("legList", List.of(
@@ -132,9 +139,9 @@ public class RatioButterflyScanner {
                     Map.of("strike", farBuyStrike, "optionType", optType, "side", "BUY", "qty", 2, "price", farAsk,
                         "symbol", getSymbol(quotes, underlying, expiry, farBuyStrike, optType))
                 ));
-                double distPct = Math.abs(sellStrike - spot) / spot * 100;
-                double estimatedWinRate = Math.min(35, 15 + distPct * 3);
-                opp.put("estimatedWinRate", round2(estimatedWinRate));
+                // Model probability of finishing inside the profit zone (lognormal, ATM IV)
+                opp.put("estimatedWinRate", PopModel.popPct(spot, be.low(), be.high(), years, atmIv));
+                opp.put("atmIv", round2(atmIv * 100));
                 opp.put("edgePoints", round2(Math.abs(cost)));
                 opp.put("edgeAfterCosts", round2(maxProfit - txnCost));
                 results.add(opp);
@@ -146,12 +153,8 @@ public class RatioButterflyScanner {
     private OptionChainService.OptionQuote getQuote(Map<String, OptionChainService.OptionQuote> quotes,
             String underlying, LocalDate expiry, int strike, String optType) {
         for (String c : optionChainService.buildNfoSymbolCandidates(underlying, expiry, strike, optType)) {
-            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) {
-                OptionChainService.OptionQuote q = quotes.get(c);
-                if (q.bid <= 0) q.bid = q.lastPrice;
-                if (q.ask <= 0) q.ask = q.lastPrice;
-                return q;
-            }
+            OptionChainService.OptionQuote q = QuotePolicy.usable(quotes.get(c), MarketCalendar.isMarketOpenNow());
+            if (q != null) return q;
         }
         return null;
     }

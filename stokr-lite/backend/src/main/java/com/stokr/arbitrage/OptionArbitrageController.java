@@ -171,7 +171,7 @@ public class OptionArbitrageController {
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> health() {
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        boolean marketOpen = !nowIST.isBefore(LocalTime.of(9, 15)) && !nowIST.isAfter(LocalTime.of(15, 30));
+        boolean marketOpen = com.stokr.marketdata.MarketCalendar.isTradingDayToday() && !nowIST.isBefore(LocalTime.of(9, 15)) && !nowIST.isAfter(LocalTime.of(15, 30));
         return ResponseEntity.ok(Map.of(
             "status", "UP",
             "scannerReady", true,
@@ -190,7 +190,7 @@ public class OptionArbitrageController {
             List<Map<String, Object>> opps = new ArrayList<>();
 
             java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-            boolean marketClosed = nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
+            boolean marketClosed = !com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
 
             List<Map<String, Object>> bidOpps = bidParityService.scanBidParity(underlying);
             if (bidOpps != null) opps.addAll(bidOpps);
@@ -218,7 +218,7 @@ public class OptionArbitrageController {
     public ResponseEntity<Map<String, Object>> scanBidParity(@RequestParam(defaultValue = "ALL") String underlying) {
         return cachedScan("bid-parity:" + underlying, () -> {
             java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-            boolean marketClosed = nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
+            boolean marketClosed = !com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
             List<Map<String, Object>> opps = bidParityService.scanBidParity(underlying);
             if (!marketClosed && opps != null && !opps.isEmpty()) {
                 try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.error("Auto-exec from bid-parity scan failed: ", e); }
@@ -240,7 +240,7 @@ public class OptionArbitrageController {
         if (force) scanCache.remove("box-spread:" + underlying);
         return cachedScan("box-spread:" + underlying, () -> {
             java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-            boolean marketClosed = nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
+            boolean marketClosed = !com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
             List<Map<String, Object>> opps = boxSpreadService.scanBoxSpread(underlying);
             if (!marketClosed && opps != null && !opps.isEmpty()) {
                 try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from box-spread scan failed: {}", e.getMessage()); }
@@ -261,7 +261,7 @@ public class OptionArbitrageController {
                                                                   @RequestParam(defaultValue = "0.15") double maxGapPct,
                                                                   @RequestParam(defaultValue = "false") boolean force) {
         java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-        boolean marketClosed = nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
+        boolean marketClosed = !com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
         List<Map<String, Object>> nearMisses = boxSpreadService.scanNearMiss(underlying, maxGapPct);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
@@ -279,7 +279,7 @@ public class OptionArbitrageController {
         if (force) scanCache.remove("vertical-spread:" + underlying);
         return cachedScan("vertical-spread:" + underlying, () -> {
             java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-            boolean marketClosed = nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
+            boolean marketClosed = !com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
             List<Map<String, Object>> opps = verticalSpreadService.scanVerticalSpread(underlying);
             if (!marketClosed && opps != null && !opps.isEmpty()) {
                 try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from vertical-spread scan failed: {}", e.getMessage()); }
@@ -302,7 +302,7 @@ public class OptionArbitrageController {
         if (force) scanCache.remove("vertical-candidates:" + underlying + ":" + maxCostRatio);
         return cachedScan("vertical-candidates:" + underlying + ":" + maxCostRatio, () -> {
             java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-            boolean marketClosed = nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
+            boolean marketClosed = !com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
             List<Map<String, Object>> candidates = verticalSpreadService.scanCandidates(underlying, maxCostRatio);
             Map<String, Object> resp = new LinkedHashMap<>();
             resp.put("timestamp", System.currentTimeMillis());
@@ -321,7 +321,7 @@ public class OptionArbitrageController {
         if (force) scanCache.remove("butterfly-spread:" + underlying);
         return cachedScan("butterfly-spread:" + underlying, () -> {
             java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-            boolean marketClosed = nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
+            boolean marketClosed = !com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
             List<Map<String, Object>> opps = butterflySpreadService.scanButterflySpread(underlying);
             if (!marketClosed && opps != null && !opps.isEmpty()) {
                 try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from butterfly-spread scan failed: {}", e.getMessage()); }
@@ -344,7 +344,7 @@ public class OptionArbitrageController {
         if (force) scanCache.remove("butterfly-candidates:" + underlying + ":" + maxCostRatio);
         return cachedScan("butterfly-candidates:" + underlying + ":" + maxCostRatio, () -> {
             java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-            boolean marketClosed = nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
+            boolean marketClosed = !com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
             List<Map<String, Object>> candidates = butterflySpreadService.scanCandidates(underlying, maxCostRatio);
             Map<String, Object> resp = new LinkedHashMap<>();
             resp.put("timestamp", System.currentTimeMillis());
@@ -363,7 +363,7 @@ public class OptionArbitrageController {
         if (force) scanCache.remove("condor-spread:" + underlying);
         return cachedScan("condor-spread:" + underlying, () -> {
             java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-            boolean marketClosed = nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
+            boolean marketClosed = !com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
             List<Map<String, Object>> opps = condorSpreadService.scanCondorSpread(underlying);
             if (!marketClosed && opps != null && !opps.isEmpty()) {
                 try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from condor-spread scan failed: {}", e.getMessage()); }
@@ -386,7 +386,7 @@ public class OptionArbitrageController {
         if (force) scanCache.remove("condor-candidates:" + underlying + ":" + maxCostRatio);
         return cachedScan("condor-candidates:" + underlying + ":" + maxCostRatio, () -> {
             java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-            boolean marketClosed = nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
+            boolean marketClosed = !com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
             List<Map<String, Object>> candidates = condorSpreadService.scanCandidates(underlying, maxCostRatio);
             Map<String, Object> resp = new LinkedHashMap<>();
             resp.put("timestamp", System.currentTimeMillis());
@@ -404,7 +404,7 @@ public class OptionArbitrageController {
             @RequestParam(defaultValue = "ALL") String underlying) {
         return cachedScan("calendar:" + underlying, () -> {
             LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-            boolean marketClosed = nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30));
+            boolean marketClosed = !com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30));
             try {
                 List<Map<String, Object>> opps = calendarSpreadService.scanCalendarSpreads(underlying);
                 return ResponseEntity.ok(Map.of(
@@ -457,7 +457,7 @@ public class OptionArbitrageController {
             @RequestParam(defaultValue = "ALL") String underlying) {
         return cachedScan("synthetic-arb:" + underlying, () -> {
             LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-            boolean marketClosed = nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30));
+            boolean marketClosed = !com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30));
             try {
                 List<Map<String, Object>> opps = syntheticArbService.scanSyntheticArb(underlying);
                 return ResponseEntity.ok(Map.of(
@@ -508,7 +508,7 @@ public class OptionArbitrageController {
             @RequestParam(defaultValue = "ALL") String underlying) {
         return cachedScan("iron-condor:" + underlying, () -> {
             LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-            boolean marketClosed = nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30));
+            boolean marketClosed = !com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30));
             List<String> targets = "ALL".equalsIgnoreCase(underlying)
                 ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX")
                 : List.of(underlying);
@@ -979,7 +979,7 @@ public class OptionArbitrageController {
             Map<String, Object> statusMap = new LinkedHashMap<>();
             Map<String, Object> exitTimeMap = new LinkedHashMap<>();
             LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-            boolean marketOpen = !nowIST.isBefore(LocalTime.of(9, 15)) && !nowIST.isAfter(LocalTime.of(15, 30));
+            boolean marketOpen = com.stokr.marketdata.MarketCalendar.isTradingDayToday() && !nowIST.isBefore(LocalTime.of(9, 15)) && !nowIST.isAfter(LocalTime.of(15, 30));
 
             if (ids != null && !ids.isEmpty()) {
                 List<Long> idList = Arrays.stream(ids.split(","))
@@ -1842,7 +1842,7 @@ public class OptionArbitrageController {
         final Map<String, OptionChainService.OptionQuote> quotes = allQuotes;
 
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        boolean marketOpen = !nowIST.isBefore(LocalTime.of(9, 15)) && !nowIST.isAfter(LocalTime.of(15, 30));
+        boolean marketOpen = com.stokr.marketdata.MarketCalendar.isTradingDayToday() && !nowIST.isBefore(LocalTime.of(9, 15)) && !nowIST.isAfter(LocalTime.of(15, 30));
 
         List<Map<String, Object>> posList = openPositions.stream().map(p -> {
             Map<String, Object> map = p.toMap();
@@ -2661,7 +2661,7 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
 
     private ResponseEntity<Map<String, Object>> doScanTopPicks(String underlying, double minEdge) {
         java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-        boolean marketClosed = nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
+        boolean marketClosed = !com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30));
         
         List<Map<String, Object>> allOpps = new ArrayList<>();
         

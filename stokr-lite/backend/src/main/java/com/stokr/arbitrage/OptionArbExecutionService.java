@@ -67,7 +67,7 @@ public class OptionArbExecutionService {
         result.strike = strike;
 
         java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
             result.success = false;
             result.error = "Market closed. Orders can only be placed between 9:15 AM and 3:30 PM IST.";
             return result;
