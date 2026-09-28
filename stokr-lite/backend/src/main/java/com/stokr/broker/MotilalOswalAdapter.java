@@ -2,6 +2,7 @@ package com.stokr.broker;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stokr.marketdata.tick.KiteInstrumentTokenCache;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -24,14 +25,16 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final BrokerAccountRepository repository;
+    private final KiteInstrumentTokenCache instrumentTokens;
 
     private final ConcurrentHashMap<Long, CachedSession> sessionCache = new ConcurrentHashMap<>();
 
     // exchangeInstrumentID cache: "NSEFO|NIFTY2691523500CE" → instrumentID
     private volatile Map<String, Long> instrumentCache = new ConcurrentHashMap<>();
 
-    public MotilalOswalAdapter(BrokerAccountRepository repository) {
+    public MotilalOswalAdapter(BrokerAccountRepository repository, KiteInstrumentTokenCache instrumentTokens) {
         this.repository = repository;
+        this.instrumentTokens = instrumentTokens;
     }
 
     private record CachedSession(String token, String userId, String clientCode,
@@ -279,7 +282,13 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         log.info("MOFSL-XTS: cancelling order {}", orderId);
         ResolvedAccount resolved = ensureToken(accessToken);
         try {
-            xtsDelete("/interactive/orders?appOrderID=" + orderId, resolved.token);
+            String respJson = xtsDelete("/interactive/orders?appOrderID=" + orderId
+                    + (resolved.userId != null && !resolved.userId.isBlank() ? "&clientID=" + resolved.userId : ""),
+                    resolved.token);
+            JsonNode root = MAPPER.readTree(respJson);
+            if (!"success".equalsIgnoreCase(root.path("type").asText(""))) {
+                log.warn("MOFSL-XTS cancel order {} rejected: {}", orderId, root.path("description").asText(respJson));
+            }
         } catch (Exception e) {
             log.warn("MOFSL-XTS cancel order {} failed: {}", orderId, e.getMessage());
         }
@@ -290,53 +299,70 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         log.info("MOFSL-XTS: fetching positions");
         ResolvedAccount resolved = ensureToken(accessToken);
         try {
-            String respJson = xtsGet("/interactive/portfolio/positions?dayOrNet=DayWise&clientID=" + resolved.userId, resolved.token);
+            // NetWise includes positions carried from earlier sessions; DayWise only shows today's trades.
+            String respJson = xtsGet("/interactive/portfolio/positions?dayOrNet=NetWise&clientID=" + resolved.userId, resolved.token);
             JsonNode root = MAPPER.readTree(respJson);
             String type = root.path("type").asText("");
             if (!"success".equalsIgnoreCase(type)) {
                 log.warn("MOFSL-XTS getPositions failed: {}", root.path("description").asText());
                 return Collections.emptyList();
             }
-            JsonNode positionList = root.path("result").path("positionList");
-            List<BrokerPosition> result = new ArrayList<>();
-            if (positionList.isArray()) {
-                for (JsonNode p : positionList) {
-                    int buyQty = p.path("Quantity").path("BuyQuantity").asInt(
-                            p.path("BuyQty").asInt(p.path("buyQty").asInt(0)));
-                    int sellQty = p.path("Quantity").path("SellQuantity").asInt(
-                            p.path("SellQty").asInt(p.path("sellQty").asInt(0)));
-                    int qty = buyQty - sellQty;
-                    if (qty == 0) continue;
-
-                    double buyAvg = p.path("BuyAveragePrice").asDouble(p.path("buyAvgPrice").asDouble(0));
-                    double sellAvg = p.path("SellAveragePrice").asDouble(p.path("sellAvgPrice").asDouble(0));
-                    BigDecimal avgPrice = qty > 0
-                            ? BigDecimal.valueOf(buyAvg)
-                            : BigDecimal.valueOf(sellAvg);
-                    BigDecimal ltp = BigDecimal.valueOf(p.path("LastTradedPrice").asDouble(
-                            p.path("ltp").asDouble(0)));
-                    BigDecimal mtm = BigDecimal.valueOf(p.path("RealizedMTM").asDouble(
-                            p.path("realizedMTM").asDouble(0)));
-                    BigDecimal unrealized = BigDecimal.valueOf(p.path("UnrealizedMTM").asDouble(
-                            p.path("unrealizedMTM").asDouble(0)));
-
-                    result.add(new BrokerPosition(
-                            p.path("TradingSymbol").asText(p.path("tradingSymbol").asText("")),
-                            p.path("ExchangeSegment").asText(p.path("exchangeSegment").asText("NSEFO")),
-                            qty,
-                            avgPrice,
-                            ltp,
-                            unrealized,
-                            mtm,
-                            p.path("ProductType").asText(p.path("productType").asText("NRML"))
-                    ));
-                }
-            }
-            return result;
+            return parsePositions(root.path("result").path("positionList"));
         } catch (Exception e) {
             log.warn("MOFSL-XTS getPositions failed: {}", e.getMessage());
             return Collections.emptyList();
         }
+    }
+
+    /**
+     * XTS positionList rows carry the net quantity as a (string) "Quantity" field, with
+     * OpenBuyQuantity / OpenSellQuantity alongside; numeric fields often arrive as strings.
+     * Older/alternate shapes (nested Quantity.BuyQuantity, BuyQty) are still accepted.
+     */
+    static List<BrokerPosition> parsePositions(JsonNode positionList) {
+        List<BrokerPosition> result = new ArrayList<>();
+        if (positionList == null || !positionList.isArray()) return result;
+        for (JsonNode p : positionList) {
+            int qty = netQuantity(p);
+            if (qty == 0) continue;
+
+            double buyAvg = num(p, "BuyAveragePrice", "buyAvgPrice");
+            double sellAvg = num(p, "SellAveragePrice", "sellAvgPrice");
+            result.add(new BrokerPosition(
+                    p.path("TradingSymbol").asText(p.path("tradingSymbol").asText("")),
+                    p.path("ExchangeSegment").asText(p.path("exchangeSegment").asText("NSEFO")),
+                    qty,
+                    BigDecimal.valueOf(qty > 0 ? buyAvg : sellAvg),
+                    BigDecimal.valueOf(num(p, "LastTradedPrice", "ltp")),
+                    BigDecimal.valueOf(num(p, "UnrealizedMTM", "unrealizedMTM")),
+                    BigDecimal.valueOf(num(p, "RealizedMTM", "realizedMTM")),
+                    p.path("ProductType").asText(p.path("productType").asText("NRML"))
+            ));
+        }
+        return result;
+    }
+
+    private static int netQuantity(JsonNode p) {
+        JsonNode q = p.path("Quantity");
+        if (q.isValueNode() && !q.asText("").isBlank()) {
+            return (int) Math.round(q.asDouble(0));                        // XTS: net qty (string)
+        }
+        if (q.isObject()) {                                                  // nested variant
+            return q.path("BuyQuantity").asInt(0) - q.path("SellQuantity").asInt(0);
+        }
+        if (p.has("OpenBuyQuantity") || p.has("OpenSellQuantity")) {
+            return (int) Math.round(num(p, "OpenBuyQuantity") - num(p, "OpenSellQuantity"));
+        }
+        return (int) Math.round(num(p, "BuyQty", "buyQty") - num(p, "SellQty", "sellQty"));
+    }
+
+    /** First present field as a number (XTS sends many numerics as strings). */
+    private static double num(JsonNode node, String... fields) {
+        for (String f : fields) {
+            JsonNode v = node.path(f);
+            if (!v.isMissingNode() && !v.isNull() && !v.asText("").isBlank()) return v.asDouble(0);
+        }
+        return 0;
     }
 
     @Override
@@ -346,47 +372,58 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         try {
             String respJson = xtsGet("/interactive/user/balance?clientID=" + resolved.userId, resolved.token);
             JsonNode root = MAPPER.readTree(respJson);
-            String type = root.path("type").asText("");
-            if ("success".equalsIgnoreCase(type)) {
-                JsonNode result = root.path("result");
-                JsonNode balList = result.path("BalanceList");
-                if (balList.isArray()) {
-                    for (JsonNode bal : balList) {
-                        String limitHeader = bal.path("limitHeader").asText("");
-                        if ("Net margin available".equalsIgnoreCase(limitHeader)
-                                || "Cash Available".equalsIgnoreCase(limitHeader)
-                                || limitHeader.toLowerCase().contains("net margin")) {
-                            double marginValue = bal.path("marginAvailable").asDouble(
-                                    bal.path("limitBranch").asDouble(0));
-                            if (marginValue > 0) {
-                                log.info("MOFSL-XTS: available margin={} ({})", marginValue, limitHeader);
-                                return BigDecimal.valueOf(marginValue);
-                            }
-                        }
-                    }
-                    // fallback: sum all marginAvailable
-                    double total = 0;
-                    for (JsonNode bal : balList) {
-                        total += bal.path("marginAvailable").asDouble(0);
-                    }
-                    if (total > 0) {
-                        log.info("MOFSL-XTS: available margin (sum)={}", total);
-                        return BigDecimal.valueOf(total);
-                    }
+            if ("success".equalsIgnoreCase(root.path("type").asText(""))) {
+                Double margin = parseAvailableMargin(root.path("result"));
+                if (margin != null) {
+                    log.info("MOFSL-XTS: available margin={}", margin);
+                    return BigDecimal.valueOf(margin);
                 }
-                // Try flat result fields
-                double netMargin = result.path("netMarginAvailable").asDouble(
-                        result.path("cashAvailable").asDouble(0));
-                if (netMargin > 0) {
-                    log.info("MOFSL-XTS: available margin={}", netMargin);
-                    return BigDecimal.valueOf(netMargin);
-                }
+                log.warn("MOFSL-XTS: balance response had no recognisable margin field");
+            } else {
+                log.warn("MOFSL-XTS margin fetch failed: {}", root.path("description").asText());
             }
-            log.warn("MOFSL-XTS margin fetch failed: {}", root.path("description").asText());
         } catch (Exception e) {
             log.warn("MOFSL-XTS getAvailableMargin failed: {}", e.getMessage());
         }
         return BigDecimal.ZERO;
+    }
+
+    /**
+     * XTS balance: result.BalanceList[].limitObject.RMSSubLimits.{netMarginAvailable, cashAvailable}
+     * (values usually strings; limitHeader is e.g. "ALL|ALL|ALL"). Uses the ALL|ALL|ALL entry when
+     * present (it already aggregates segments), otherwise the first entry with a value; null when no
+     * known field is present. Legacy flat shapes are kept as fallbacks.
+     */
+    static Double parseAvailableMargin(JsonNode result) {
+        Double first = null;
+        JsonNode balList = result.path("BalanceList");
+        if (balList.isArray()) {
+            for (JsonNode bal : balList) {
+                Double v = entryMargin(bal);
+                if (v == null) continue;
+                if (bal.path("limitHeader").asText("").toUpperCase().startsWith("ALL|ALL|ALL")) return v;
+                if (first == null) first = v;
+            }
+        }
+        if (first != null) return first;
+        if (has(result, "netMarginAvailable")) return result.path("netMarginAvailable").asDouble(0);
+        if (has(result, "cashAvailable")) return result.path("cashAvailable").asDouble(0);
+        return null;
+    }
+
+    private static Double entryMargin(JsonNode bal) {
+        JsonNode rms = bal.path("limitObject").path("RMSSubLimits");
+        if (has(rms, "netMarginAvailable")) return rms.path("netMarginAvailable").asDouble(0);
+        if (has(rms, "cashAvailable")) return rms.path("cashAvailable").asDouble(0);
+        if (bal.path("marginAvailable").isValueNode() && has(bal, "marginAvailable")) {
+            return bal.path("marginAvailable").asDouble(0);
+        }
+        return null;
+    }
+
+    private static boolean has(JsonNode node, String field) {
+        JsonNode v = node.path(field);
+        return !v.isMissingNode() && !v.isNull() && !v.asText("").isBlank();
     }
 
     @Override
@@ -400,7 +437,10 @@ public class MotilalOswalAdapter implements BrokerAdapter {
                 JsonNode orders = root.path("result");
                 if (orders.isArray()) {
                     for (JsonNode o : orders) {
-                        String appOrderId = String.valueOf(o.path("AppOrderID").asInt(0));
+                        // AppOrderIDs can exceed int range — compare as text/long, never asInt()
+                        String appOrderId = o.path("AppOrderID").isNumber()
+                                ? String.valueOf(o.path("AppOrderID").asLong(0))
+                                : o.path("AppOrderID").asText("");
                         if (orderId.equals(appOrderId)) {
                             String status = o.path("OrderStatus").asText(
                                     o.path("orderStatus").asText("UNKNOWN"));
@@ -415,12 +455,13 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         return "UNKNOWN";
     }
 
-    private String mapXtsOrderStatus(String xtsStatus) {
+    static String mapXtsOrderStatus(String xtsStatus) {
         if (xtsStatus == null) return "UNKNOWN";
         return switch (xtsStatus.toLowerCase()) {
-            case "new", "open", "pendnew", "pendingnew" -> "OPEN";
+            // XTS: New, PendingNew, Replaced, PendingReplace, PendingCancel are all still working orders
+            case "new", "open", "pendnew", "pendingnew", "replaced", "pendingreplace", "pendingcancel" -> "OPEN";
             case "filled", "completely filled" -> "COMPLETE";
-            case "partially filled", "partfilled" -> "PARTIAL";
+            case "partially filled", "partfilled", "partiallyfilled" -> "PARTIAL";
             case "cancelled", "canceled" -> "CANCELLED";
             case "rejected" -> "REJECTED";
             default -> xtsStatus.toUpperCase();
@@ -428,14 +469,24 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     }
 
     // ---- Instrument ID resolution ----
-    // XTS uses numeric exchangeInstrumentID. We search the master or use the symbol directly.
+    // XTS uses numeric exchangeInstrumentID, which for NSE F&O is NSE's own exchange token — the
+    // same number Kite publishes as exchange_token. Resolve from that first; only accept an EXACT
+    // symbol match from XTS search. Never guess: a wrong ID places the order on another contract.
 
     private Long resolveInstrumentId(String exchangeSegment, String tradingSymbol, String token) {
         String key = exchangeSegment + "|" + tradingSymbol.toUpperCase();
         Long cached = instrumentCache.get(key);
         if (cached != null) return cached;
 
-        // Try XTS search API to find the instrument
+        if ("NSEFO".equals(exchangeSegment) && instrumentTokens != null) {
+            Long exchangeToken = instrumentTokens.getExchangeToken(tradingSymbol);
+            if (exchangeToken != null && exchangeToken > 0) {
+                instrumentCache.put(key, exchangeToken);
+                return exchangeToken;
+            }
+        }
+
+        // Fall back to XTS search, exact match only
         try {
             Map<String, Object> searchBody = new LinkedHashMap<>();
             searchBody.put("searchString", tradingSymbol);
@@ -446,26 +497,15 @@ public class MotilalOswalAdapter implements BrokerAdapter {
             if ("success".equalsIgnoreCase(root.path("type").asText(""))) {
                 JsonNode results = root.path("result");
                 if (results.isArray()) {
-                    for (JsonNode instr : results) {
-                        String segment = instr.path("ExchangeSegment").asText("");
-                        String symbol = instr.path("DisplayName").asText(
-                                instr.path("TradingSymbol").asText(""));
-                        long instrId = instr.path("ExchangeInstrumentID").asLong(0);
-                        if (instrId > 0 && segment.equalsIgnoreCase(exchangeSegment)
-                                && symbol.toUpperCase().contains(tradingSymbol.toUpperCase())) {
-                            instrumentCache.put(key, instrId);
-                            return instrId;
-                        }
+                    Long exact = exactSearchMatch(results, tradingSymbol);
+                    if (exact != null) {
+                        instrumentCache.put(key, exact);
+                        return exact;
                     }
-                    // Fallback: take first match on the right exchange
-                    for (JsonNode instr : results) {
-                        String segment = instr.path("ExchangeSegment").asText("");
-                        long instrId = instr.path("ExchangeInstrumentID").asLong(0);
-                        if (instrId > 0 && segment.equalsIgnoreCase(exchangeSegment)) {
-                            instrumentCache.put(key, instrId);
-                            return instrId;
-                        }
-                    }
+                    // Deliberately no "first result" fallback: search hits for NIFTY... include
+                    // every strike and expiry, and picking one would trade the wrong contract.
+                    log.warn("MOFSL-XTS: no exact instrument match for {} among {} search results",
+                            tradingSymbol, results.size());
                 }
             }
         } catch (Exception e) {
@@ -479,6 +519,20 @@ public class MotilalOswalAdapter implements BrokerAdapter {
             return id;
         } catch (NumberFormatException ignored) {}
 
+        return null;
+    }
+
+    /** Instrument ID whose trading/display symbol equals {@code tradingSymbol} (ignoring case and spaces). */
+    static Long exactSearchMatch(JsonNode results, String tradingSymbol) {
+        String want = tradingSymbol.replace(" ", "").toUpperCase();
+        for (JsonNode instr : results) {
+            long instrId = instr.path("ExchangeInstrumentID").asLong(0);
+            if (instrId <= 0) continue;
+            for (String f : List.of("TradingSymbol", "Name", "DisplayName")) {
+                String s = instr.path(f).asText("").replace(" ", "").toUpperCase();
+                if (!s.isEmpty() && s.equals(want)) return instrId;
+            }
+        }
         return null;
     }
 
