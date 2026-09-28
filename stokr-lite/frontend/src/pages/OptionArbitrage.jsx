@@ -96,7 +96,48 @@ const STRATEGY_LABELS = {
   BUTTERFLY_SPREAD: '🦋 Butterfly',
   CONDOR_SPREAD: '🎯 Condor',
   IRON_CONDOR: '🛡️ Iron Condor',
+  MORNING_RANGE_THETA: '🌅 Morning Theta',
+  EXPIRY_THETA_CRUSH: '⏰ Theta Crush',
+  JADE_LIZARD: '🦎 Jade Lizard',
+  RATIO_BUTTERFLY: '🦋 Ratio Butterfly',
+  BROKEN_WING_BUTTERFLY: '🔥 Broken Wing',
+  SKEW_HARVEST: '📊 Skew Harvest',
+  BOX_SPREAD_ARB: '📦 Box Spread',
+  CALENDAR_SPREAD_EDGE: '📅 Calendar',
 };
+
+/** Label for a strategy code, falling back to Title Case (MORNING_RANGE_THETA → Morning Range Theta). */
+function strategyLabel(code) {
+  if (!code) return '—';
+  return STRATEGY_LABELS[code] || String(code).toLowerCase().split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+/** Legs grouped one line per option type: "CE  S 23000 @52.8 · B 23100 @27.6". */
+function LegsCell({ legs }) {
+  const groups = ['CE', 'PE', 'FUT']
+    .map(t => ({ t, legs: legs.filter(l => (l.optionType || 'FUT') === t).sort((a, b) => a.strike - b.strike) }))
+    .filter(g => g.legs.length > 0);
+  return (
+    <div className="flex flex-col gap-1">
+      {groups.map(g => (
+        <div key={g.t} className="flex items-center gap-1.5 whitespace-nowrap">
+          <span className={`w-7 text-center px-1 py-0.5 rounded text-[8px] font-black tracking-wide ${g.t === 'CE' ? 'bg-sky-50 text-sky-700 border border-sky-200' : g.t === 'PE' ? 'bg-violet-50 text-violet-700 border border-violet-200' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>{g.t}</span>
+          {g.legs.map((leg, i) => (
+            <span key={i} className="inline-flex items-center gap-1 font-mono text-[10px]">
+              {i > 0 && <span className="text-slate-300">·</span>}
+              <span className={`w-4 h-4 inline-flex items-center justify-center rounded text-[8px] font-black text-white ${leg.side === 'BUY' ? 'bg-emerald-500' : 'bg-rose-500'}`}>
+                {leg.side === 'BUY' ? 'B' : 'S'}{(leg.qty || 1) > 1 ? leg.qty : ''}
+              </span>
+              <span className="font-bold text-slate-800">{leg.strike}</span>
+              <span className="text-slate-400">@{Number(leg.price || 0).toFixed(1)}</span>
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const TOAST_STYLES = {
   success: { bg: 'bg-white', border: 'border-emerald-400', bar: 'bg-emerald-500', icon: '✅', iconBg: 'bg-emerald-100', iconText: 'text-emerald-600', titleText: 'text-emerald-700', defaultTitle: 'Success' },
@@ -1306,7 +1347,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                   <SortTh col="underlying">Symbol</SortTh>
                   <SortTh col="strike" className="text-right">Strike</SortTh>
                   <SortTh col="expiry">Expiry</SortTh>
-                  <th className="px-2 py-2.5 text-center">Legs / Entry</th>
+                  <th className="px-2 py-2.5 text-left">Legs · Entry</th>
                   <SortTh col="edge" className="text-right">Edge</SortTh>
                   <SortTh col="edgeProgress" className="text-center">Progress</SortTh>
                   <SortTh col="pnl" className="text-right">P&amp;L</SortTh>
@@ -1329,7 +1370,18 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                     <React.Fragment key={p.id}>
                     <tr onClick={() => canShowPayoff && setExpandedPosId(isExpanded ? null : p.id)}
                       className={`${rowBg} hover:bg-indigo-50/60 transition-colors border-b border-slate-100 ${canShowPayoff ? 'cursor-pointer' : ''}`}>
-                      <td className="px-2 py-2.5 font-mono text-[10px] text-slate-500 whitespace-nowrap">{fmtTime(p.enteredAt)}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {p.enteredAt ? (
+                          <div className="leading-tight">
+                            <div className="font-mono text-[11px] font-bold text-slate-700">
+                              {new Date(p.enteredAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                            </div>
+                            <div className="text-[9px] text-slate-400">
+                              {new Date(p.enteredAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                            </div>
+                          </div>
+                        ) : <span className="text-slate-400">--</span>}
+                      </td>
                       <td className="px-2 py-2.5">
                         {isPaper(p)
                           ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-bold">📄 Paper</span>
@@ -1338,23 +1390,23 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                       </td>
                       <td className="px-2 py-2.5">
                         <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap">
-                          {STRATEGY_LABELS[p.strategyType] || p.strategyType || '—'}
+                          {strategyLabel(p.strategyType)}
                         </span>
                       </td>
                       <td className="px-2 py-2.5 font-black text-slate-800 text-xs">{p.underlying}</td>
-                      <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-700">{p.strike}</td>
+                      <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-700 whitespace-nowrap">
+                        {p.strike ?? (Array.isArray(p.legList) && p.legList.length > 0
+                          ? <span className="text-[10px] text-slate-500">{Math.min(...p.legList.map(l => l.strike))}–{Math.max(...p.legList.map(l => l.strike))}</span>
+                          : '--')}
+                      </td>
                       <td className="px-2 py-2.5 text-[10px] font-mono text-slate-500 whitespace-nowrap">
                         {(p.expiryDate || p.expiry) ? new Date((p.expiryDate || p.expiry) + (String(p.expiryDate || p.expiry).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '--'}
                       </td>
                       <td className="px-2 py-2.5">
                         {p.isMultiLeg ? (
-                          <div className="flex flex-wrap gap-1">
+                          <div>
                             {Array.isArray(p.legList) && p.legList.length > 0
-                              ? p.legList.map((leg, i) => (
-                                  <span key={i} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${leg.side === 'BUY' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
-                                    {leg.side === 'BUY' ? 'B' : 'S'} {leg.strike}{leg.optionType?.charAt(0)} @{Number(leg.price || 0).toFixed(1)}
-                                  </span>
-                                ))
+                              ? <LegsCell legs={p.legList} />
                               : <span className="text-slate-400 text-[9px]">{p.legList?.length || 0}-leg</span>}
                           </div>
                         ) : (
@@ -1496,7 +1548,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
               <div className="grid grid-cols-3 gap-2">
                 <div className="bg-indigo-50 rounded-lg px-3 py-2 border border-indigo-100">
                   <div className="text-[9px] text-indigo-500 font-bold uppercase">Strategy</div>
-                  <div className="text-xs font-bold text-indigo-700">{STRATEGY_LABELS[goLiveConfirm.strategyType] || goLiveConfirm.strategyType}</div>
+                  <div className="text-xs font-bold text-indigo-700">{strategyLabel(goLiveConfirm.strategyType)}</div>
                 </div>
                 <div className="bg-violet-50 rounded-lg px-3 py-2 border border-violet-100">
                   <div className="text-[9px] text-violet-500 font-bold uppercase">Broker</div>
@@ -7581,7 +7633,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
     </div>
   );
 }
-export { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS };
+export { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS, strategyLabel };
 
 function TopPicksView({ executionBroker, handleExecuteInline }) {
   const [underlying, setUnderlying] = React.useState('ALL');

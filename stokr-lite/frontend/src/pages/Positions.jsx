@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
-import { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS, GlobalConfirmModal, DetailedOpportunityExpandedRow } from './OptionArbitrage';
+import { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS, strategyLabel, GlobalConfirmModal, DetailedOpportunityExpandedRow } from './OptionArbitrage';
 
 function fmtDate(ts) {
   if (!ts) return '--';
@@ -520,7 +520,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
 
                         {/* Strategy */}
                         <td className="px-4 py-3 font-bold text-slate-700 whitespace-nowrap">
-                          {STRATEGY_LABELS[p.strategyType || p.strategy] || p.strategyType || p.strategy || '—'}
+                          {strategyLabel(p.strategyType || p.strategy)}
                         </td>
 
                         {/* Symbol / Legs */}
