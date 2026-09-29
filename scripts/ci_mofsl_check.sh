@@ -12,18 +12,23 @@ DEPLOY_USER="${DEPLOY_USER:-root}"
 SSH_KEY="$HOME/.ssh/github_actions_deploy"
 SSH_OPTS="-i $SSH_KEY -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o ConnectTimeout=30"
 
-LINES=$(ssh $SSH_OPTS "${DEPLOY_USER}@${DEPLOY_HOST}" \
-  "journalctl -u stokr-lite --since '-6 hours' --no-pager -o short-iso 2>/dev/null | grep -E 'MOFSL' | grep -E 'login successful|login failed|startup login|margin fetch failed|available margin=' | tail -20" || true)
+# The unit may send stdout to a file (StandardOutput=append:/path) instead of the journal, so
+# read whichever it uses. Diagnostics (log source, startup account counts) go to stderr.
+REMOTE='LOGFILE=$(systemctl cat stokr-lite 2>/dev/null | sed -n "s/^StandardOutput=append://p" | tail -1)
+if [ -n "$LOGFILE" ] && [ -f "$LOGFILE" ]; then
+  echo "log source: service log file" >&2
+  SRC="tail -n 200000 $LOGFILE"
+else
+  echo "log source: journal" >&2
+  SRC="journalctl -u stokr-lite --since -6h --no-pager -o short-iso"
+fi
+$SRC 2>/dev/null | grep -o "MOFSL: startup found.*" | tail -2 >&2
+$SRC 2>/dev/null | grep -E "MOFSL" | grep -E "login successful|login failed|startup login|margin fetch failed|available margin=" | tail -20'
 
-# Diagnostics that reveal no account data: is the service logging to the journal at all, and
-# how many Motilal accounts did the startup login find.
-ssh $SSH_OPTS "${DEPLOY_USER}@${DEPLOY_HOST}" \
-  "echo \"service log lines (last 10 min): \$(journalctl -u stokr-lite --since '-10 min' --no-pager 2>/dev/null | wc -l)\"; \
-   systemctl show stokr-lite -p StandardOutput -p ActiveEnterTimestamp 2>/dev/null; \
-   journalctl -u stokr-lite --since '-6 hours' --no-pager 2>/dev/null | grep -o 'MOFSL: startup found.*' | tail -3" || true
+LINES=$(ssh $SSH_OPTS "${DEPLOY_USER}@${DEPLOY_HOST}" "$REMOTE" 2> >(sed -E 's/[0-9]{4,}/####/g' >&2) || true)
 
 if [ -z "$LINES" ]; then
-  echo "No MOFSL login/margin lines in the last 6 hours of the stokr-lite log."
+  echo "No MOFSL login/margin lines in the stokr-lite log."
   echo "(The service logs a login attempt at every start if a Motilal account is connected.)"
   exit 0
 fi
