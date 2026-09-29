@@ -29,12 +29,52 @@ function calcDuration(entryTs, exitTs) {
   return `${hr}h`;
 }
 
-function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, modeFilter, dateRange }) {
+const PERIODS = [
+  { id: 'ALL', label: 'All' },
+  { id: 'DAY', label: 'Daily' },
+  { id: 'WEEK', label: 'Weekly' },
+  { id: 'MONTH', label: 'Monthly' },
+  { id: 'CUSTOM', label: 'Custom' },
+];
+
+/** [from, to] bounds for a period; null = open-ended. Weeks start on Monday. */
+function periodBounds(period, customFrom, customTo) {
+  const now = new Date();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (period === 'DAY') return [dayStart, null];
+  if (period === 'WEEK') {
+    const s = new Date(dayStart);
+    s.setDate(s.getDate() - ((s.getDay() + 6) % 7));
+    return [s, null];
+  }
+  if (period === 'MONTH') return [new Date(now.getFullYear(), now.getMonth(), 1), null];
+  if (period === 'CUSTOM') {
+    return [customFrom ? new Date(`${customFrom}T00:00:00`) : null,
+            customTo ? new Date(`${customTo}T23:59:59.999`) : null];
+  }
+  return [null, null];
+}
+
+function fmtRupees(v, signed = true) {
+  const n = Math.round(Number(v) || 0);
+  const sign = signed ? (n > 0 ? '+' : n < 0 ? '-' : '') : (n < 0 ? '-' : '');
+  return `${sign}₹${Math.abs(n).toLocaleString('en-IN')}`;
+}
+
+function dayKey(ts) {
+  const d = ts ? new Date(ts) : null;
+  return d && !isNaN(d.getTime()) ? d.toDateString() : 'Unknown date';
+}
+
+function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, modeFilter }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStrategy, setSelectedStrategy] = useState('ALL');
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [period, setPeriod] = useState('ALL'); // ALL | DAY | WEEK | MONTH | CUSTOM
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [lotScaleMode, setLotScaleMode] = useState('ONE_LOT'); // ONE_LOT (Actual 1 Lot Figures) | FULL (Total Lots)
 
   // Sorting
@@ -103,8 +143,9 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
     return [...fno, ...cash].filter(p => !activeSet.has(p.status));
   }, [fnoHistory, cashHistory, lotScaleMode]);
 
-  // Apply Asset, Mode, Strategy, Date Range, and Search Filters
+  // Apply Asset, Mode, Strategy, Period, and Search Filters
   const filteredHistory = useMemo(() => {
+    const [from, to] = periodBounds(period, customFrom, customTo);
     return allHistory.filter(p => {
       if (assetFilter !== 'ALL' && p.assetClass !== assetFilter) return false;
       
@@ -119,19 +160,11 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
         if (strat !== selectedStrategy) return false;
       }
 
-      if (dateRange !== 'ALL') {
+      if (from || to) {
         const dateVal = p.timestamp ? new Date(p.timestamp) : null;
-        if (dateVal && !isNaN(dateVal.getTime())) {
-          const now = new Date();
-          if (dateRange === 'TODAY') {
-            if (dateVal.toDateString() !== now.toDateString()) return false;
-          } else if (dateRange === 'WEEK') {
-            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            if (dateVal < weekAgo) return false;
-          } else if (dateRange === 'MONTH') {
-            if (dateVal.getMonth() !== now.getMonth() || dateVal.getFullYear() !== now.getFullYear()) return false;
-          }
-        }
+        if (!dateVal || isNaN(dateVal.getTime())) return false;
+        if (from && dateVal < from) return false;
+        if (to && dateVal > to) return false;
       }
 
       if (searchTerm.trim()) {
@@ -146,7 +179,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
 
       return true;
     });
-  }, [allHistory, assetFilter, modeFilter, selectedStrategy, dateRange, searchTerm]);
+  }, [allHistory, assetFilter, modeFilter, selectedStrategy, period, customFrom, customTo, searchTerm]);
 
   // Sort Filtered History
   const sortedHistory = useMemo(() => {
@@ -244,7 +277,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
   // Reset page on filter change
   useEffect(() => {
     setCurrentPage(1);
-  }, [assetFilter, modeFilter, selectedStrategy, dateRange, searchTerm, lotScaleMode]);
+  }, [assetFilter, modeFilter, selectedStrategy, period, customFrom, customTo, searchTerm, lotScaleMode]);
 
   // Paginate
   const totalPages = Math.ceil(sortedHistory.length / pageSize) || 1;
@@ -252,6 +285,32 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
     const start = (currentPage - 1) * pageSize;
     return sortedHistory.slice(start, start + pageSize);
   }, [sortedHistory, currentPage, pageSize]);
+
+  // Per-day totals over the whole filtered set (not just this page), for the day subtotal rows
+  const dayTotals = useMemo(() => {
+    const m = {};
+    filteredHistory.forEach(p => {
+      const k = dayKey(p.exitedAt || p.timestamp);
+      if (!m[k]) m[k] = { trades: 0, pnl: 0 };
+      m[k].trades++;
+      m[k].pnl += p.realPnl;
+    });
+    return m;
+  }, [filteredHistory]);
+  const groupByDay = sortCol === 'exitTime';
+
+  const periodLabel = useMemo(() => {
+    const [from, to] = periodBounds(period, customFrom, customTo);
+    const f = d => d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    if (period === 'ALL') return 'All time';
+    if (period === 'CUSTOM') {
+      if (!from && !to) return 'Pick a date range';
+      return `${from ? f(from) : 'Start'} – ${to ? f(to) : 'Today'}`;
+    }
+    const label = period === 'DAY' ? 'Today' : period === 'WEEK' ? 'This week' : 'This month';
+    return `${label} · ${f(from)} onwards`;
+  }, [period, customFrom, customTo]);
+  const winRateLabel = metrics.trades > 0 ? `${metrics.winRate.toFixed(0)}%` : '--';
 
   return (
     <div className="space-y-6 mt-4">
@@ -398,15 +457,88 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
       {/* Trade History Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-0">
         
-        {/* Toolbar */}
-        <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row gap-3 items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h3 className="font-extrabold text-slate-800 text-xs tracking-wider uppercase">Trade History Log</h3>
-            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full">
-              {sortedHistory.length} Trades
-            </span>
+        {/* Header: title + period filter */}
+        <div className="px-5 pt-4 pb-3 bg-gradient-to-r from-slate-50 via-white to-indigo-50/40 border-b border-slate-200 space-y-3">
+          <div className="flex flex-col lg:flex-row gap-3 lg:items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-1 h-5 rounded-full bg-indigo-600" />
+              <h3 className="font-extrabold text-slate-800 text-xs tracking-wider uppercase">Trade History Log</h3>
+              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full">
+                {sortedHistory.length} Trades
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-0.5 bg-slate-100 border border-slate-200 rounded-xl p-1">
+                {PERIODS.map(pr => (
+                  <button
+                    key={pr.id}
+                    onClick={() => setPeriod(pr.id)}
+                    className={`px-3 py-1 rounded-lg text-[11px] font-bold transition ${period === pr.id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    {pr.label}
+                  </button>
+                ))}
+              </div>
+              {period === 'CUSTOM' && (
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2 py-1 shadow-sm">
+                  <input
+                    type="date"
+                    value={customFrom}
+                    max={customTo || undefined}
+                    onChange={e => setCustomFrom(e.target.value)}
+                    className="text-[11px] font-semibold text-slate-700 bg-transparent focus:outline-none"
+                  />
+                  <span className="text-slate-400 text-[11px] font-bold">to</span>
+                  <input
+                    type="date"
+                    value={customTo}
+                    min={customFrom || undefined}
+                    onChange={e => setCustomTo(e.target.value)}
+                    className="text-[11px] font-semibold text-slate-700 bg-transparent focus:outline-none"
+                  />
+                  {(customFrom || customTo) && (
+                    <button onClick={() => { setCustomFrom(''); setCustomTo(''); }} className="text-slate-400 hover:text-slate-600 text-xs px-1">✕</button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
+          {/* Period totals */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className={`rounded-xl px-3 py-2 border ${metrics.totalPnl >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Net P&amp;L · {periodLabel}</div>
+              <div className={`text-base font-extrabold font-mono ${metrics.totalPnl >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                {fmtRupees(metrics.totalPnl)}
+              </div>
+            </div>
+            <div className="rounded-xl px-3 py-2 border bg-white border-slate-200">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Trades</div>
+              <div className="text-base font-extrabold font-mono text-slate-800">
+                {metrics.trades}
+                <span className="ml-2 text-[11px] font-bold">
+                  <span className="text-emerald-600">{metrics.wins}W</span>
+                  <span className="text-slate-300"> / </span>
+                  <span className="text-rose-600">{metrics.losses}L</span>
+                </span>
+              </div>
+            </div>
+            <div className="rounded-xl px-3 py-2 border bg-white border-slate-200">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Win Rate</div>
+              <div className="text-base font-extrabold font-mono text-slate-800">{winRateLabel}</div>
+            </div>
+            <div className="rounded-xl px-3 py-2 border bg-white border-slate-200">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Avg / Trade</div>
+              <div className={`text-base font-extrabold font-mono ${metrics.expectancy >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                {metrics.trades > 0 ? fmtRupees(metrics.expectancy) : '--'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Toolbar */}
+        <div className="px-5 py-2.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row gap-2 items-center justify-end">
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             {/* Strategy Filter */}
             <select
@@ -444,7 +576,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
               className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
             >
               <option value={15}>15 / pg</option>
-              <option value={30}>30 / pg</option>
+              <option value={25}>25 / pg</option>
               <option value={50}>50 / pg</option>
               <option value={100}>100 / pg</option>
             </select>
@@ -482,12 +614,27 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {paginatedHistory.map(p => {
+                {paginatedHistory.map((p, idx) => {
                   const isExp = expandedRowId === p.id;
                   const isLoss = p.realPnl < 0;
+                  const dk = dayKey(p.exitedAt || p.timestamp);
+                  const newDay = groupByDay && (idx === 0 || dayKey(paginatedHistory[idx - 1].exitedAt || paginatedHistory[idx - 1].timestamp) !== dk);
+                  const dt = dayTotals[dk];
 
                   return (
                     <React.Fragment key={p.id}>
+                      {newDay && dt && (
+                        <tr className="bg-slate-50/80">
+                          <td colSpan={6} className="px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                            📅 {dk === 'Unknown date' ? dk : new Date(dk).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
+                            <span className="ml-2 font-bold normal-case tracking-normal text-slate-400">{dt.trades} trade{dt.trades > 1 ? 's' : ''}</span>
+                          </td>
+                          <td className={`px-4 py-1.5 text-right font-mono text-[11px] font-extrabold ${dt.pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {fmtRupees(dt.pnl)}
+                          </td>
+                          <td />
+                        </tr>
+                      )}
                       <tr
                         onClick={() => setExpandedRowId(isExp ? null : p.id)}
                         className={`hover:bg-indigo-50/50 transition-colors cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : ''}`}
@@ -539,8 +686,10 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
                         </td>
 
                         {/* Realized P&L */}
-                        <td className={`px-4 py-3 text-right font-mono font-bold whitespace-nowrap ${p.realPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                          {p.realPnl >= 0 ? '+' : ''}₹{Math.round(p.realPnl).toLocaleString('en-IN')}
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          <span className={`inline-block px-2 py-0.5 rounded-md font-mono font-bold ${p.realPnl > 0 ? 'bg-emerald-50 text-emerald-700' : p.realPnl < 0 ? 'bg-rose-50 text-rose-700' : 'bg-slate-50 text-slate-500'}`}>
+                            {fmtRupees(p.realPnl)}
+                          </span>
                         </td>
 
                         {/* Mode */}
@@ -582,6 +731,20 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr className="bg-indigo-50/60 border-t-2 border-indigo-100">
+                  <td colSpan={6} className="px-4 py-3 text-[11px] font-extrabold uppercase tracking-wider text-indigo-900">
+                    Total · {periodLabel}
+                    <span className="ml-2 font-bold normal-case tracking-normal text-indigo-500">
+                      {metrics.trades} trades ({metrics.wins}W / {metrics.losses}L)
+                    </span>
+                  </td>
+                  <td className={`px-4 py-3 text-right font-mono text-sm font-extrabold whitespace-nowrap ${metrics.totalPnl >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    {fmtRupees(metrics.totalPnl)}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -620,11 +783,10 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
 export default function Positions() {
   const [executionBroker, setExecutionBroker] = useState('PAPER');
   
-  // Dashboard Filters: Default dateRange to ALL so history trades display instantly!
+  // Dashboard Filters (the history period filter lives in the Trade History Log)
   const [viewState, setViewState] = useState('ACTIVE'); // ACTIVE | HISTORY
   const [assetFilter, setAssetFilter] = useState('ALL'); // ALL | FNO | CASH
   const [modeFilter, setModeFilter] = useState('ALL'); // ALL | LIVE | PAPER
-  const [dateRange, setDateRange] = useState('ALL'); // TODAY | WEEK | MONTH | ALL (default ALL)
   
   useEffect(() => {
     client.get('/brokers/decoupled-routing')
@@ -741,20 +903,6 @@ export default function Positions() {
             ))}
           </div>
 
-          {/* Date Range Filter */}
-          {viewState === 'HISTORY' && (
-            <select 
-              value={dateRange} 
-              onChange={e => setDateRange(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
-            >
-              <option value="ALL">📅 All Time</option>
-              <option value="TODAY">📅 Today</option>
-              <option value="WEEK">📅 This Week</option>
-              <option value="MONTH">📅 This Month</option>
-            </select>
-          )}
-
         </div>
       </div>
 
@@ -820,7 +968,6 @@ export default function Positions() {
           cashHistory={Array.isArray(cashHistoryData) ? cashHistoryData : (cashHistoryData?.positions || cashHistoryData?.trades || [])}
           assetFilter={assetFilter}
           modeFilter={modeFilter}
-          dateRange={dateRange}
         />
       )}
     </div>
