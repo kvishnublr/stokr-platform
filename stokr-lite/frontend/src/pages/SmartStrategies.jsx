@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback, Fragment, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useCallback, Fragment, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import client from '../api/client';
 
@@ -2309,10 +2309,12 @@ function ActivePositionsPanel() {
 
 /* ──────── ENTER TRADE MODAL ──────── */
 function EnterTradeModal({ opp, onClose }) {
-  React.useEffect(() => {
+  useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = 'unset'; };
   }, []);
+
+  if (!opp) return null;
   const queryClient = useQueryClient();
   const [lots, setLots] = useState(1);
   const [slPct, setSlPct] = useState(50);
