@@ -1125,7 +1125,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
     }
   }, [executionBroker]);
 
-  const brokerFilter = modeFilter || internalBrokerFilter;
+  const brokerFilter = (modeFilter && modeFilter !== 'ALL') ? modeFilter : internalBrokerFilter;
   const setBrokerFilter = setInternalBrokerFilter;
 
   const { data, refetch } = useQuery({
