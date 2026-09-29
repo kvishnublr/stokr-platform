@@ -99,8 +99,8 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
     });
 
     // Exclude active OPEN positions from history
-    const activeSet = new Set(['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED']);
-    return [...fno, ...cash].filter(p => !activeSet.has(p.status));
+    const activeSet = new Set(['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED', 'ENTERED', 'EXECUTED']);
+    return [...fno, ...cash].filter(p => !activeSet.has(p.status) && (p.status === 'CLOSED' || p.status === 'EXITED'));
   }, [fnoHistory, cashHistory, lotScaleMode]);
 
   // Apply Asset, Mode, Strategy, Date Range, and Search Filters
@@ -645,14 +645,39 @@ export default function Positions() {
     refetchInterval: 10000,
   });
 
-  const { data: livePositionsData } = useQuery({
+  const { data: livePositionsData, refetch: refetchLiveActive } = useQuery({
     queryKey: ['livePositionsActiveSummary'],
     queryFn: () => client.get('/option-arbitrage/live-positions').then(r => r.data),
     refetchInterval: 2000,
   });
 
-  const activePositions = livePositionsData?.positions || [];
-  const openPositions = activePositions.filter(p => p.status === 'OPEN' || p.status === 'RUNNING' || p.status === 'EXECUTING');
+  const { data: cashPositionsData, refetch: refetchCashActive } = useQuery({
+    queryKey: ['cashPositionsActiveSummary'],
+    queryFn: () => client.get('/option-arbitrage/cash-positions').then(r => r.data),
+    refetchInterval: 2000,
+  });
+
+  const fnoActivePositions = useMemo(() => {
+    return (livePositionsData?.positions || []).filter(p => ['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED', 'ENTERED', 'EXECUTED'].includes(p.status));
+  }, [livePositionsData]);
+
+  const cashActivePositions = useMemo(() => {
+    return (cashPositionsData?.positions || []).filter(p => ['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED', 'ENTERED', 'EXECUTED'].includes(p.status));
+  }, [cashPositionsData]);
+
+  const openPositions = useMemo(() => {
+    let combined = [];
+    if (assetFilter === 'ALL' || assetFilter === 'FNO') combined = combined.concat(fnoActivePositions);
+    if (assetFilter === 'ALL' || assetFilter === 'CASH') combined = combined.concat(cashActivePositions);
+    if (modeFilter !== 'ALL') {
+      combined = combined.filter(p => {
+        const isPaper = !p.broker || p.broker === 'PAPER' || p.mode === 'PAPER';
+        return modeFilter === 'PAPER' ? isPaper : !isPaper;
+      });
+    }
+    return combined;
+  }, [fnoActivePositions, cashActivePositions, assetFilter, modeFilter]);
+
   const activePnl = openPositions.reduce((sum, p) => sum + (p.currentPnl != null ? Number(p.currentPnl) : 0), 0);
 
   return (
@@ -671,7 +696,7 @@ export default function Positions() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => { refetchFno(); refetchCash(); }}
+            onClick={() => { refetchFno(); refetchCash(); refetchLiveActive(); refetchCashActive(); }}
             className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5"
           >
             <span>🔄</span> Refresh Data

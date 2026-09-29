@@ -1147,7 +1147,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
   const isToday = (p) => typeof p.enteredAt === 'string' && p.enteredAt.slice(0, 10) === todayIST;
 
   const isPaper = (p) => !p.broker || p.broker === 'PAPER';
-  const isActiveStatus = (p) => p.status === 'OPEN' || p.status === 'RUNNING' || p.status === 'EXECUTING' || p.status === 'PARTIAL' || p.status === 'DETECTED';
+  const isActiveStatus = (p) => p.status === 'OPEN' || p.status === 'RUNNING' || p.status === 'EXECUTING' || p.status === 'PARTIAL' || p.status === 'DETECTED' || p.status === 'ENTERED' || p.status === 'EXECUTED';
   const allPositions = (data?.positions || []).filter(p => isActiveStatus(p));
   const positions = brokerFilter === 'ALL' ? allPositions
     : brokerFilter === 'PAPER' ? allPositions.filter(isPaper)
@@ -1298,7 +1298,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
         {!collapsed && positions.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-[11px] text-left border-collapse">
-              <thead className="bg-gradient-to-b from-slate-50 to-slate-100/80 border-b-2 border-slate-200 text-[9px] text-slate-500 uppercase tracking-wider font-extrabold">
+              <thead className="bg-slate-900 text-slate-200 text-[10px] uppercase tracking-wider font-black border-b-2 border-slate-800 shadow-sm">
                 <tr>
                   <SortTh col="enteredAt">Time</SortTh>
                   <SortTh col="broker">Broker</SortTh>
@@ -1306,14 +1306,14 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                   <SortTh col="underlying">Symbol</SortTh>
                   <SortTh col="strike" className="text-right">Strike</SortTh>
                   <SortTh col="expiry">Expiry</SortTh>
-                  <th className="px-2 py-2.5 text-center">Legs / Entry</th>
+                  <th className="px-3 py-3 text-center min-w-[220px]">Legs / Entry</th>
                   <SortTh col="edge" className="text-right">Edge</SortTh>
                   <SortTh col="edgeProgress" className="text-center">Progress</SortTh>
                   <SortTh col="pnl" className="text-right">P&amp;L</SortTh>
                   <SortTh col="maxLoss" className="text-right">Max Loss</SortTh>
                   <SortTh col="lots" className="text-center">Lots</SortTh>
                   <SortTh col="status" className="text-center">Status</SortTh>
-                  <th className="px-2 py-2.5 text-center">Actions</th>
+                  <th className="px-3 py-3 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1329,54 +1329,72 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                     <React.Fragment key={p.id}>
                     <tr onClick={() => canShowPayoff && setExpandedPosId(isExpanded ? null : p.id)}
                       className={`${rowBg} hover:bg-indigo-50/60 transition-colors border-b border-slate-100 ${canShowPayoff ? 'cursor-pointer' : ''}`}>
-                      <td className="px-2 py-2.5 font-mono text-[10px] text-slate-500 whitespace-nowrap">{fmtTime(p.enteredAt)}</td>
-                      <td className="px-2 py-2.5">
+                      <td className="px-3 py-2 font-mono text-[10px] text-slate-500 whitespace-nowrap">{fmtTime(p.enteredAt)}</td>
+                      <td className="px-3 py-2">
                         {isPaper(p)
-                          ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-bold">📄 Paper</span>
-                          : <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold">🔴 {p.broker}</span>
+                          ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold border border-slate-200">📄 Paper</span>
+                          : <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-700 border border-emerald-500/30 text-[10px] font-black"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> {p.broker}</span>
                         }
                       </td>
-                      <td className="px-2 py-2.5">
-                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap">
+                      <td className="px-3 py-2">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black bg-violet-500/15 text-violet-700 border border-violet-200 whitespace-nowrap shadow-2xs">
                           {STRATEGY_LABELS[p.strategyType] || p.strategyType || '—'}
                         </span>
                       </td>
-                      <td className="px-2 py-2.5 font-black text-slate-800 text-xs">{p.underlying}</td>
-                      <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-700">{p.strike}</td>
-                      <td className="px-2 py-2.5 text-[10px] font-mono text-slate-500 whitespace-nowrap">
+                      <td className="px-3 py-2 font-black text-slate-900 text-xs tracking-tight">{p.underlying}</td>
+                      <td className="px-3 py-2 text-right font-mono font-black text-slate-800">{p.strike}</td>
+                      <td className="px-3 py-2 text-[10px] font-mono text-slate-500 whitespace-nowrap">
                         {(p.expiryDate || p.expiry) ? new Date((p.expiryDate || p.expiry) + (String(p.expiryDate || p.expiry).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '--'}
                       </td>
-                      <td className="px-2 py-2.5">
+                      <td className="px-3 py-2 min-w-[220px]">
                         {p.isMultiLeg ? (
-                          <div className="flex flex-wrap gap-1">
+                          <div className="grid grid-cols-2 gap-1 min-w-[210px]">
                             {Array.isArray(p.legList) && p.legList.length > 0
-                              ? p.legList.map((leg, i) => (
-                                  <span key={i} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${leg.side === 'BUY' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
-                                    {leg.side === 'BUY' ? 'B' : 'S'} {leg.strike}{leg.optionType?.charAt(0)} @{Number(leg.price || 0).toFixed(1)}
-                                  </span>
-                                ))
-                              : <span className="text-slate-400 text-[9px]">{p.legList?.length || 0}-leg</span>}
+                              ? p.legList.map((leg, i) => {
+                                  const isBuy = leg.side === 'BUY';
+                                  return (
+                                    <span key={i} className={`inline-flex items-center justify-between px-2 py-0.5 rounded-md text-[10px] font-mono font-black whitespace-nowrap shadow-2xs border ${
+                                      isBuy 
+                                        ? 'bg-emerald-500/10 text-emerald-800 border-emerald-500/25' 
+                                        : 'bg-rose-500/10 text-rose-800 border-rose-500/25'
+                                    }`}>
+                                      <span className="flex items-center gap-1">
+                                        <span className={`w-1.5 h-1.5 rounded-full ${isBuy ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+                                        <span>{isBuy ? 'B' : 'S'}</span>
+                                        <span className="font-black text-slate-900">{leg.strike}{leg.optionType?.charAt(0)}</span>
+                                      </span>
+                                      <span className="text-[9px] opacity-75 font-normal ml-1">@{Number(leg.price || 0).toFixed(1)}</span>
+                                    </span>
+                                  );
+                                })
+                              : <span className="text-slate-400 text-[10px] font-mono">{p.legList?.length || 0}-leg</span>}
                           </div>
                         ) : (
                           <div className="flex items-center gap-2 font-mono text-[10px]">
-                            {p.ceEntryPrice ? <span className="text-blue-600">CE@{p.ceEntryPrice.toFixed(1)}</span> : null}
-                            {p.peEntryPrice ? <span className="text-purple-600">PE@{p.peEntryPrice.toFixed(1)}</span> : null}
-                            {p.futEntryPrice ? <span className="text-slate-600">FUT@{p.futEntryPrice.toFixed(1)}</span> : null}
+                            {p.ceEntryPrice ? <span className="text-blue-600 font-bold">CE@{p.ceEntryPrice.toFixed(1)}</span> : null}
+                            {p.peEntryPrice ? <span className="text-purple-600 font-bold">PE@{p.peEntryPrice.toFixed(1)}</span> : null}
+                            {p.futEntryPrice ? <span className="text-slate-600 font-bold">FUT@{p.futEntryPrice.toFixed(1)}</span> : null}
                           </div>
                         )}
                       </td>
-                      <td className="px-2 py-2.5 text-right font-mono font-bold text-indigo-700">₹{target?.toFixed(0) || '--'}</td>
-                      <td className="px-2 py-2.5">
-                        <div className="flex items-center gap-1 min-w-[80px]">
-                          <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                      <td className="px-3 py-2 text-right font-mono font-black text-indigo-700">₹{target?.toFixed(0) || '--'}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1.5 min-w-[85px]">
+                          <div className="flex-1 h-2 bg-slate-200/80 rounded-full overflow-hidden">
                             <div className={`h-full rounded-full transition-all ${captured >= 90 ? 'bg-gradient-to-r from-amber-400 to-amber-500' : captured >= 50 ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : 'bg-gradient-to-r from-blue-400 to-blue-500'}`}
                               style={{ width: `${Math.min(100, captured)}%` }} />
                           </div>
-                          <span className={`text-[9px] font-black min-w-[28px] text-right ${captured >= 90 ? 'text-amber-600' : captured >= 50 ? 'text-emerald-600' : 'text-blue-600'}`}>{captured}%</span>
+                          <span className={`text-[10px] font-black min-w-[28px] text-right ${captured >= 90 ? 'text-amber-600' : captured >= 50 ? 'text-emerald-600' : 'text-blue-600'}`}>{captured}%</span>
                         </div>
                       </td>
-                      <td className="px-2 py-2.5 text-right">
-                        <span className={`font-mono font-black text-xs ${pnl > 0 ? 'text-emerald-600' : pnl < 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                      <td className="px-3 py-2 text-right">
+                        <span className={`inline-block font-mono font-black text-xs px-2.5 py-1 rounded-lg border ${
+                          pnl > 0 
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                            : pnl < 0 
+                            ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                            : 'text-slate-400'
+                        }`}>
                           {pnl != null && pnl !== 0 ? `${pnl > 0 ? '+' : ''}₹${Math.round(pnl).toLocaleString('en-IN')}` : '--'}
                         </span>
                       </td>
@@ -3838,8 +3856,26 @@ export function DetailedOpportunityExpandedRow({ item, executionBroker, setPendi
         }
         return sum + sign * val * (Number(leg.qty) || 1);
       }, 0);
+      const dteVal = (oppToPass && typeof oppToPass.dte === 'number' && opp.dte > 0) ? oppToPass.dte : 5;
+      const t0Years = Math.max(0.5, dteVal) / 365.0;
+      const ivVal = (oppToPass && typeof oppToPass.iv === 'number' && opp.iv > 0) ? oppToPass.iv / 100.0 : 0.16;
+      
+      const t0Payoff = oppToPass.legList.reduce((sum, leg) => {
+        const optType = String(leg.optionType).toUpperCase();
+        const sign = leg.side === 'BUY' ? 1 : -1;
+        if (optType === 'FUT') return sum + sign * x * (Number(leg.qty) || 1);
+        const strike = Number(leg.strike);
+        const isPe = optType === 'PE';
+        const intrinsic = isPe ? Math.max(strike - x, 0) : Math.max(x - strike, 0);
+        const sigma = Math.max(strike * 0.025, 120);
+        const timeVal = (refPrice || strike) * ivVal * Math.sqrt(t0Years) * 0.38 * Math.exp(-0.5 * Math.pow((x - strike) / sigma, 2));
+        const bsVal = intrinsic + timeVal;
+        return sum + sign * bsVal * (Number(leg.qty) || 1);
+      }, 0);
+      const t0Pnl = t0Payoff - cost;
+
       const pnl = payoff - cost;
-      points.push({ x, y: pnl });
+      points.push({ x, y: pnl, t0Pnl });
       minY = Math.min(minY, pnl); maxY = Math.max(maxY, pnl);
     }
     const breakevens = [];
@@ -4006,8 +4042,26 @@ function ArbitrageSignalPayoffChart({ opp }) {
         }
         return sum + sign * val * (Number(leg.qty) || 1);
       }, 0);
+      const dteVal = (opp && typeof opp.dte === 'number' && opp.dte > 0) ? opp.dte : 5;
+      const t0Years = Math.max(0.5, dteVal) / 365.0;
+      const ivVal = (opp && typeof opp.iv === 'number' && opp.iv > 0) ? opp.iv / 100.0 : 0.16;
+      
+      const t0Payoff = opp.legList.reduce((sum, leg) => {
+        const optType = String(leg.optionType).toUpperCase();
+        const sign = leg.side === 'BUY' ? 1 : -1;
+        if (optType === 'FUT') return sum + sign * x * (Number(leg.qty) || 1);
+        const strike = Number(leg.strike);
+        const isPe = optType === 'PE';
+        const intrinsic = isPe ? Math.max(strike - x, 0) : Math.max(x - strike, 0);
+        const sigma = Math.max(strike * 0.025, 120);
+        const timeVal = (refPrice || strike) * ivVal * Math.sqrt(t0Years) * 0.38 * Math.exp(-0.5 * Math.pow((x - strike) / sigma, 2));
+        const bsVal = intrinsic + timeVal;
+        return sum + sign * bsVal * (Number(leg.qty) || 1);
+      }, 0);
+      const t0Pnl = t0Payoff - cost;
+
       const pnl = payoff - cost;
-      points.push({ x, y: pnl });
+      points.push({ x, y: pnl, t0Pnl });
       minY = Math.min(minY, pnl); maxY = Math.max(maxY, pnl);
     }
     // Breakeven(s): where the payoff line crosses zero, found by scanning for sign changes
