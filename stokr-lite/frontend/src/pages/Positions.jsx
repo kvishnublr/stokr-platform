@@ -900,7 +900,7 @@ export default function Positions() {
                  <h3 className="text-xs font-bold text-indigo-900 uppercase tracking-wider ml-2 mb-2">
                    F&amp;O Arbitrage Positions ({fnoActivePositions.length})
                  </h3>
-                 <LivePositionsSection executionBroker={executionBroker} modeFilter={modeFilter} assetFilter={assetFilter} defaultExpanded={fnoActivePositions.length > 0} />
+                 <LivePositionsSection executionBroker={executionBroker} modeFilter={modeFilter} assetFilter={assetFilter} defaultExpanded={true} />
                </div>
             </div>
           )}

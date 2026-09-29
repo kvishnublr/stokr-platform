@@ -1252,7 +1252,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
     }
   };
 
-  if (allPositions.length === 0 && !defaultExpanded) return null;
+  // Render section always so user can view filter toggles and status
 
   return (
     <div className="space-y-4">
