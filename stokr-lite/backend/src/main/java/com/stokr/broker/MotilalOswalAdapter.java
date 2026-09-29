@@ -157,7 +157,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
             }
             sessionCache.put(account.getId(), new CachedSession(token, userId,
                     account.getClientId(), apiKey, apiSecret,
-                    System.currentTimeMillis() + 23 * 60 * 60 * 1000)); // 23h (tokens expire at 6AM next day)
+                    sessionExpiry(java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")))));
             log.info("MOFSL-XTS: login successful, userID={}", userId);
             return token;
         } catch (RuntimeException e) {
@@ -165,6 +165,19 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         } catch (Exception e) {
             throw new RuntimeException("MOFSL-XTS login error: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * When a cached XTS session must be discarded: XTS resets sessions overnight, so a login from
+     * yesterday afternoon is dead by the next morning even though it is under 23h old. Expire at the
+     * next 08:30 IST (before the open), and never later than 23h after login.
+     */
+    static long sessionExpiry(java.time.ZonedDateTime loginAt) {
+        java.time.ZonedDateTime ist = loginAt.withZoneSameInstant(java.time.ZoneId.of("Asia/Kolkata"));
+        java.time.ZonedDateTime cutoff = ist.toLocalDate().atTime(8, 30).atZone(ist.getZone());
+        if (!cutoff.isAfter(ist)) cutoff = cutoff.plusDays(1);
+        long hardCap = ist.toInstant().toEpochMilli() + 23L * 60 * 60 * 1000;
+        return Math.min(cutoff.toInstant().toEpochMilli(), hardCap);
     }
 
     private record ResolvedAccount(String token, String userId, String clientCode, String apiKey, String apiSecret) {}

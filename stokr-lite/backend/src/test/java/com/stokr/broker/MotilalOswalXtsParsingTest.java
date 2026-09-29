@@ -79,6 +79,20 @@ class MotilalOswalXtsParsingTest {
     }
 
     @Test
+    void cachedSessionExpiresBeforeNextOpen() {
+        java.time.ZonedDateTime afternoon = java.time.ZonedDateTime.parse("2026-09-28T16:00:00+05:30[Asia/Kolkata]");
+        assertEquals(java.time.ZonedDateTime.parse("2026-09-29T08:30:00+05:30[Asia/Kolkata]").toInstant().toEpochMilli(),
+            MotilalOswalAdapter.sessionExpiry(afternoon), "an afternoon login must not survive into the next session");
+        java.time.ZonedDateTime early = java.time.ZonedDateTime.parse("2026-09-29T07:00:00+05:30[Asia/Kolkata]");
+        assertEquals(java.time.ZonedDateTime.parse("2026-09-29T08:30:00+05:30[Asia/Kolkata]").toInstant().toEpochMilli(),
+            MotilalOswalAdapter.sessionExpiry(early));
+        java.time.ZonedDateTime morning = java.time.ZonedDateTime.parse("2026-09-29T09:00:00+05:30[Asia/Kolkata]");
+        // Next 08:30 is 23.5h away, so the 23h cap applies
+        assertEquals(java.time.ZonedDateTime.parse("2026-09-30T08:00:00+05:30[Asia/Kolkata]").toInstant().toEpochMilli(),
+            MotilalOswalAdapter.sessionExpiry(morning));
+    }
+
+    @Test
     void recognisesExpiredSessionResponses() throws Exception {
         assertTrue(MotilalOswalAdapter.isSessionError(json(
             "{\"type\":\"error\",\"code\":\"e-session-0002\",\"description\":\"Invalid Token\"}")));
