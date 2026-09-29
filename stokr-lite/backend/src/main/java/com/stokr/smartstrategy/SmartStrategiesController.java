@@ -355,4 +355,30 @@ public class SmartStrategiesController {
     }
 
     private record CachedResult(Map<String, Object> data, long ts) {}
+
+
+    @jakarta.annotation.PostConstruct
+    public void warmupCache() {
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                Thread.sleep(5000);
+                log.info("Warming up Smart Strategies candidate cache in background...");
+                for (String u : List.of("NIFTY", "BANKNIFTY")) {
+                    scanRatioButterfly(u);
+                    scanBWB(u);
+                    scanSkewHarvest(u);
+                    scanThetaCrush(u);
+                    scanBoxSpread(u);
+                    scanJadeLizard(u);
+                    scanCalendarSpread(u);
+                    scanIronCondor(u);
+                }
+                log.info("Smart Strategies candidate cache warm-up completed!");
+            } catch (Exception e) {
+                log.warn("Smart Strategies warm-up exception: {}", e.getMessage());
+            }
+        });
+    }
+
+
 }

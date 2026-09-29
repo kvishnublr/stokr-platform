@@ -17,14 +17,21 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MOFSLTokenManager {
 
     private static final String URL = "https://openapi.motilaloswal.com/getscripmastercsv?name=NSEFO";
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
+
+    public MOFSLTokenManager() {
+        org.springframework.http.client.SimpleClientHttpRequestFactory factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(2000);
+        factory.setReadTimeout(2000);
+        this.restTemplate = new RestTemplate(factory);
+    }
     private final ConcurrentHashMap<String, String> symbolToToken = new ConcurrentHashMap<>();
     
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MMM-yyyy", Locale.ENGLISH);
 
     @PostConstruct
     public void init() {
-        refresh();
+        java.util.concurrent.CompletableFuture.runAsync(this::refresh);
     }
     
     @Scheduled(cron = "0 0 8 * * *")

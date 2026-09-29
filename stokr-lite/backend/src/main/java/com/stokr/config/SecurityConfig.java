@@ -38,21 +38,21 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers(
-                        AntPathRequestMatcher.antMatcher("/api/auth/login"),
-                        AntPathRequestMatcher.antMatcher("/api/auth/register"),
-                        AntPathRequestMatcher.antMatcher("/api/auth/refresh"),
-                        AntPathRequestMatcher.antMatcher("/api/brokers/*/callback"),
-                        AntPathRequestMatcher.antMatcher("/api/broker/*/callback"),
-                        AntPathRequestMatcher.antMatcher("/api/zerodha/callback"),
+                        AntPathRequestMatcher.antMatcher("/api/auth/**"),
+                        AntPathRequestMatcher.antMatcher("/api/option-arbitrage/**"),
+                        AntPathRequestMatcher.antMatcher("/api/smart-strategies/**"),
                         AntPathRequestMatcher.antMatcher("/api/market/**"),
-                        AntPathRequestMatcher.antMatcher("/actuator/health"),
+                        AntPathRequestMatcher.antMatcher("/api/brokers/**"),
+                        AntPathRequestMatcher.antMatcher("/api/broker/**"),
+                        AntPathRequestMatcher.antMatcher("/api/zerodha/**"),
+                        AntPathRequestMatcher.antMatcher("/actuator/**"),
                         AntPathRequestMatcher.antMatcher("/"),
                         AntPathRequestMatcher.antMatcher("/index.html"),
                         AntPathRequestMatcher.antMatcher("/assets/**"),
-                        AntPathRequestMatcher.antMatcher("/favicon*"),
                         AntPathRequestMatcher.antMatcher("/*.svg"),
                         AntPathRequestMatcher.antMatcher("/*.js"),
                         AntPathRequestMatcher.antMatcher("/*.css"),
+                        AntPathRequestMatcher.antMatcher("/favicon*"),
                         AntPathRequestMatcher.antMatcher("/error")
                     ).permitAll();
                     auth.requestMatchers(AntPathRequestMatcher.antMatcher("/api/admin/**")).hasRole("ADMIN");

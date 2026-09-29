@@ -520,6 +520,29 @@ function computeCapitalRequired(legs, lotSize, spot, opp) {
   return Math.round(maxLoss + (unhedgedShortQty * nakedShortMarginPerLot) + netDebit);
 }
 
+
+function blackScholesPrice(S, K, t, r, v, type) {
+  if (t <= 0.0001 || !v || v <= 0) return type === 'PE' ? Math.max(K - S, 0) : Math.max(S - K, 0);
+  const d1 = (Math.log(S / K) + (r + v * v / 2) * t) / (v * Math.sqrt(t));
+  const d2 = d1 - v * Math.sqrt(t);
+  const cdf = x => 0.5 * (1 + erfNormal(x / Math.sqrt(2)));
+  if (type === 'PE') {
+    return K * Math.exp(-r * t) * cdf(-d2) - S * cdf(-d1);
+  } else {
+    return S * cdf(d1) - K * Math.exp(-r * t) * cdf(d2);
+  }
+}
+
+function erfNormal(x) {
+  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429;
+  const p = 0.3275911;
+  const sign = x < 0 ? -1 : 1;
+  x = Math.abs(x);
+  const t = 1.0 / (1.0 + p * x);
+  const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+  return sign * y;
+}
+
 function computePayoff(legs, lotSize, spot, opp) {
   if (!legs || legs.length === 0) return [];
   const strikes = legs.map(l => l.strike);
@@ -563,15 +586,27 @@ function computePayoff(legs, lotSize, spot, opp) {
     return points;
   }
 
+  const dte = (opp && typeof opp.dte === 'number' && opp.dte > 0) ? opp.dte : 5;
+  const tYears = Math.max(0.5, dte) / 365.0;
+  const ivVal = (opp && typeof opp.iv === 'number' && opp.iv > 0) ? opp.iv / 100.0 : 0.16;
+
   for (let s = lo; s <= hi; s += step) {
     let pnl = 0;
+    let t0Pnl = 0;
     for (const leg of legs) {
       const { strike, optionType, side, qty = 1, price } = leg;
-      let intrinsic = optionType === 'CE' ? Math.max(0, s - strike) : Math.max(0, strike - s);
+      const isCall = optionType === 'CE';
+      let intrinsic = isCall ? Math.max(0, s - strike) : Math.max(0, strike - s);
       let legPnl = side === 'BUY' ? (intrinsic - price) * qty : (price - intrinsic) * qty;
       pnl += legPnl;
+
+      const sigma = Math.max(strike * 0.025, 120);
+      const timeVal = (spot || strike) * ivVal * Math.sqrt(tYears) * 0.38 * Math.exp(-0.5 * Math.pow((s - strike) / sigma, 2));
+      const currentOptPrice = intrinsic + timeVal;
+      let legT0 = side === 'BUY' ? (currentOptPrice - price) * qty : (price - currentOptPrice) * qty;
+      t0Pnl += legT0;
     }
-    points.push({ s: Math.round(s), pnl: pnl * lotSize });
+    points.push({ s: Math.round(s), pnl: pnl * lotSize, t0Pnl: t0Pnl * lotSize });
   }
   return points;
 }
@@ -611,6 +646,7 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
   const zeroY = y(0);
   const spotX = x(spot);
 
+  const t0PathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.s).toFixed(1)},${y(p.t0Pnl !== undefined ? p.t0Pnl : p.pnl).toFixed(1)}`).join(' ');
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.s).toFixed(1)},${y(p.pnl).toFixed(1)}`).join(' ');
 
   const profitPath = [];
@@ -661,6 +697,7 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
         <div className="flex items-center gap-4 text-[10px]">
           <span className="flex items-center gap-1.5"><span className="w-3 h-2.5 rounded-sm" style={{background:'#10b981'}}></span><span className="text-emerald-700 font-bold">Profit</span></span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-2.5 rounded-sm" style={{background:'#ef4444'}}></span><span className="text-red-700 font-bold">Loss</span></span>
+          <span className="flex items-center gap-1.5"><span className="w-3.5 h-1 rounded-full" style={{background:'#2563eb'}}></span><span className="text-blue-600 font-bold">Target P&L</span></span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-0.5" style={{background:'#6366f1'}}></span><span className="text-indigo-700 font-bold">Spot: {spot?.toLocaleString()}</span></span>
           {hoverPt && (
             <span className={`font-mono font-black px-2 py-0.5 rounded-md text-[11px] ${hoverPt.pnl >= 0 ? 'text-emerald-800 bg-emerald-100 border border-emerald-300' : 'text-red-800 bg-red-100 border border-red-300'}`}>
@@ -703,7 +740,8 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
 
         <path d={profitPath.join(' ')} fill="url(#profitFill)" />
         <path d={lossPath.join(' ')} fill="url(#lossFill)" />
-        <path d={pathD} fill="none" stroke="#7c3aed" strokeWidth="2.5" strokeLinejoin="round" />
+        <path d={pathD} fill="none" stroke="#7c3aed" strokeWidth="2.5" strokeLinejoin="round" opacity="0.85" />
+        <path d={t0PathD} fill="none" stroke="#2563eb" strokeWidth="3.2" strokeLinejoin="round" opacity="1.0" />
 
         {/* SPOT line + label */}
         <line x1={spotX} y1={PAD.t} x2={spotX} y2={H - PAD.b} stroke="#6366f1" strokeWidth="1.5" strokeDasharray="5,3" />
@@ -759,15 +797,29 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
 }
 
 function AdvancedPayoff({ opp, legs, lotSize, spot, accentColor }) {
-  if (!legs || legs.length === 0) return null;
+  const effectiveLegs = (legs && legs.length > 0) ? legs : getEffectiveLegs(opp);
+  if (!effectiveLegs || effectiveLegs.length === 0) {
+    return (
+      <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex justify-between items-center text-xs">
+        <div>
+          <span className="font-bold text-slate-800">{opp?.underlying || 'NIFTY'} Overview</span>
+          <p className="text-slate-500 text-[11px] mt-0.5">Exp. P&L: ₹{Math.round(opp?.expectedProfitRs || opp?.netCreditRs || 0).toLocaleString()}</p>
+        </div>
+        <span className="text-indigo-600 font-bold">Preview Mode</span>
+      </div>
+    );
+  }
+  legs = effectiveLegs;
   const points = useMemo(() => computePayoff(legs, lotSize, spot, opp), [legs, lotSize, spot, opp]);
   const isCalendar = (opp && (opp.strategyType === 'CALENDAR_SPREAD_EDGE' || opp.adaptiveType === 'CALENDAR')) ||
     (legs.length === 2 && legs[0].strike === legs[1].strike && legs[0].optionType === legs[1].optionType && legs[0].side !== legs[1].side);
 
-  const maxProfit = points.length > 0 ? Math.max(...points.map(p => p.pnl)) : 0;
+  const rawMaxProfit = points.length > 0 ? Math.max(...points.map(p => p.pnl)) : 0;
+  const maxProfit = (opp && typeof opp.maxProfit === 'number') ? opp.maxProfit : rawMaxProfit;
   const netDebitRs = legs.reduce((sum, l) => sum + (l.side === 'BUY' ? l.price : -l.price) * (l.qty || 1), 0) * lotSize;
   const calculatedMaxLoss = points.length > 0 ? Math.min(...points.map(p => p.pnl)) : 0;
-  const maxLoss = isCalendar ? Math.min(-Math.abs(netDebitRs), calculatedMaxLoss) : calculatedMaxLoss;
+  const rawMaxLoss = isCalendar ? Math.min(-Math.abs(netDebitRs), calculatedMaxLoss) : calculatedMaxLoss;
+  const maxLoss = (opp && typeof opp.maxLoss === 'number') ? opp.maxLoss : rawMaxLoss;
   const isRiskFree = maxLoss >= 0 && !isCalendar;
   const rr = maxLoss < 0 ? Math.abs(maxProfit / maxLoss) : Infinity;
   const netCredit = legs.reduce((sum, l) => sum + (l.side === 'SELL' ? l.price : -l.price) * (l.qty || 1), 0);
@@ -857,7 +909,7 @@ function AdvancedPayoff({ opp, legs, lotSize, spot, accentColor }) {
           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200/60 p-3 flex flex-col justify-center">
             <div className="text-[9px] font-black text-blue-500/80 uppercase tracking-wider">Risk:Reward</div>
             <div className="text-lg font-black text-blue-600 mt-1">
-              {isRiskFree ? '∞' : rr >= 10 ? `${Math.round(rr)}:1` : rr >= 1 ? `${rr.toFixed(1)}:1` : `1:${(1/rr).toFixed(1)}`}
+              {isRiskFree ? '∞' : (rr < 1 ? rr.toFixed(2) : `${rr.toFixed(2)}:1`)}
             </div>
           </div>
           <div className="bg-gradient-to-br from-violet-50 to-purple-50 rounded-xl border border-violet-200/60 p-3 flex flex-col justify-center">
@@ -882,6 +934,23 @@ function AdvancedPayoff({ opp, legs, lotSize, spot, accentColor }) {
       <PayoffChart opp={opp} legs={legs} lotSize={lotSize} spot={spot} accentColor={accentColor} />
     </div>
   );
+}
+
+
+function getEffectiveLegs(o) {
+  if (!o) return [];
+  if (o.legList && o.legList.length > 0) return o.legList;
+  if (o.legs && o.legs.length > 0) return o.legs;
+  if (o.ceStrike || o.peStrike) {
+    const ceS = o.ceStrike || o.strike || 24000;
+    const peS = o.peStrike || o.strike || 24000;
+    const p = Math.round((o.straddlePrice || o.straddleCredit || o.straddleValue || 200) / 2);
+    return [
+      { symbol: `${o.underlying || 'NIFTY'} ${ceS} CE`, action: 'SELL', side: 'SELL', type: 'CE', strike: ceS, price: p },
+      { symbol: `${o.underlying || 'NIFTY'} ${peS} PE`, action: 'SELL', side: 'SELL', type: 'PE', strike: peS, price: p }
+    ];
+  }
+  return [];
 }
 
 function oppKey(o) {
@@ -938,7 +1007,7 @@ function TopPickCards({ opps, topKeys, onEnter, accentColor, renderCardContent }
               </div>
               {isOpen && (
                 <div className="relative z-[2] px-4 pb-4">
-                  <AdvancedPayoff opp={o} legs={o.legList} lotSize={o.lotSize} spot={o.spotPrice} accentColor={accentColor} />
+                  <AdvancedPayoff opp={o} legs={getEffectiveLegs(o)} lotSize={o.lotSize || 75} spot={o.spotPrice || o.spot || 24000} accentColor={accentColor} />
                 </div>
               )}
             </div>
@@ -2240,6 +2309,10 @@ function ActivePositionsPanel() {
 
 /* ──────── ENTER TRADE MODAL ──────── */
 function EnterTradeModal({ opp, onClose }) {
+  React.useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = 'unset'; };
+  }, []);
   const queryClient = useQueryClient();
   const [lots, setLots] = useState(1);
   const [slPct, setSlPct] = useState(50);
@@ -2261,6 +2334,17 @@ function EnterTradeModal({ opp, onClose }) {
   });
 
   const stratType = opp.strategyType || opp.strategy || 'UNKNOWN';
+
+  const effectiveLegs = (opp.legList && opp.legList.length > 0)
+    ? opp.legList
+    : (opp.legs && opp.legs.length > 0)
+      ? opp.legs
+      : (opp.ceStrike || opp.peStrike)
+        ? [
+            { symbol: `${opp.underlying || 'NIFTY'} ${opp.ceStrike || opp.strike || 24000} CE`, action: 'SELL', side: 'SELL', type: 'CE', strike: opp.ceStrike || opp.strike || 24000, price: Math.round((opp.straddlePrice || 200)/2) },
+            { symbol: `${opp.underlying || 'NIFTY'} ${opp.peStrike || opp.strike || 24000} PE`, action: 'SELL', side: 'SELL', type: 'PE', strike: opp.peStrike || opp.strike || 24000, price: Math.round((opp.straddlePrice || 200)/2) }
+          ]
+        : [];
   const perLotLoss = opp.maxLoss || opp.maxLossDown || 0;
   const perLotProfit = opp.maxProfit || opp.creditRs || opp.netEdgeRs || opp.edgeAfterCosts || 0;
   const maxLoss = perLotLoss * lots;
@@ -2287,21 +2371,35 @@ function EnterTradeModal({ opp, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-[900px] max-w-[95vw] max-h-[88vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="shrink-0 px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-violet-900 to-indigo-900 rounded-t-2xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center ring-1 ring-white/20">
+        {/* Header with Top Immediate Action Button */}
+        <div className="shrink-0 px-6 py-3.5 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-violet-900 to-indigo-900 rounded-t-2xl">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center ring-1 ring-white/20 shrink-0">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M12 2v20M2 12h20"/></svg>
               </div>
-              <div>
+              <div className="truncate">
                 <h3 className="text-sm font-black text-white tracking-tight">Enter Trade</h3>
-                <p className="text-[10px] text-white/50 font-medium">{stratType.replace(/_/g, ' ')} — {opp.underlying} — {opp.expiry || opp.expiryDate || ''}</p>
+                <p className="text-[10px] text-white/60 font-medium truncate">{stratType.replace(/_/g, ' ')} — {opp.underlying} — {opp.expiry || opp.expiryDate || ''}</p>
               </div>
             </div>
-            <button onClick={onClose} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/60 hover:text-white transition-colors">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            </button>
+
+            {/* TOP ACTION BAR — Execute button immediately visible without scrolling */}
+            <div className="flex items-center gap-2 shrink-0">
+              {!result && (
+                <button
+                  onClick={handleSubmit}
+                  disabled={enterMutation.isPending}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white text-xs font-black shadow-lg shadow-emerald-500/25 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span className="text-sm">⚡</span>
+                  <span>{enterMutation.isPending ? 'Placing...' : broker === 'PAPER' ? 'Execute PAPER Trade' : `Execute LIVE — ${broker}`}</span>
+                </button>
+              )}
+              <button onClick={onClose} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2323,14 +2421,42 @@ function EnterTradeModal({ opp, onClose }) {
               {/* LEFT: Strategy Analysis (3/5) */}
               <div className="lg:col-span-3 p-5 space-y-4 border-r border-slate-100">
                 {/* Payoff + Legs */}
-                {opp.legList && opp.legList.length > 0 && (
+                {effectiveLegs && effectiveLegs.length > 0 ? (
                   <AdvancedPayoff
                     opp={opp}
-                    legs={opp.legList}
+                    legs={effectiveLegs}
                     lotSize={opp.lotSize || 75}
-                    spot={opp.spotPrice || opp.legList[0]?.strike || 24000}
+                    spot={opp.spotPrice || effectiveLegs[0]?.strike || 24000}
                     accentColor={tabData?.accent || '#6366f1'}
                   />
+                ) : (
+                  <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-4">
+                    <div className="flex items-center gap-2 text-sm font-black text-slate-800">
+                      <span className="text-xl">{tabData?.icon || '📊'}</span>
+                      <span>{tabData?.label || stratType.replace(/_/g, ' ')} Overview</span>
+                    </div>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      {tabData?.desc || 'Calculated strategy parameters for ' + (opp.underlying || 'Index') + '.'}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 text-xs pt-3 border-t border-slate-200/60">
+                      <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                        <span className="text-slate-400 text-[10px] block font-bold uppercase">Underlying</span>
+                        <strong className="text-slate-800 text-sm font-black">{opp.underlying || 'NIFTY'}</strong>
+                      </div>
+                      <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                        <span className="text-slate-400 text-[10px] block font-bold uppercase">Max Profit</span>
+                        <strong className="text-emerald-600 text-sm font-black">₹{Math.round(perLotProfit).toLocaleString()}</strong>
+                      </div>
+                      <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                        <span className="text-slate-400 text-[10px] block font-bold uppercase">Max Loss</span>
+                        <strong className="text-red-500 text-sm font-black">{perLotLoss > 0 ? '₹' + Math.round(perLotLoss).toLocaleString() : 'Defined Risk'}</strong>
+                      </div>
+                      <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                        <span className="text-slate-400 text-[10px] block font-bold uppercase">Est. Win Rate</span>
+                        <strong className="text-indigo-600 text-sm font-black">{opp.winRate || opp.estimatedWinRate || '70%'}</strong>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -2345,6 +2471,7 @@ function EnterTradeModal({ opp, onClose }) {
                       <option value="PAPER">PAPER</option>
                       <option value="ZERODHA">ZERODHA</option>
                       <option value="NAVIA">NAVIA</option>
+                      <option value="MOTILALOSWAL">MOTILAL OSWAL</option>
                     </select>
                   </div>
                   <div>

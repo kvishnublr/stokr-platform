@@ -3067,4 +3067,49 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
         double y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
         return sign * y;
     }
+
+    @GetMapping("/cash-ignition/scan")
+    public ResponseEntity<Map<String, Object>> scanCashIgnition() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        try {
+            List<Map<String, Object>> opps = cashScannerService.scanCashIgnition();
+            resp.put("opportunities", opps);
+            resp.put("count", opps.size());
+        } catch (Exception e) {
+            resp.put("opportunities", Collections.emptyList());
+            resp.put("count", 0);
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/cash-reversal/scan")
+    public ResponseEntity<Map<String, Object>> scanCashReversal() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        try {
+            List<Map<String, Object>> opps = cashScannerService.scanCashReversal();
+            resp.put("opportunities", opps);
+            resp.put("count", opps.size());
+        } catch (Exception e) {
+            resp.put("opportunities", Collections.emptyList());
+            resp.put("count", 0);
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/cash-vcp/scan")
+    public ResponseEntity<Map<String, Object>> scanCashVcp() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        try {
+            List<Map<String, Object>> opps = cashScannerService.scanCashVcp();
+            resp.put("opportunities", opps);
+            resp.put("count", opps.size());
+        } catch (Exception e) {
+            resp.put("opportunities", Collections.emptyList());
+            resp.put("count", 0);
+        }
+        return ResponseEntity.ok(resp);
+    }
 }

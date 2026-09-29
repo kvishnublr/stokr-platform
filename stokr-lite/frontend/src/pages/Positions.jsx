@@ -7,7 +7,7 @@ function fmtDate(ts) {
   if (!ts) return '--';
   const d = new Date(ts);
   if (isNaN(d.getTime())) return ts;
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function fmtTime(ts) {
@@ -29,16 +29,50 @@ function calcDuration(entryTs, exitTs) {
   return `${hr}h`;
 }
 
-function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, modeFilter, dateRange }) {
+// Collapsible Accordion Wrapper Component
+function AccordionCard({ title, icon, count, defaultOpen = false, children, badgeColor = 'bg-indigo-100 text-indigo-800' }) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-5 py-3.5 bg-slate-50 hover:bg-slate-100/80 border-b border-slate-200 flex items-center justify-between text-left transition select-none"
+      >
+        <div className="flex items-center gap-2.5">
+          <span className="text-base">{icon}</span>
+          <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">{title}</h3>
+          {count != null && (
+            <span className={`px-2 py-0.5 text-[10px] font-extrabold rounded-full ${badgeColor}`}>
+              {count} {count === 1 ? 'item' : 'items'}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 text-xs font-extrabold text-slate-500">
+          <span>{isOpen ? 'Collapse' : 'Expand Breakdown'}</span>
+          <span className={`transform transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+        </div>
+      </button>
+
+      {isOpen && (
+        <div className="p-4 border-t border-slate-100 bg-white">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, modeFilter, datePreset, customStartDate, customEndDate, setDatePreset, setCustomStartDate, setCustomEndDate }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStrategy, setSelectedStrategy] = useState('ALL');
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const [lotScaleMode, setLotScaleMode] = useState('ONE_LOT'); // ONE_LOT (Actual 1 Lot Figures) | FULL (Total Lots)
+  const [lotScaleMode, setLotScaleMode] = useState('ONE_LOT');
 
   // Sorting
-  const [sortCol, setSortCol] = useState('exitTime'); // exitTime | entryTime | pnl | strategy | lots
+  const [sortCol, setSortCol] = useState('exitTime');
   const [sortDir, setSortDir] = useState('desc');
 
   const toggleSort = (col) => {
@@ -46,7 +80,6 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
     else { setSortCol(col); setSortDir(col === 'pnl' || col === 'exitTime' || col === 'entryTime' ? 'desc' : 'asc'); }
   };
 
-  // Normalize and merge all history records with 1-Lot scaling logic
   const allHistory = useMemo(() => {
     const rawFno = Array.isArray(fnoHistory) ? fnoHistory : (fnoHistory?.positions || []);
     const fno = rawFno.map(p => {
@@ -57,7 +90,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
 
       return {
         ...p,
-        id: p.id || `fno-${p.enteredAt}`,
+        id: p.id ? `fno-${p.id}` : `fno-${p.enteredAt}-${Math.random()}`,
         assetClass: 'FNO',
         mode: isPaper ? 'PAPER' : (p.broker || 'LIVE'),
         rawPnl,
@@ -81,14 +114,14 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
 
       return {
         ...p,
-        id: p.id || `cash-${p.enteredAt}`,
+        id: p.id ? `cash-${p.id}` : `cash-${p.enteredAt}-${Math.random()}`,
         assetClass: 'CASH',
         mode: isPaper ? 'PAPER' : (p.broker || 'LIVE'),
         rawPnl,
         realPnl: rawPnl,
         originalLots: 1,
         displaySymbol: p.symbol || p.underlying || 'CASH',
-        qtyDisplay: p.quantity || p.qty || '--',
+        qtyDisplay: `${p.quantity || p.qty || '--'} Qty`,
         entryDate: fmtDate(p.enteredAt),
         entryTime: fmtTime(p.enteredAt),
         exitDate: fmtDate(p.exitedAt || p.createdAt),
@@ -98,16 +131,15 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
       };
     });
 
-    // Exclude active OPEN positions from history
     const activeSet = new Set(['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED', 'ENTERED', 'EXECUTED']);
     return [...fno, ...cash].filter(p => !activeSet.has(p.status) && (p.status === 'CLOSED' || p.status === 'EXITED'));
   }, [fnoHistory, cashHistory, lotScaleMode]);
 
-  // Apply Asset, Mode, Strategy, Date Range, and Search Filters
+  // Date Filtering Logic
   const filteredHistory = useMemo(() => {
     return allHistory.filter(p => {
       if (assetFilter !== 'ALL' && p.assetClass !== assetFilter) return false;
-      
+
       if (modeFilter !== 'ALL') {
         const isPaperMode = p.mode === 'PAPER';
         if (modeFilter === 'PAPER' && !isPaperMode) return false;
@@ -119,17 +151,32 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
         if (strat !== selectedStrategy) return false;
       }
 
-      if (dateRange !== 'ALL') {
+      // Date Range Filtering
+      if (datePreset !== 'ALL') {
         const dateVal = p.timestamp ? new Date(p.timestamp) : null;
-        if (dateVal && !isNaN(dateVal.getTime())) {
-          const now = new Date();
-          if (dateRange === 'TODAY') {
-            if (dateVal.toDateString() !== now.toDateString()) return false;
-          } else if (dateRange === 'WEEK') {
-            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            if (dateVal < weekAgo) return false;
-          } else if (dateRange === 'MONTH') {
-            if (dateVal.getMonth() !== now.getMonth() || dateVal.getFullYear() !== now.getFullYear()) return false;
+        if (!dateVal || isNaN(dateVal.getTime())) return false;
+
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        if (datePreset === 'TODAY') {
+          if (dateVal < startOfDay) return false;
+        } else if (datePreset === 'WEEK') {
+          const weekAgo = new Date(startOfDay.getTime() - 7 * 24 * 60 * 60 * 1000);
+          if (dateVal < weekAgo) return false;
+        } else if (datePreset === 'MONTH') {
+          const monthAgo = new Date(startOfDay.getTime() - 30 * 24 * 60 * 60 * 1000);
+          if (dateVal < monthAgo) return false;
+        } else if (datePreset === 'CUSTOM') {
+          if (customStartDate) {
+            const cStart = new Date(customStartDate);
+            cStart.setHours(0, 0, 0, 0);
+            if (dateVal < cStart) return false;
+          }
+          if (customEndDate) {
+            const cEnd = new Date(customEndDate);
+            cEnd.setHours(23, 59, 59, 999);
+            if (dateVal > cEnd) return false;
           }
         }
       }
@@ -146,9 +193,9 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
 
       return true;
     });
-  }, [allHistory, assetFilter, modeFilter, selectedStrategy, dateRange, searchTerm]);
+  }, [allHistory, assetFilter, modeFilter, selectedStrategy, datePreset, customStartDate, customEndDate, searchTerm]);
 
-  // Sort Filtered History
+  // Sort History
   const sortedHistory = useMemo(() => {
     const arr = [...filteredHistory];
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -168,7 +215,6 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
     return arr;
   }, [filteredHistory, sortCol, sortDir]);
 
-  // Unique Strategies List
   const availableStrategies = useMemo(() => {
     const set = new Set();
     allHistory.forEach(p => {
@@ -178,14 +224,12 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
     return Array.from(set).sort();
   }, [allHistory]);
 
-  // Compute Metrics & Strategy Breakdown
   const metrics = useMemo(() => {
     let totalPnl = 0;
     let wins = 0;
     let losses = 0;
     let totalHoldMins = 0;
     let validHoldCount = 0;
-
     const byStrategy = {};
 
     filteredHistory.forEach(p => {
@@ -206,7 +250,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
       if (!byStrategy[strat]) {
         byStrategy[strat] = { trades: 0, wins: 0, losses: 0, pnl: 0, best: -Infinity, worst: Infinity, holdMins: 0, holdCount: 0 };
       }
-      
+
       const st = byStrategy[strat];
       st.trades++;
       st.pnl += pnl;
@@ -215,8 +259,8 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
       if (pnl > st.best) st.best = pnl;
       if (pnl < st.worst) st.worst = pnl;
       if (p.enteredAt && p.exitedAt) {
-         const ms = new Date(p.exitedAt) - new Date(p.enteredAt);
-         if (ms > 0) { st.holdMins += (ms/60000); st.holdCount++; }
+        const ms = new Date(p.exitedAt) - new Date(p.enteredAt);
+        if (ms > 0) { st.holdMins += (ms / 60000); st.holdCount++; }
       }
     });
 
@@ -236,17 +280,15 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
       best: s.best === -Infinity ? 0 : s.best,
       worst: s.worst === Infinity ? 0 : s.worst,
       avgHold: s.holdCount > 0 ? s.holdMins / s.holdCount : 0
-    })).sort((a,b) => b.pnl - a.pnl);
+    })).sort((a, b) => b.pnl - a.pnl);
 
     return { totalPnl, winRate, expectancy, avgHold, trades, wins, losses, strategyList };
   }, [filteredHistory]);
 
-  // Reset page on filter change
   useEffect(() => {
     setCurrentPage(1);
-  }, [assetFilter, modeFilter, selectedStrategy, dateRange, searchTerm, lotScaleMode]);
+  }, [assetFilter, modeFilter, selectedStrategy, datePreset, customStartDate, customEndDate, searchTerm, lotScaleMode]);
 
-  // Paginate
   const totalPages = Math.ceil(sortedHistory.length / pageSize) || 1;
   const paginatedHistory = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
@@ -256,29 +298,93 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
   return (
     <div className="space-y-6 mt-4">
 
-      {/* Lot Scaling Mode Toggle Bar */}
-      <div className="bg-gradient-to-r from-indigo-50 via-purple-50 to-white p-3 rounded-2xl border border-indigo-100 flex items-center justify-between flex-wrap gap-3 shadow-sm">
+      {/* Prominent Top-Level History Date Range Control Bar */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl shadow-md space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="text-xl">📅</span>
+            <div>
+              <span className="text-xs font-black text-indigo-200 uppercase tracking-widest block">History Date Filter</span>
+              <span className="text-xs text-slate-300 font-medium">Select timeframe to filter closed trades and performance metrics</span>
+            </div>
+          </div>
+
+          {/* Quick Preset Filter Buttons */}
+          <div className="flex flex-wrap items-center gap-2 bg-slate-800/90 p-1.5 rounded-xl border border-slate-700/80">
+            {[
+              { id: 'ALL', label: 'All Time' },
+              { id: 'TODAY', label: 'Today (1D)' },
+              { id: 'WEEK', label: '1 Week (7D)' },
+              { id: 'MONTH', label: '1 Month (1M)' },
+              { id: 'CUSTOM', label: 'Custom Range 🗓️' },
+            ].map(b => (
+              <button
+                key={b.id}
+                onClick={() => setDatePreset(b.id)}
+                className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition ${datePreset === b.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700'}`}
+              >
+                {b.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Custom Date Inputs */}
+        {datePreset === 'CUSTOM' && (
+          <div className="pt-3 border-t border-slate-700/80 flex flex-wrap items-center gap-4 bg-slate-800/60 p-3.5 rounded-xl">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-bold text-slate-200">From Date:</label>
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={e => setCustomStartDate(e.target.value)}
+                className="bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-1.5 text-xs font-mono font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-bold text-slate-200">To Date:</label>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={e => setCustomEndDate(e.target.value)}
+                className="bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-1.5 text-xs font-mono font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+            </div>
+            {(customStartDate || customEndDate) && (
+              <button
+                onClick={() => { setCustomStartDate(''); setCustomEndDate(''); }}
+                className="text-xs font-bold text-indigo-400 hover:text-indigo-300 underline ml-auto"
+              >
+                Clear Dates
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Lot Scaling Mode Bar */}
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 flex items-center justify-between flex-wrap gap-3 shadow-sm">
         <div className="flex items-center gap-2">
           <span className="text-base">📊</span>
           <div>
-            <span className="text-xs font-black text-indigo-950 uppercase tracking-wider block">P&amp;L Figure Scaling Mode</span>
-            <span className="text-[10px] text-indigo-600 font-bold">
+            <span className="text-xs font-black text-slate-800 uppercase tracking-wider block">P&amp;L Figure Scaling</span>
+            <span className="text-[11px] text-slate-500 font-bold">
               {lotScaleMode === 'ONE_LOT' ? 'Showing Actual Figures Normalized to 1 Lot' : 'Showing Cumulative P&L Across All Executed Lots'}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-indigo-200 shadow-sm">
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
           <button
             onClick={() => setLotScaleMode('ONE_LOT')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1.5 ${lotScaleMode === 'ONE_LOT' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-black transition ${lotScaleMode === 'ONE_LOT' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
             <span>🎯 1 Lot (Actual Figures)</span>
           </button>
 
           <button
             onClick={() => setLotScaleMode('FULL')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1.5 ${lotScaleMode === 'FULL' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-black transition ${lotScaleMode === 'FULL' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
             <span>📦 Total Lots Executed</span>
           </button>
@@ -292,7 +398,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
           <div>
             <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
-              {lotScaleMode === 'ONE_LOT' ? '1-Lot Net P&L (Actual)' : 'Total Realized P&L'}
+              {lotScaleMode === 'ONE_LOT' ? '1-Lot Net P&L' : 'Total Realized P&L'}
             </div>
             <div className={`text-2xl font-extrabold font-mono ${metrics.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
               {metrics.totalPnl >= 0 ? '+' : '-'}₹{Math.abs(Math.round(metrics.totalPnl)).toLocaleString('en-IN')}
@@ -395,66 +501,122 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
         </div>
       )}
 
-      {/* Trade History Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-0">
+      {/* Trade History Table Card */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         
-        {/* Toolbar */}
-        <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row gap-3 items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h3 className="font-extrabold text-slate-800 text-xs tracking-wider uppercase">Trade History Log</h3>
-            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full">
-              {sortedHistory.length} Trades
-            </span>
-          </div>
+        {/* Trade History Log Toolbar & Date Filters */}
+        <div className="p-4 bg-slate-900 text-white border-b border-slate-800 space-y-3">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            
+            {/* Left Title & Live Totals Badges */}
+            <div className="flex flex-wrap items-center gap-3">
+              <h3 className="font-black text-sm tracking-wider uppercase text-white flex items-center gap-2">
+                <span>📜 TRADE HISTORY LOG</span>
+                <span className="px-2.5 py-0.5 bg-indigo-600 text-white text-xs font-extrabold rounded-full">
+                  {sortedHistory.length} Trades
+                </span>
+              </h3>
 
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-            {/* Strategy Filter */}
-            <select
-              value={selectedStrategy}
-              onChange={e => setSelectedStrategy(e.target.value)}
-              className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
-            >
-              <option value="ALL">All Strategies ({availableStrategies.length})</option>
-              {availableStrategies.map(s => (
-                <option key={s} value={s}>
-                  {STRATEGY_LABELS[s] || s}
-                </option>
-              ))}
-            </select>
+              {/* Real-time Totals Badges */}
+              <div className="flex items-center gap-2 flex-wrap text-xs font-mono font-bold">
+                <span className={`px-2.5 py-1 rounded-lg border ${metrics.totalPnl >= 0 ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60' : 'bg-rose-950/80 text-rose-300 border-rose-700/60'}`}>
+                  Range P&amp;L: {metrics.totalPnl >= 0 ? '+' : ''}₹{Math.round(metrics.totalPnl).toLocaleString('en-IN')}
+                </span>
 
-            {/* Search Input */}
-            <div className="relative flex-1 sm:w-48">
-              <input
-                type="text"
-                placeholder="Search symbol, strategy..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="w-full pl-7 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
-              />
-              <span className="absolute left-2.5 top-2 text-slate-400 text-xs">🔍</span>
-              {searchTerm && (
-                <button onClick={() => setSearchTerm('')} className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600 text-xs">✕</button>
-              )}
+                <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700">
+                  Ratio: {metrics.wins}W / {metrics.losses}L ({metrics.winRate.toFixed(1)}%)
+                </span>
+              </div>
             </div>
 
-            {/* Page Size */}
-            <select
-              value={pageSize}
-              onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
-              className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
-            >
-              <option value={15}>15 / pg</option>
-              <option value={30}>30 / pg</option>
-              <option value={50}>50 / pg</option>
-              <option value={100}>100 / pg</option>
-            </select>
+            {/* Strategy, Search & Page Size */}
+            <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+              <select
+                value={selectedStrategy}
+                onChange={e => setSelectedStrategy(e.target.value)}
+                className="bg-slate-800 text-slate-200 border border-slate-700 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="ALL">All Strategies ({availableStrategies.length})</option>
+                {availableStrategies.map(s => (
+                  <option key={s} value={s}>
+                    {STRATEGY_LABELS[s] || s}
+                  </option>
+                ))}
+              </select>
+
+              <div className="relative flex-1 sm:w-44">
+                <input
+                  type="text"
+                  placeholder="Search symbol, strategy..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="w-full pl-7 pr-3 py-1.5 text-xs border border-slate-700 rounded-lg bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <span className="absolute left-2.5 top-2 text-slate-400 text-xs">🔍</span>
+                {searchTerm && (
+                  <button onClick={() => setSearchTerm('')} className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-200 text-xs">✕</button>
+                )}
+              </div>
+
+              <select
+                value={pageSize}
+                onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                className="bg-slate-800 text-slate-200 border border-slate-700 text-xs font-semibold rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value={15}>15 / pg</option>
+                <option value={30}>30 / pg</option>
+                <option value={50}>50 / pg</option>
+                <option value={100}>100 / pg</option>
+              </select>
+            </div>
           </div>
+
+          {/* Direct Embedded Date Preset Toolbar inside History Log */}
+          <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mr-1">Timeframe:</span>
+              {[
+                { id: 'ALL', label: 'All Time' },
+                { id: 'TODAY', label: 'Today (1D)' },
+                { id: 'WEEK', label: '1 Week (7D)' },
+                { id: 'MONTH', label: '1 Month (1M)' },
+                { id: 'CUSTOM', label: 'Custom Date Range 🗓️' },
+              ].map(b => (
+                <button
+                  key={b.id}
+                  onClick={() => setDatePreset(b.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition ${datePreset === b.id ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'}`}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+
+            {datePreset === 'CUSTOM' && (
+              <div className="flex flex-wrap items-center gap-2 bg-slate-800 px-3 py-1 rounded-lg border border-slate-700">
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={e => setCustomStartDate(e.target.value)}
+                  className="bg-slate-900 border border-slate-600 text-white rounded px-2 py-0.5 text-xs font-mono"
+                />
+                <span className="text-slate-400 text-xs font-bold">to</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={e => setCustomEndDate(e.target.value)}
+                  className="bg-slate-900 border border-slate-600 text-white rounded px-2 py-0.5 text-xs font-mono"
+                />
+              </div>
+            )}
+          </div>
+
         </div>
 
         {/* History Table */}
         {sortedHistory.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">
-            No history trades found matching your active filters.
+            No history trades found matching your active date &amp; strategy filters.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -555,8 +717,6 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
                       {isExp && (
                         <tr className="bg-indigo-50/30 border-b border-indigo-100">
                           <td colSpan={8} className="p-4 space-y-3">
-                            
-                            {/* System Audit Rationale */}
                             <div className={`p-3 rounded-xl text-xs space-y-1 border ${isLoss ? 'bg-rose-50/80 border-rose-200 text-rose-800' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
                               <div className="flex items-center justify-between font-bold">
                                 <span>🔍 Trade Execution Audit &amp; System Notes</span>
@@ -572,9 +732,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
                               </p>
                             </div>
 
-                            {/* Interactive Payoff Chart & Legs Table */}
                             <DetailedOpportunityExpandedRow item={{ ...p, lots: 1 }} title={`Trade Payoff Chart & Execution Breakdown (1 Lot) — ${p.displaySymbol}`} />
-
                           </td>
                         </tr>
                       )}
@@ -582,6 +740,25 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
                   );
                 })}
               </tbody>
+
+              {/* Table Bottom Cumulative Totals Footer Row */}
+              <tfoot className="bg-slate-900 text-white font-mono text-xs font-bold border-t-2 border-slate-700">
+                <tr>
+                  <td colSpan={4} className="px-4 py-3 text-left tracking-wider uppercase font-sans">
+                    TOTALS ({sortedHistory.length} Filtered Trades — {datePreset === 'ALL' ? 'All Time' : datePreset})
+                  </td>
+                  <td className="px-4 py-3 text-slate-300 font-sans">Filtered Volume Summary</td>
+                  <td className="px-4 py-3 text-right text-indigo-300">
+                    {sortedHistory.length} Trades Total
+                  </td>
+                  <td className={`px-4 py-3 text-right text-sm font-extrabold ${metrics.totalPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {metrics.totalPnl >= 0 ? '+' : ''}₹{Math.round(metrics.totalPnl).toLocaleString('en-IN')}
+                  </td>
+                  <td className="px-4 py-3 text-center text-[10px] text-slate-400 uppercase font-sans">
+                    Cum. P&amp;L
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -620,19 +797,26 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
 export default function Positions() {
   const [executionBroker, setExecutionBroker] = useState('PAPER');
   
-  // Dashboard Filters: Default dateRange to ALL so history trades display instantly!
+  // Dashboard Controls
   const [viewState, setViewState] = useState('ACTIVE'); // ACTIVE | HISTORY
   const [assetFilter, setAssetFilter] = useState('ALL'); // ALL | FNO | CASH
   const [modeFilter, setModeFilter] = useState('ALL'); // ALL | LIVE | PAPER
-  const [dateRange, setDateRange] = useState('ALL'); // TODAY | WEEK | MONTH | ALL (default ALL)
   
+  // Date Filters
+  const [datePreset, setDatePreset] = useState('ALL'); // ALL | TODAY | WEEK | MONTH | CUSTOM
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+
+  // Active Positions Expandable Row State
+  const [expandedActiveId, setExpandedActiveId] = useState(null);
+
   useEffect(() => {
     client.get('/brokers/decoupled-routing')
       .then((res) => { if (res.data?.executionBroker) setExecutionBroker(res.data.executionBroker); })
       .catch(() => {});
   }, []);
 
-  // Fetch Histories unconditionally
+  // Fetch Histories
   const { data: fnoHistoryData, refetch: refetchFno } = useQuery({
     queryKey: ['fnoHistoryClosed'],
     queryFn: () => client.get('/option-arbitrage/paper-trades').then(r => r.data),
@@ -658,17 +842,32 @@ export default function Positions() {
   });
 
   const fnoActivePositions = useMemo(() => {
-    return (livePositionsData?.positions || []).filter(p => ['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED', 'ENTERED', 'EXECUTED'].includes(p.status));
+    const raw = (livePositionsData?.positions || []).filter(p => ['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED', 'ENTERED', 'EXECUTED'].includes(p.status));
+    return raw.map(p => ({
+      ...p,
+      assetClass: 'FNO',
+      mode: p.broker || 'PAPER',
+      displaySymbol: p.underlying ? `${p.underlying} ${p.strike || ''} ${p.action || ''}`.trim() : (p.action || 'F&O Trade'),
+      qtyDisplay: `${p.lots || 1} Lot (${((p.lots || 1) * (p.lotSize || 120)).toLocaleString()} qty)`
+    }));
   }, [livePositionsData]);
 
   const cashActivePositions = useMemo(() => {
-    return (cashPositionsData?.positions || []).filter(p => ['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED', 'ENTERED', 'EXECUTED'].includes(p.status));
+    const raw = (cashPositionsData?.positions || []).filter(p => ['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED', 'ENTERED', 'EXECUTED'].includes(p.status));
+    return raw.map(p => ({
+      ...p,
+      assetClass: 'CASH',
+      mode: p.broker || 'PAPER',
+      displaySymbol: p.symbol || p.underlying || 'CASH',
+      qtyDisplay: `${p.quantity || p.qty || 1} Qty`
+    }));
   }, [cashPositionsData]);
 
   const openPositions = useMemo(() => {
     let combined = [];
     if (assetFilter === 'ALL' || assetFilter === 'FNO') combined = combined.concat(fnoActivePositions);
     if (assetFilter === 'ALL' || assetFilter === 'CASH') combined = combined.concat(cashActivePositions);
+
     if (modeFilter !== 'ALL') {
       combined = combined.filter(p => {
         const isPaper = !p.broker || p.broker === 'PAPER' || p.mode === 'PAPER';
@@ -678,44 +877,44 @@ export default function Positions() {
     return combined;
   }, [fnoActivePositions, cashActivePositions, assetFilter, modeFilter]);
 
-  const activePnl = openPositions.reduce((sum, p) => sum + (p.currentPnl != null ? Number(p.currentPnl) : 0), 0);
+  const activePnl = openPositions.reduce((sum, p) => sum + (p.currentPnl != null ? Number(p.currentPnl) : (p.unrealizedPnl != null ? Number(p.unrealizedPnl) : 0)), 0);
 
   return (
     <div className="space-y-6 pb-20">
       <GlobalConfirmModal />
 
-      {/* Header */}
+      {/* Header Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3 mb-1">
             <div className="w-1.5 h-7 rounded-full bg-indigo-600" />
-            <h1 className="text-[28px] font-black text-slate-900 tracking-tight">Portfolio &amp; Performance</h1>
+            <h1 className="text-[28px] font-black text-slate-900 tracking-tight">Portfolio &amp; Positions</h1>
           </div>
-          <p className="text-slate-500 text-xs sm:text-sm ml-5 font-medium">Unified Command Center for Live, Paper, Cash, and Options Trades</p>
+          <p className="text-slate-500 text-xs sm:text-sm ml-5 font-medium">Unified Live Command Center — F&amp;O Arbitrage &amp; Cash Equity</p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             onClick={() => { refetchFno(); refetchCash(); refetchLiveActive(); refetchCashActive(); }}
-            className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5"
+            className="px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-2"
           >
-            <span>🔄</span> Refresh Data
+            <span className="text-sm">🔄</span> Refresh Live Data
           </button>
         </div>
       </div>
 
-      {/* Master Control Bar */}
-      <div className="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm flex flex-col lg:flex-row gap-4 justify-between items-center">
+      {/* Master View & Filter Bar */}
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-col lg:flex-row gap-4 justify-between items-center">
         
-        {/* Main View Tabs */}
+        {/* Main Tabs */}
         <div className="flex bg-slate-100 p-1 rounded-xl w-full lg:w-auto">
           <button
             onClick={() => setViewState('ACTIVE')}
-            className={`flex-1 lg:px-6 py-2 rounded-lg text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 ${viewState === 'ACTIVE' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            className={`flex-1 lg:px-6 py-2 rounded-lg text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${viewState === 'ACTIVE' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
-            <span>Active Trades</span>
+            <span>🔥 Active Trades</span>
             {openPositions.length > 0 && (
-              <span className="px-2 py-0.5 bg-emerald-500 text-white text-[10px] font-bold rounded-full">
+              <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${viewState === 'ACTIVE' ? 'bg-white text-indigo-700' : 'bg-emerald-500 text-white'}`}>
                 {openPositions.length}
               </span>
             )}
@@ -723,16 +922,16 @@ export default function Positions() {
 
           <button
             onClick={() => setViewState('HISTORY')}
-            className={`flex-1 lg:px-6 py-2 rounded-lg text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 ${viewState === 'HISTORY' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            className={`flex-1 lg:px-6 py-2 rounded-lg text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${viewState === 'HISTORY' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
-            <span>History &amp; Performance</span>
+            <span>📜 History &amp; Performance</span>
           </button>
         </div>
 
-        {/* Master Filters */}
-        <div className="flex flex-wrap gap-2 sm:gap-3 items-center justify-center w-full lg:w-auto">
+        {/* Global Filters */}
+        <div className="flex flex-wrap gap-2.5 items-center justify-center w-full lg:w-auto">
           
-          {/* Asset Class Filter */}
+          {/* Asset Class */}
           <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl p-1">
             {[
               { id: 'ALL', label: 'All Assets' },
@@ -742,14 +941,14 @@ export default function Positions() {
               <button
                 key={a.id}
                 onClick={() => setAssetFilter(a.id)}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition ${assetFilter === a.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition ${assetFilter === a.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}
               >
                 {a.label}
               </button>
             ))}
           </div>
           
-          {/* Execution Mode Filter */}
+          {/* Mode */}
           <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl p-1">
             {[
               { id: 'ALL', label: 'All Modes' },
@@ -759,162 +958,212 @@ export default function Positions() {
               <button
                 key={m.id}
                 onClick={() => setModeFilter(m.id)}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition ${modeFilter === m.id ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition ${modeFilter === m.id ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}
               >
                 {m.label}
               </button>
             ))}
           </div>
 
-          {/* Date Range Filter */}
-          {viewState === 'HISTORY' && (
-            <select 
-              value={dateRange} 
-              onChange={e => setDateRange(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
-            >
-              <option value="ALL">📅 All Time</option>
-              <option value="TODAY">📅 Today</option>
-              <option value="WEEK">📅 This Week</option>
-              <option value="MONTH">📅 This Month</option>
-            </select>
-          )}
-
         </div>
       </div>
 
-      {/* Main Viewport Content */}
+      {/* ACTIVE TRADES VIEW */}
       {viewState === 'ACTIVE' && (
         <div className="space-y-6">
 
-          {/* Active Trades Summary */}
-          {openPositions.length > 0 && (
-            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase">Active Trades Running</div>
-                  <div className="text-lg font-bold text-slate-800">{openPositions.length} Positions Currently Open</div>
+          {/* Active Summary Top KPI Bar */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-5 text-white shadow-md flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-3 h-3 rounded-full bg-emerald-400 animate-ping" />
+              <div>
+                <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Live Active Positions</div>
+                <div className="text-xl font-extrabold">{openPositions.length} Open Positions Currently Running</div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-6">
+              <div>
+                <div className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">Asset Breakdown</div>
+                <div className="text-sm font-extrabold text-indigo-200 font-mono">
+                  {fnoActivePositions.length} F&amp;O | {cashActivePositions.length} Cash
                 </div>
               </div>
 
-              <div>
-                <div className="text-[10px] font-bold text-slate-400 uppercase">Unrealized P&amp;L</div>
-                <div className={`text-lg font-extrabold font-mono ${activePnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              <div className="bg-slate-800/80 px-4 py-2 rounded-xl border border-slate-700/60">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Live Unrealized P&amp;L</div>
+                <div className={`text-xl font-extrabold font-mono ${activePnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                   {activePnl >= 0 ? '+' : ''}₹{Math.round(activePnl).toLocaleString('en-IN')}
                 </div>
               </div>
             </div>
-          )}
+          </div>
 
-          {/* Direct Active Positions Table */}
-          {openPositions.length > 0 && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-4 py-3 bg-slate-900 text-white flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-base">🔥</span>
-                  <h3 className="text-xs font-black uppercase tracking-wider">Live &amp; Active Positions ({openPositions.length})</h3>
-                </div>
-                <span className="text-[10px] font-mono text-slate-400">Auto-refreshing every 2s</span>
+          {/* Prominent Primary Active Positions Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🔥</span>
+                <h3 className="text-xs font-black uppercase tracking-wider">Active Open Positions ({openPositions.length})</h3>
               </div>
+              <span className="text-[10px] font-mono text-emerald-400 font-bold bg-slate-800 px-2.5 py-1 rounded-full border border-slate-700">
+                ⚡ Live 2s Auto-Refresh
+              </span>
+            </div>
+
+            {openPositions.length === 0 ? (
+              <div className="p-12 text-center text-slate-400 font-medium text-sm">
+                No active open positions currently running matching your filters.
+              </div>
+            ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-bold text-[10px]">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-400 uppercase font-extrabold text-[10px] tracking-wider">
                     <tr>
-                      <th className="px-4 py-2.5">Symbol / Asset</th>
-                      <th className="px-4 py-2.5">Strategy</th>
-                      <th className="px-3 py-2.5 text-center">Class</th>
-                      <th className="px-4 py-2.5 text-right">Qty / Lots</th>
-                      <th className="px-4 py-2.5 text-right">Entry Price</th>
-                      <th className="px-4 py-2.5 text-right">Current Price</th>
-                      <th className="px-4 py-2.5 text-right">P&amp;L</th>
-                      <th className="px-4 py-2.5 text-center">Mode</th>
+                      <th className="px-5 py-3">Symbol / Asset</th>
+                      <th className="px-4 py-3">Strategy</th>
+                      <th className="px-3 py-3 text-center">Class</th>
+                      <th className="px-4 py-3 text-right">Qty / Lots</th>
+                      <th className="px-4 py-3 text-right">Entry Price</th>
+                      <th className="px-4 py-3 text-right">Current / LTP</th>
+                      <th className="px-4 py-3 text-right">Unrealized P&amp;L</th>
+                      <th className="px-4 py-3 text-center">Mode</th>
+                      <th className="px-4 py-3 text-center">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-mono">
                     {openPositions.map(p => {
                       const pnl = p.currentPnl != null ? Number(p.currentPnl) : (p.unrealizedPnl != null ? Number(p.unrealizedPnl) : 0);
                       const isCash = p.assetClass === 'CASH' || p.strategyType?.startsWith('CASH');
-                      const qtyStr = isCash ? `${p.quantity || p.qty} Qty` : (p.qtyDisplay || `${p.lots || 1} Lot`);
-                      const entryStr = p.entryPrice != null ? `₹${Number(p.entryPrice).toFixed(2)}` : '—';
+                      const entryStr = p.entryPrice != null ? `₹${Number(p.entryPrice).toFixed(2)}` : (p.entryCost != null ? `₹${Number(p.entryCost).toFixed(2)}` : '—');
                       const currStr = p.currentPrice != null ? `₹${Number(p.currentPrice).toFixed(2)}` : (p.ltp != null ? `₹${Number(p.ltp).toFixed(2)}` : entryStr);
-                      const modeStr = p.mode || p.broker || 'PAPER';
+                      const isExp = expandedActiveId === p.id;
 
                       return (
-                        <tr key={p.id || p.symbol} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="px-4 py-3 font-bold text-slate-800">
-                            <div>{p.symbol || p.displaySymbol}</div>
-                            {p.name && <div className="text-[10px] font-normal text-slate-400">{p.name}</div>}
-                          </td>
-                          <td className="px-4 py-3 font-bold text-slate-700 font-sans">
-                            {p.strategyType || p.strategy || 'Arbitrage'}
-                          </td>
-                          <td className="px-3 py-3 text-center font-sans">
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${isCash ? 'bg-orange-100 text-orange-800' : 'bg-indigo-100 text-indigo-800'}`}>
-                              {isCash ? 'CASH' : 'FNO'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right font-medium text-slate-600 whitespace-nowrap">
-                            {qtyStr}
-                          </td>
-                          <td className="px-4 py-3 text-right text-slate-600">{entryStr}</td>
-                          <td className="px-4 py-3 text-right text-slate-800 font-bold">{currStr}</td>
-                          <td className={`px-4 py-3 text-right font-bold ${pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            {pnl >= 0 ? '+' : ''}₹{Math.round(pnl).toLocaleString('en-IN')}
-                          </td>
-                          <td className="px-4 py-3 text-center font-sans">
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${modeStr === 'PAPER' ? 'bg-slate-100 text-slate-600 border-slate-200' : 'bg-emerald-100 text-emerald-800 border-emerald-300'}`}>
-                              {modeStr}
-                            </span>
-                          </td>
-                        </tr>
+                        <React.Fragment key={p.id || p.symbol}>
+                          <tr className={`hover:bg-indigo-50/40 transition-colors ${isExp ? 'bg-indigo-50/60 border-l-4 border-indigo-600' : ''}`}>
+                            {/* Symbol */}
+                            <td className="px-5 py-3.5 font-bold text-slate-800">
+                              <div>{p.displaySymbol || p.symbol}</div>
+                              {p.name && <div className="text-[10px] font-normal text-slate-400">{p.name}</div>}
+                            </td>
+
+                            {/* Strategy */}
+                            <td className="px-4 py-3.5 font-bold text-slate-700 font-sans">
+                              {STRATEGY_LABELS[p.strategyType || p.strategy] || p.strategyType || p.strategy || 'Arbitrage'}
+                            </td>
+
+                            {/* Asset Class Chip */}
+                            <td className="px-3 py-3.5 text-center font-sans">
+                              <span className={`px-2.5 py-0.5 rounded text-[9px] font-black ${isCash ? 'bg-orange-100 text-orange-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                                {isCash ? 'CASH' : 'FNO'}
+                              </span>
+                            </td>
+
+                            {/* Qty / Lots */}
+                            <td className="px-4 py-3.5 text-right font-medium text-slate-600 whitespace-nowrap">
+                              {p.qtyDisplay}
+                            </td>
+
+                            {/* Entry */}
+                            <td className="px-4 py-3.5 text-right text-slate-600">{entryStr}</td>
+
+                            {/* Current */}
+                            <td className="px-4 py-3.5 text-right text-slate-800 font-bold">{currStr}</td>
+
+                            {/* PnL */}
+                            <td className={`px-4 py-3.5 text-right font-extrabold ${pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              {pnl >= 0 ? '+' : ''}₹{Math.round(pnl).toLocaleString('en-IN')}
+                            </td>
+
+                            {/* Mode */}
+                            <td className="px-4 py-3.5 text-center font-sans">
+                              <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-extrabold border ${p.mode === 'PAPER' ? 'bg-slate-100 text-slate-600 border-slate-200' : 'bg-emerald-100 text-emerald-800 border-emerald-300'}`}>
+                                {p.mode}
+                              </span>
+                            </td>
+
+                            {/* Actions */}
+                            <td className="px-4 py-3.5 text-center font-sans">
+                              <button
+                                onClick={() => setExpandedActiveId(isExp ? null : p.id)}
+                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition"
+                              >
+                                {isExp ? 'Hide Details' : '🔍 View Legs'}
+                              </button>
+                            </td>
+                          </tr>
+
+                          {/* Expanded Legs Drawer */}
+                          {isExp && (
+                            <tr className="bg-indigo-50/20 border-b border-indigo-100">
+                              <td colSpan={9} className="p-4 space-y-3">
+                                <DetailedOpportunityExpandedRow item={p} title={`Active Position Leg Details & Payoff Diagram — ${p.displaySymbol || p.symbol}`} />
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Broker Positions Ground Truth */}
-          <BrokerPositionsPanel executionBroker={executionBroker} defaultExpanded={false} />
-          
-          {/* Cash Equity Positions */}
-          {(assetFilter === 'ALL' || assetFilter === 'CASH') && (
-            <div className="bg-white p-1 rounded-2xl border border-orange-100 shadow-sm relative overflow-hidden">
-               <div className="absolute top-0 left-0 w-1.5 h-full bg-orange-500"></div>
-               <div className="p-3">
-                 <h3 className="text-xs font-bold text-orange-900 uppercase tracking-wider ml-2 mb-2">
-                   Cash Equity Positions ({cashActivePositions.length})
-                 </h3>
-                 <CashPositionsSection />
-               </div>
-            </div>
-          )}
+          {/* SECONDARY PANELS: COLLAPSED BY DEFAULT */}
 
-          {/* F&O Arbitrage Active Positions */}
+          {/* 1. Broker Positions Ground Truth Accordion */}
+          <AccordionCard
+            title="Broker Ground Truth & Account Positions"
+            icon="🏦"
+            defaultOpen={false}
+          >
+            <BrokerPositionsPanel executionBroker={executionBroker} defaultExpanded={false} />
+          </AccordionCard>
+
+          {/* 2. Detailed F&O Arbitrage Section Accordion */}
           {(assetFilter === 'ALL' || assetFilter === 'FNO') && (
-            <div className="bg-white p-1 rounded-2xl border border-indigo-100 shadow-sm relative overflow-hidden">
-               <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
-               <div className="p-3">
-                 <h3 className="text-xs font-bold text-indigo-900 uppercase tracking-wider ml-2 mb-2">
-                   F&amp;O Arbitrage Positions ({fnoActivePositions.length})
-                 </h3>
-                 <LivePositionsSection executionBroker={executionBroker} modeFilter={modeFilter} assetFilter={assetFilter} defaultExpanded={true} />
-               </div>
-            </div>
+            <AccordionCard
+              title={`F&O Arbitrage Detailed Breakdown (${fnoActivePositions.length})`}
+              icon="⚡"
+              count={fnoActivePositions.length}
+              defaultOpen={false}
+              badgeColor="bg-indigo-100 text-indigo-800"
+            >
+              <LivePositionsSection executionBroker={executionBroker} modeFilter={modeFilter} assetFilter={assetFilter} defaultExpanded={false} />
+            </AccordionCard>
           )}
+
+          {/* 3. Detailed Cash Equity Section Accordion */}
+          {(assetFilter === 'ALL' || assetFilter === 'CASH') && (
+            <AccordionCard
+              title={`Cash Equity Swing Breakdown (${cashActivePositions.length})`}
+              icon="📈"
+              count={cashActivePositions.length}
+              defaultOpen={false}
+              badgeColor="bg-orange-100 text-orange-800"
+            >
+              <CashPositionsSection />
+            </AccordionCard>
+          )}
+
         </div>
       )}
 
-      {/* History View */}
+      {/* HISTORY & PERFORMANCE VIEW */}
       {viewState === 'HISTORY' && (
         <UnifiedPerformanceAndHistory 
           fnoHistory={Array.isArray(fnoHistoryData) ? fnoHistoryData : (fnoHistoryData?.positions || [])} 
           cashHistory={Array.isArray(cashHistoryData) ? cashHistoryData : (cashHistoryData?.positions || cashHistoryData?.trades || [])}
           assetFilter={assetFilter}
           modeFilter={modeFilter}
-          dateRange={dateRange}
+          datePreset={datePreset}
+          customStartDate={customStartDate}
+          customEndDate={customEndDate}
+          setDatePreset={setDatePreset}
+          setCustomStartDate={setCustomStartDate}
+          setCustomEndDate={setCustomEndDate}
         />
       )}
     </div>

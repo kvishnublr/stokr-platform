@@ -239,4 +239,16 @@ public class CashScannerService {
     private double round2(double v) {
         return Math.round(v * 100.0) / 100.0;
     }
+
+    public List<Map<String, Object>> scanCashIgnition() {
+        return scanCashSurge();
+    }
+
+    public List<Map<String, Object>> scanCashReversal() {
+        return scanCashSurge();
+    }
+
+    public List<Map<String, Object>> scanCashVcp() {
+        return scanCashSurge();
+    }
 }

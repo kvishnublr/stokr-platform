@@ -20,13 +20,26 @@ public class BrokerService {
 
     public List<BrokerAccount> getUserBrokers(Long userId) {
         // Only return ACTIVE accounts — disconnected ones shouldn't show
-        List<BrokerAccount> active = repository.findByUserIdAndStatus(userId, "ACTIVE");
+        List<BrokerAccount> active = new java.util.ArrayList<>(repository.findByUserIdAndStatus(userId, "ACTIVE"));
+        
+        // Ensure PAPER trading is always present as an active account for every user
+        boolean hasPaper = active.stream().anyMatch(b -> "PAPER".equalsIgnoreCase(b.getBrokerName()));
+        if (!hasPaper) {
+            BrokerAccount paper = BrokerAccount.builder()
+                    .userId(userId)
+                    .brokerName("PAPER")
+                    .clientId("SIMULATED ENGINE")
+                    .status("ACTIVE")
+                    .build();
+            active.add(paper);
+        }
+
         // Deduplicate by brokerName: keep the latest (highest id) per broker
         return active.stream()
                 .collect(java.util.stream.Collectors.toMap(
                         BrokerAccount::getBrokerName,
                         java.util.function.Function.identity(),
-                        (a, b) -> a.getId() > b.getId() ? a : b
+                        (a, b) -> (a.getId() != null ? a.getId() : 0L) >= (b.getId() != null ? b.getId() : 0L) ? a : b
                 ))
                 .values().stream().toList();
     }
@@ -90,6 +103,9 @@ public class BrokerService {
     @Transactional
     public void disconnectBroker(Long accountId, Long userId) {
         BrokerAccount account = getBrokerAccount(accountId, userId);
+        if ("PAPER".equalsIgnoreCase(account.getBrokerName())) {
+            throw new IllegalArgumentException("PAPER trading engine is permanent and cannot be disconnected.");
+        }
         account.setStatus("DISCONNECTED");
         account.setAccessToken(null);
         account.setRefreshToken(null);

@@ -158,6 +158,9 @@ public class CashExecutionService {
             Map<String, Object> m = p.toMap();
             try {
                 double ltp = spotFetcher.getSpotPrice("NSE:" + p.getSymbol());
+                if (ltp <= 0 || (ltp >= 20000.0 && !p.getSymbol().contains("NIFTY"))) {
+                    ltp = p.getEntryPrice() != null ? p.getEntryPrice().doubleValue() : 0.0;
+                }
                 if (ltp > 0 && p.getEntryPrice() != null && p.getQuantity() != null) {
                     double pnl = (ltp - p.getEntryPrice().doubleValue()) * p.getQuantity();
                     double pnlPct = (ltp - p.getEntryPrice().doubleValue()) / p.getEntryPrice().doubleValue() * 100.0;

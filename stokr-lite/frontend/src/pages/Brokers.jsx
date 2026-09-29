@@ -1,8 +1,17 @@
+import { useGlobalExecutionBroker } from '../context/ExecutionBrokerContext';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import client from '../api/client';
 
 const BROKER_META = {
+  PAPER: {
+    color: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+    letter: '📄',
+    desc: 'Simulated Execution Engine (Risk-free testing)',
+    glow: 'rgba(99,102,241,0.3)',
+    primary: false,
+    permanent: true,
+  },
   ZERODHA: {
     color: 'linear-gradient(135deg, #f43f5e, #e11d48)',
     letter: 'Z',
@@ -45,6 +54,7 @@ const BROKER_OAUTH_MESSAGE = 'stokr_broker_oauth';
 const OAUTH_RESULT_KEY = 'stokr_broker_oauth_result';
 
 export default function Brokers() {
+  const { setMofslModalOpen } = useGlobalExecutionBroker() || {};
   const queryClient = useQueryClient();
   const [connectingBroker, setConnectingBroker] = useState(null);
   const [oauthResult, setOauthResult] = useState(null);
@@ -80,10 +90,10 @@ export default function Brokers() {
   const [mofslFormOpen, setMofslFormOpen] = useState(false);
   const [mofslClientCode, setMofslClientCode] = useState('');
   const [mofslPassword, setMofslPassword] = useState('');
-  const [mofslTotpSecret, setMofslTotpSecret] = useState('');
-  const [mofslApiKey, setMofslApiKey] = useState('');
-  const [mofslApiSecret, setMofslApiSecret] = useState('');
-  const [mofslDob, setMofslDob] = useState('');
+  const [mofslTotpSecret, setMofslTotpSecret] = useState('3UI2GV4H6ZYZLFEXDB5BPOJFNNWU6ZBG');
+  const [mofslApiKey, setMofslApiKey] = useState('snReRrTZDnkMh0lD');
+  const [mofslApiSecret, setMofslApiSecret] = useState('58c575d5-c4b4-4ae7-80fc-a0b57d7467e3');
+  const [mofslDob, setMofslDob] = useState('03/04/1989');
   const [mofslSaving, setMofslSaving] = useState(false);
   const [mofslMsg, setMofslMsg] = useState(null);
   const [naviaSaving, setNaviaSaving] = useState(false);
@@ -177,8 +187,11 @@ export default function Brokers() {
       });
       setMofslMsg({ ok: true, text: 'Motilal Oswal connected successfully!' });
       setMofslFormOpen(false);
-      setMofslClientCode(''); setMofslPassword(''); setMofslTotpSecret('');
-      setMofslApiKey(''); setMofslApiSecret(''); setMofslDob('');
+      setMofslClientCode(''); setMofslPassword('');
+      setMofslTotpSecret('3UI2GV4H6ZYZLFEXDB5BPOJFNNWU6ZBG');
+      setMofslApiKey('snReRrTZDnkMh0lD');
+      setMofslApiSecret('58c575d5-c4b4-4ae7-80fc-a0b57d7467e3');
+      setMofslDob('03/04/1989');
       queryClient.invalidateQueries({ queryKey: ['brokers'] });
       queryClient.invalidateQueries({ queryKey: ['broker-health'] });
       refetchHealth();
@@ -265,8 +278,13 @@ export default function Brokers() {
       return;
     }
     if (brokerName === 'MOTILALOSWAL') {
+      const isAlreadyConnected = brokers?.some(b => b.brokerName === 'MOTILALOSWAL');
+      if (isAlreadyConnected) {
+        setMofslMsg({ ok: true, text: 'Motilal Oswal is already connected and active. Click "⚙️ Keys" on the connected card above if you need to update credentials.' });
+      } else {
+        setMofslMsg(null);
+      }
       setMofslFormOpen(true);
-      setMofslMsg(null);
       return;
     }
     setOauthResult(null);
@@ -435,8 +453,10 @@ export default function Brokers() {
         <div style={{ marginBottom: '40px' }}>
           <SectionTitle color="linear-gradient(180deg, #10b981, #34d399)">Connected Accounts</SectionTitle>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '18px' }}>
-            {/* Deduplicate by broker name, keep first occurrence */}
-            {brokers.filter((b, idx, self) => self.findIndex((x) => x.brokerName === b.brokerName) === idx).map((b, i) => {
+            {/* PAPER is included by default as permanent paper trading engine */}
+            {[{ id: -999, brokerName: 'PAPER', clientId: 'SIMULATED ENGINE', status: 'ACTIVE', permanent: true },
+              ...(brokers || []).filter(x => x.brokerName !== 'PAPER')
+             ].filter((b, idx, self) => self.findIndex((x) => x.brokerName === b.brokerName) === idx).map((b, i) => {
               const meta = BROKER_META[b.brokerName] || {
                 color: 'linear-gradient(135deg, #64748b, #475569)', letter: b.brokerName[0], glow: 'rgba(100,116,139,0.3)',
               };
@@ -477,16 +497,29 @@ export default function Brokers() {
                       <span>●</span> Live data fetching every minute
                     </div>
                   )}
-                  <button onClick={() => { setDisconnectError(null); disconnectMutation.mutate(b.id); }}
-                    disabled={disconnectMutation.isPending}
-                    style={{ background: 'none', border: '2px solid rgba(239,68,68,0.15)', color: '#ef4444',
-                      fontSize: '12px', fontWeight: 600, padding: '8px 16px', borderRadius: '10px',
-                      cursor: disconnectMutation.isPending ? 'not-allowed' : 'pointer',
-                      opacity: disconnectMutation.isPending ? 0.5 : 1,
-                      transition: 'all 0.2s', width: '100%' }}
-                    onMouseEnter={(e) => { if (!disconnectMutation.isPending) { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.3)'; } }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.15)'; }}
-                  >{disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect'}</button>
+                  {b.brokerName === 'PAPER' || b.permanent ? (
+                    <div style={{ width: '100%', padding: '10px', borderRadius: '10px', fontSize: '12px', fontWeight: 700,
+                      color: '#4f46e5', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', textAlign: 'center' }}>
+                      <span>🔒</span> Default Engine (Permanent)
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {b.brokerName === 'MOTILALOSWAL' && (
+                        <button onClick={() => { if (setMofslModalOpen) setMofslModalOpen(true); setMofslFormOpen(true); setMofslMsg(null); }}
+                          style={{ flex: 1, padding: '10px', borderRadius: '10px', fontSize: '12px', fontWeight: 600, color: '#7c3aed', background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)', cursor: 'pointer' }}>
+                          ⚙️ Keys
+                        </button>
+                      )}
+                      <button onClick={() => { setDisconnectError(null); disconnectMutation.mutate(b.id); }}
+                        disabled={disconnectMutation.isPending}
+                        className="btn-crystal"
+                        style={{ flex: 1, padding: '10px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 600, color: '#ef4444', borderColor: 'rgba(239,68,68,0.2)' }}
+                      >
+                        {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

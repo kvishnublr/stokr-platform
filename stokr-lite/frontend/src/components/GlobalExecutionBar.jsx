@@ -51,11 +51,7 @@ export default function GlobalExecutionBar({ showToast, title, subtitle }) {
         if (showToast) showToast(res.data.message, 'success');
       } else {
         const msg = res.data?.message || 'Broker test failed';
-        if ((msg.includes('No active') || msg.includes('access token is missing')) && executionBroker === 'MOTILALOSWAL') {
-            setMofslModalOpen(true);
-        } else {
-            if (showToast) showToast(msg, 'error');
-        }
+        if (showToast) showToast(msg, 'error');
       }
     } catch (e) {
       if (showToast) showToast('Broker connection test error: ' + e.message, 'error');

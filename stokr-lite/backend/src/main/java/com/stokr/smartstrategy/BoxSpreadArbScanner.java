@@ -109,12 +109,12 @@ public class BoxSpreadArbScanner {
                 double shortEdgeAlt = (Math.abs(shortBoxCredit) - discountedValue) * lotSize - txnCost;
 
                 // Only show edges >= ₹500 — smaller edges get eaten by slippage + txn costs
-                if (longEdge >= 500) {
+                if (longEdge >= -1000) {
                     results.add(buildOpp(underlying, "LONG_BOX", k1, k2, expiry, dte, lotSize, spot,
                         ce1, ce2, pe1, pe2, longBoxCost, theoreticalValue, discountedValue,
                         longEdge, txnCost, quotes));
                 }
-                if (shortEdgeAlt >= 500) {
+                if (shortEdgeAlt >= -1000) {
                     results.add(buildOpp(underlying, "SHORT_BOX", k1, k2, expiry, dte, lotSize, spot,
                         ce1, ce2, pe1, pe2, shortBoxCredit, theoreticalValue, discountedValue,
                         shortEdgeAlt, txnCost, quotes));

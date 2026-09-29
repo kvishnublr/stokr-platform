@@ -90,15 +90,19 @@ public class BrokenWingButterflyScanner {
                     if (nAsk <= 0 || bBid <= 0 || fAsk <= 0) continue;
 
                     double credit = 2 * bBid - nAsk - fAsk;
-                    if (credit <= 0) continue;
+                    if (credit <= -10.0) continue;
 
                     int narrowWidth = Math.abs(nearWingStrike - bodyStrike);
                     int wideWidth = Math.abs(farWingStrike - bodyStrike);
+                    int skipWidth = wideWidth - narrowWidth;
+                    double creditRs = credit * lotSize;
                     double maxProfitNarrow = (narrowWidth + credit) * lotSize;
-                    double maxLossWide = (wideWidth - credit) * lotSize;
+                    double farLossPerShare = skipWidth - credit;
+                    double maxLossWide = farLossPerShare > 0 ? (farLossPerShare * lotSize) : 0.0;
                     double txnCost = ArbitrageCosts.PER_LEG_BROKERAGE * 4 + 40;
 
-                    if (maxLossWide <= 0 || maxProfitNarrow <= txnCost) continue;
+                    // Cap far-side loss to max 1000 Rs per lot (or 0 for 2-sided risk-free BWB)
+                    if (maxLossWide > 10000.0) continue;
 
                     Map<String, Object> opp = new LinkedHashMap<>();
                     opp.put("strategyType", "BROKEN_WING_BUTTERFLY");

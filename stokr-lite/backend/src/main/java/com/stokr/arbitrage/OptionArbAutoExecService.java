@@ -21,6 +21,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class OptionArbAutoExecService {
 
+    private double parseDouble(Object val, double defaultVal) {
+        if (val == null) return defaultVal;
+        if (val instanceof Number n) return n.doubleValue();
+        try { return Double.parseDouble(val.toString()); } catch (Exception e) { return defaultVal; }
+    }
+
     private final OptionArbOpportunityRepository oppRepo;
     private final LivePositionRepository positionRepo;
     private final BrokerService brokerService;
@@ -770,6 +776,9 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
      */
     @Scheduled(fixedDelayString = "5000", initialDelay = 5000)
     public synchronized void checkRollover() {
+        java.time.LocalTime nowTimeIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        boolean isMarketOpenNow = !nowTimeIST.isBefore(java.time.LocalTime.of(9, 15)) && !nowTimeIST.isAfter(java.time.LocalTime.of(15, 30));
+        if (!isMarketOpenNow) return;
 
         LocalDate todayIST = LocalDate.now(ZoneId.of("Asia/Kolkata"));
         List<LivePosition> openPositions = positionRepo.findAllOpen().stream()
@@ -817,7 +826,7 @@ for (LivePosition pos : openPositions) {
 
             if (!autoExitEnabled && !stopLossEnabled && !hasPositionTriggers) continue;
 
-            double autoExitThresholdPct = ((Number) settings.getOrDefault("autoExitThresholdPct", 90.0)).doubleValue();
+            double autoExitThresholdPct = parseDouble(settings.getOrDefault("autoExitThresholdPct", 90.0), 90.0);
             boolean isPaper = "PAPER".equalsIgnoreCase(broker);
             Long userId = null;
             BrokerAccount account = null;
@@ -940,7 +949,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             boolean shouldExit = false;
             String exitReason = "";
 
-            double stopLossPct = ((Number) settings.getOrDefault("stopLossPct", 50.0)).doubleValue();
+            double stopLossPct = parseDouble(settings.getOrDefault("stopLossPct", 50.0), 50.0);
 
             // Stop-loss: close position if loss exceeds threshold
             if (stopLossEnabled && targetEdge > 0 && pnlPerLot < 0) {
@@ -1773,29 +1782,17 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         int lotSize = pos.getLotSize() != null ? pos.getLotSize() : getLotSize(pos.getUnderlying());
         int lots = pos.getLots() != null ? pos.getLots() : 1;
 
-        // Sort legs by bid-ask spread (widest first) to minimize slippage on illiquid legs
+        // MARGIN-SAFE EXIT ORDERING:
+        // Original SELL legs (Short) must be closed FIRST by placing BUY orders to clear short liability and release margin.
+        // Original BUY legs (Long) are closed SECOND by placing SELL orders.
         List<Map<String, Object>> sortedLegs = new java.util.ArrayList<>(legs);
-        try {
-            Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(
-                    sortedLegs.stream().map(l -> (String) l.get("symbol")).filter(java.util.Objects::nonNull).toList());
-            sortedLegs.sort((a, b) -> {
-                String symA = (String) a.get("symbol");
-                String symB = (String) b.get("symbol");
-                double spreadA = 0, spreadB = 0;
-                if (symA != null && quotes.containsKey(symA)) {
-                    OptionChainService.OptionQuote q = quotes.get(symA);
-                    spreadA = q.ask > 0 && q.bid > 0 ? q.ask - q.bid : 0;
-                }
-                if (symB != null && quotes.containsKey(symB)) {
-                    OptionChainService.OptionQuote q = quotes.get(symB);
-                    spreadB = q.ask > 0 && q.bid > 0 ? q.ask - q.bid : 0;
-                }
-                return Double.compare(spreadB, spreadA);
-            });
-            log.info("Auto-exec: Executing legs widest-spread-first for pos {}", pos.getId());
-        } catch (Exception e) {
-            log.warn("Auto-exec: Could not sort legs by spread for pos {}, using original order", pos.getId());
-        }
+        sortedLegs.sort((a, b) -> {
+            boolean aShort = "SELL".equalsIgnoreCase((String) a.get("side"));
+            boolean bShort = "SELL".equalsIgnoreCase((String) b.get("side"));
+            if (aShort != bShort) return aShort ? -1 : 1; // Short legs first (BUY close orders)
+            return 0;
+        });
+        log.info("Margin-Safe Exit: Sorting original SELL legs first (BUY close orders) for pos {}", pos.getId());
 
         boolean allConfirmed = true;
         for (Map<String, Object> leg : sortedLegs) {
@@ -1934,8 +1931,17 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
      * read would leave real naked exposure, which is not.
      */
     private boolean squareOffFilledLegs(BrokerAccount account, BrokerAdapter adapter, List<PlacedLeg> legs) {
+        if (legs == null || legs.isEmpty()) return true;
+        // MARGIN-SAFE ROLLBACK ORDERING: Close original SELL legs first (closeSide = BUY) to clear short liability
+        List<PlacedLeg> sorted = new java.util.ArrayList<>(legs);
+        sorted.sort((a, b) -> {
+            boolean aShort = a.leg.side() == BrokerOrderRequest.Side.SELL;
+            boolean bShort = b.leg.side() == BrokerOrderRequest.Side.SELL;
+            return aShort == bShort ? 0 : (aShort ? -1 : 1);
+        });
+
         boolean allConfirmed = true;
-        for (PlacedLeg leg : legs) {
+        for (PlacedLeg leg : sorted) {
             BrokerOrderRequest.Side closeSide = leg.leg.side() == BrokerOrderRequest.Side.BUY
                     ? BrokerOrderRequest.Side.SELL
                     : BrokerOrderRequest.Side.BUY;

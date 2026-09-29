@@ -52,6 +52,9 @@ public class SmartStrategyExecutionService {
             return result;
         }
 
+        if (broker != null && (broker.equalsIgnoreCase("MOTILAL") || broker.equalsIgnoreCase("MOTILAL_OSWAL") || broker.equalsIgnoreCase("MOTILAL OSWAL"))) {
+            broker = "MOTILALOSWAL";
+        }
         boolean isPaper = "PAPER".equalsIgnoreCase(broker);
         int lotSize = OptionChainService.getLotSize(underlying);
         LocalDate expiryDate = expiry != null ? LocalDate.parse(expiry) : null;

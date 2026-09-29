@@ -37,9 +37,12 @@ public class SkewHarvestScanner {
                 log.error("Skew harvest scan failed for {}: {}", u, e.getMessage());
             }
         }
-        results.sort((a, b) -> Double.compare(
-            ((Number) b.getOrDefault("skewEdge", 0)).doubleValue(),
-            ((Number) a.getOrDefault("skewEdge", 0)).doubleValue()));
+        results.sort((a, b) -> {
+            double ncA = ((Number) a.getOrDefault("netCost", 0)).doubleValue();
+            double ncB = ((Number) b.getOrDefault("netCost", 0)).doubleValue();
+            if (Double.compare(ncA, ncB) != 0) return Double.compare(ncA, ncB);
+            return Double.compare(((Number) b.getOrDefault("skewEdge", 0)).doubleValue(), ((Number) a.getOrDefault("skewEdge", 0)).doubleValue());
+        });
         return results;
     }
 
@@ -108,7 +111,7 @@ public class SkewHarvestScanner {
                 Double callBuyIV = callIVs.get(callBuyStrike);
                 double skewEdge = (putSellIV != null && callBuyIV != null) ? putSellIV - callBuyIV : 0;
 
-                if (skewEdge < 2) continue;
+                // relaxed skew edge
 
                 int putSpreadWidth = Math.abs(putSellStrike - putBuyStrike);
                 int callSpreadWidth = Math.abs(callSellStrike - callBuyStrike);
@@ -157,6 +160,7 @@ public class SkewHarvestScanner {
                 results.add(opp);
             }
         }
+        results.sort((a, b) -> Double.compare(((Number) a.get("netCost")).doubleValue(), ((Number) b.get("netCost")).doubleValue()));
         return results;
     }
 

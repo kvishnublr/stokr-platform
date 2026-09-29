@@ -71,21 +71,54 @@ public class BrokerController {
                 return ResponseEntity.ok(Map.of("ok", true, "message", "Paper trading is always available", "broker", "PAPER"));
             }
             if (accounts.isEmpty()) {
-                return ResponseEntity.ok(Map.of("ok", false, "message", "No active " + broker + " account. Connect " + broker + " first.", "broker", broker.toUpperCase()));
+                return ResponseEntity.ok(Map.of("ok", false, "message", "No active " + broker + " account. Click '⚙ Keys' to connect " + broker + ".", "broker", broker.toUpperCase()));
             }
             BrokerAccount account = accounts.get(0);
-            if (account.getAccessToken() == null || account.getAccessToken().isBlank()) {
-                return ResponseEntity.ok(Map.of("ok", false, "message", broker + " access token is missing. Reconnect.", "broker", broker.toUpperCase()));
+            if ("MOTILALOSWAL".equalsIgnoreCase(broker)) {
+                boolean hasKeys = account.getMofslApiKey() != null && !account.getMofslApiKey().isBlank()
+                        && account.getMofslApiSecret() != null && !account.getMofslApiSecret().isBlank();
+                boolean isPlaceholderOrEmpty = account.getAccessToken() == null
+                        || account.getAccessToken().isBlank()
+                        || "MOFSL_ACTIVE_SESSION".equalsIgnoreCase(account.getAccessToken());
+
+                if (!hasKeys) {
+                    return ResponseEntity.ok(Map.of("ok", false, "message", "Motilal Oswal credentials missing. Click '⚙ Keys' on the Motilal Oswal card to enter credentials.", "broker", "MOTILALOSWAL"));
+                }
+
+                if (isPlaceholderOrEmpty || hasKeys) {
+                    try {
+                        MotilalOswalAdapter mAdapter = (MotilalOswalAdapter) adapter;
+                        BrokerAccount loggedIn = mAdapter.connectWithTotp(
+                                userId,
+                                account.getClientId(),
+                                account.getMofslPassword(),
+                                account.getMofslTotpSecret(),
+                                account.getMofslApiKey(),
+                                account.getMofslApiSecret(),
+                                account.getMofslDob()
+                        );
+                        if (loggedIn != null && loggedIn.getAccessToken() != null && !loggedIn.getAccessToken().isBlank()) {
+                            account = loggedIn;
+                        }
+                    } catch (Exception ex) {
+                        log.warn("MOFSL-auto-login-during-test-connection-failed: " + ex.getMessage());
+                        return ResponseEntity.ok(Map.of("ok", false, "message", "Motilal Oswal login failed: " + ex.getMessage() + ". Click '⚙ Keys' to check credentials.", "broker", "MOTILALOSWAL"));
+                    }
+                }
+            }
+            if (account.getAccessToken() == null || account.getAccessToken().isBlank() || "MOFSL_ACTIVE_SESSION".equalsIgnoreCase(account.getAccessToken())) {
+                return ResponseEntity.ok(Map.of("ok", false, "message", broker + " access token is missing or invalid. Click '⚙ Keys' to update credentials.", "broker", broker.toUpperCase()));
             }
             try {
                 var margin = adapter.getAvailableMargin(account.getAccessToken());
-                String msg = broker + " connected. Available margin: \u20B9" + String.format("%.2f", margin);
+                String msg = broker + " connected. Available margin: ₹" + String.format("%.2f", margin);
                 return ResponseEntity.ok(Map.of("ok", true, "message", msg, "broker", broker.toUpperCase()));
             } catch (Exception e) {
                 return ResponseEntity.ok(Map.of("ok", false, "message", broker + " API error: " + e.getMessage(), "broker", broker.toUpperCase()));
             }
         } catch (Exception e) {
-            return ResponseEntity.ok(Map.of("ok", false, "message", "Unknown broker: " + broker, "broker", broker.toUpperCase()));
+            log.error("testConnection error for " + broker, e);
+            return ResponseEntity.ok(Map.of("ok", false, "message", "Error testing " + broker + ": " + e.getMessage(), "broker", broker.toUpperCase()));
         }
     }
 
