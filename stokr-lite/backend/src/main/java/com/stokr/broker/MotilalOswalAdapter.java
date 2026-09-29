@@ -67,8 +67,18 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         boolean isExpired() { return System.currentTimeMillis() > expiresAt; }
     }
 
+    /**
+     * Logs in every account and runs the read-only self-test on a background thread: these are
+     * network calls (10+ logins, a large scrip-master download) and must never delay app startup.
+     */
     @PostConstruct
-    public void autoLoginOnStartup() {
+    public void scheduleStartupLogin() {
+        Thread t = new Thread(this::autoLoginOnStartup, "mofsl-startup-login");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    void autoLoginOnStartup() {
         try {
             List<BrokerAccount> active = repository.findByBrokerNameAndStatus("MOTILALOSWAL", "ACTIVE");
             long complete = active.stream().filter(a -> a.getMofslPassword() != null
