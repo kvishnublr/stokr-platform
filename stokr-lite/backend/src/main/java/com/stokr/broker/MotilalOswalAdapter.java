@@ -71,9 +71,12 @@ public class MotilalOswalAdapter implements BrokerAdapter {
                 if (acct.getMofslPassword() != null && acct.getMofslTotpSecret() != null && acct.getMofslApiKey() != null) {
                     log.info("MOFSL: auto-login on startup for clientCode={}", acct.getClientId());
                     try {
-                        acct.setAccessToken(login(acct));
+                        String token = login(acct);
+                        acct.setAccessToken(token);
                         repository.save(acct);
                         log.info("MOFSL: startup login successful for account {}", acct.getId());
+                        // Exercise the balance call once so every deploy verifies the full path.
+                        getAvailableMargin(token);
                     } catch (Exception e) {
                         log.warn("MOFSL: startup login failed for {}: {}", acct.getClientId(), e.getMessage());
                     }
