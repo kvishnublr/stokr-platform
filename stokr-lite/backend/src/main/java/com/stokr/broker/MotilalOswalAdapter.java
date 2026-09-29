@@ -48,10 +48,13 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     /** Scrip master entry: MO numeric scrip code and the contract's market lot. */
     record Scrip(int code, int lot) {}
 
-    // "NSEFO|<symbol>" → scrip (MO scrip name plus Kite-style aliases), refreshed every 6 hours
-    private volatile Map<String, Scrip> scripMaster = Collections.emptyMap();
-    private volatile long scripMasterLoadedAt = 0;
+    // Per exchange: "NSEFO|<symbol>" → scrip (MO scrip name plus Kite-style aliases), refreshed every 6 hours
+    private final ConcurrentHashMap<String, Map<String, Scrip>> scripMasters = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> scripMasterLoadedAt = new ConcurrentHashMap<>();
     private static final long SCRIP_MASTER_TTL = 6 * 60 * 60 * 1000L;
+
+    /** Every session token this adapter issued → its account, so calls stay on the caller's account. */
+    private final ConcurrentHashMap<String, Long> tokenOwner = new ConcurrentHashMap<>();
 
     /** Why the last margin fetch returned 0, or null when it succeeded. */
     private volatile String lastMarginError;
@@ -79,8 +82,9 @@ public class MotilalOswalAdapter implements BrokerAdapter {
                         acct.setAccessToken(token);
                         repository.save(acct);
                         log.info("MOFSL: startup login successful for account {}", acct.getId());
-                        // Exercise the balance call once so every deploy verifies the full path.
+                        // Exercise the read-only calls once so every deploy verifies the full path.
                         getAvailableMargin(token);
+                        if (verifiedClients.add(acct.getClientId())) selfTest(token);
                     } catch (Exception e) {
                         log.warn("MOFSL: startup login failed for {}: {}", acct.getClientId(), e.getMessage());
                     }
@@ -88,6 +92,30 @@ public class MotilalOswalAdapter implements BrokerAdapter {
             }
         } catch (Exception e) {
             log.warn("MOFSL: startup auto-login error: {}", e.getMessage());
+        }
+    }
+
+    private final Set<String> verifiedClients = ConcurrentHashMap.newKeySet();
+
+    /** Read-only startup checks (never places orders): positions, order book, F&O symbol resolution. */
+    private void selfTest(String token) {
+        getPositions(token);
+        try {
+            JsonNode root = call(token, "/rest/book/v5/getorderbook", Map.of());
+            if ("SUCCESS".equalsIgnoreCase(root.path("status").asText(""))) {
+                log.info("MOFSL: order book ok ({} orders)", root.path("data").size());
+            } else {
+                log.warn("MOFSL: order book failed: {}", root.path("message").asText(root.toString()));
+            }
+        } catch (Exception e) {
+            log.warn("MOFSL: order book failed: {}", e.getMessage());
+        }
+        Map<String, Scrip> fo = ensureScripMaster("NSEFO");
+        long optionSymbols = fo.keySet().stream().filter(k -> k.matches("NSEFO\\|NIFTY\\d{2}[A-Z0-9]{3}\\d+(CE|PE)")).count();
+        if (optionSymbols == 0) {
+            log.warn("MOFSL: symbol check failed: NSEFO scrip master has {} entries, 0 NIFTY option symbols", fo.size());
+        } else {
+            log.info("MOFSL: symbol check ok ({} NSEFO entries, {} NIFTY option symbols)", fo.size(), optionSymbols);
         }
     }
 
@@ -106,13 +134,18 @@ public class MotilalOswalAdapter implements BrokerAdapter {
 
     // ---- Scrip master: trading symbol → scrip code + lot ----
 
-    private void ensureScripMaster(String exchange) {
-        if (!scripMaster.isEmpty() && (System.currentTimeMillis() - scripMasterLoadedAt) < SCRIP_MASTER_TTL) return;
-        loadScripMasterCsv(exchange);
+    private boolean scripMasterFresh(String exchange) {
+        return scripMasters.containsKey(exchange)
+                && (System.currentTimeMillis() - scripMasterLoadedAt.getOrDefault(exchange, 0L)) < SCRIP_MASTER_TTL;
+    }
+
+    private Map<String, Scrip> ensureScripMaster(String exchange) {
+        if (!scripMasterFresh(exchange)) loadScripMasterCsv(exchange);
+        return scripMasters.getOrDefault(exchange, Map.of());
     }
 
     private synchronized void loadScripMasterCsv(String exchange) {
-        if (!scripMaster.isEmpty() && (System.currentTimeMillis() - scripMasterLoadedAt) < SCRIP_MASTER_TTL) return;
+        if (scripMasterFresh(exchange)) return;
         String url = MOFSL_BASE + "/getscripmastercsv?name=" + exchange;
         log.info("MOFSL: downloading scrip master from {}", url);
         try {
@@ -124,8 +157,8 @@ public class MotilalOswalAdapter implements BrokerAdapter {
                 log.warn("MOFSL: scrip master empty/unparseable for {}", exchange);
                 return;
             }
-            scripMaster = parsed;
-            scripMasterLoadedAt = System.currentTimeMillis();
+            scripMasters.put(exchange, parsed);
+            scripMasterLoadedAt.put(exchange, System.currentTimeMillis());
             log.info("MOFSL: scrip master loaded {} entries for {}", parsed.size(), exchange);
         } catch (Exception e) {
             log.error("MOFSL: scrip master download failed: {}", e.getMessage());
@@ -199,8 +232,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
 
     /** Exact lookup only — never scans for a partial match, which could pick another contract. */
     private Scrip resolveScrip(String exchange, String tradingSymbol) {
-        ensureScripMaster(exchange);
-        Scrip s = scripMaster.get(exchange.toUpperCase() + "|" + tradingSymbol.toUpperCase());
+        Scrip s = ensureScripMaster(exchange).get(exchange.toUpperCase() + "|" + tradingSymbol.toUpperCase());
         if (s == null) log.warn("MOFSL: no scrip found for {} on {}", tradingSymbol, exchange);
         return s;
     }
@@ -276,6 +308,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
             if (token == null || token.isBlank()) throw new RuntimeException("MOFSL login returned no AuthToken");
             sessionCache.put(account.getId(), new CachedSession(token, clientCode, apiKey,
                     account.getMofslApiSecret(), sessionExpiry(ZonedDateTime.now(IST))));
+            if (account.getId() != null) tokenOwner.put(token, account.getId());
             log.info("MOFSL: login successful for clientCode={}", clientCode);
             return token;
         } catch (RuntimeException e) {
@@ -297,21 +330,43 @@ public class MotilalOswalAdapter implements BrokerAdapter {
         return Math.min(cutoff.toInstant().toEpochMilli(), cap);
     }
 
-    private record ResolvedAccount(String token, String clientCode, String apiKey, String apiSecret) {}
+    private record ResolvedAccount(Long accountId, String token, String clientCode, String apiKey, String apiSecret) {}
 
-    /** Session for this token, else a (re-)login of the active account. {@code login} may throw. */
+    /**
+     * Live session for the account that owns {@code accessToken}. A stale token (expired session, or
+     * one stored in the DB before a restart) re-logs in that same account and stores the new token.
+     * Only when the token belongs to no known account does it fall back to the first active account.
+     */
     private ResolvedAccount ensureToken(String accessToken) {
-        if (accessToken != null) {
-            for (CachedSession c : sessionCache.values()) {
+        Long ownerId = null;
+        if (accessToken != null && !accessToken.isBlank()) {
+            for (Map.Entry<Long, CachedSession> e : sessionCache.entrySet()) {
+                CachedSession c = e.getValue();
                 if (c.token.equals(accessToken) && !c.isExpired()) {
-                    return new ResolvedAccount(accessToken, c.clientCode, c.apiKey, c.apiSecret);
+                    return new ResolvedAccount(e.getKey(), accessToken, c.clientCode, c.apiKey, c.apiSecret);
                 }
             }
+            ownerId = tokenOwner.get(accessToken);
+            if (ownerId == null) ownerId = repository.findByAccessToken(accessToken).map(BrokerAccount::getId).orElse(null);
         }
-        List<BrokerAccount> accounts = repository.findByBrokerNameAndStatus("MOTILALOSWAL", "ACTIVE");
-        if (accounts.isEmpty()) throw new IllegalStateException("No active Motilal Oswal account");
-        BrokerAccount acct = accounts.get(0);
-        return new ResolvedAccount(login(acct), acct.getClientId(), acct.getMofslApiKey(), acct.getMofslApiSecret());
+        BrokerAccount acct = ownerId != null ? repository.findById(ownerId).orElse(null) : null;
+        if (acct == null) {
+            List<BrokerAccount> accounts = repository.findByBrokerNameAndStatus("MOTILALOSWAL", "ACTIVE");
+            if (accounts.isEmpty()) throw new IllegalStateException("No active Motilal Oswal account");
+            acct = accounts.get(0);
+            log.warn("MOFSL: token matches no account; using first active account {}", acct.getId());
+        }
+        return relogin(acct);
+    }
+
+    /** Session for {@code acct} (cached while still valid), persisting a newly issued token. */
+    private ResolvedAccount relogin(BrokerAccount acct) {
+        String token = login(acct);
+        if (!token.equals(acct.getAccessToken())) {
+            acct.setAccessToken(token);
+            repository.save(acct);
+        }
+        return new ResolvedAccount(acct.getId(), token, acct.getClientId(), acct.getMofslApiKey(), acct.getMofslApiSecret());
     }
 
     /** MO API rejects stale/missing sessions with an auth message instead of data. */
@@ -331,7 +386,8 @@ public class MotilalOswalAdapter implements BrokerAdapter {
             log.info("MOFSL: session rejected on {} ({}), re-logging in", path, root.path("message").asText());
             final String stale = r.token;
             sessionCache.values().removeIf(c -> c.token.equals(stale));
-            r = ensureToken(null);
+            BrokerAccount acct = r.accountId() != null ? repository.findById(r.accountId()).orElse(null) : null;
+            r = acct != null ? relogin(acct) : ensureToken(null);
             root = MAPPER.readTree(mofslPost(path, body, r.token, r.apiKey, r.apiSecret, r.clientCode));
         }
         return root;
@@ -439,7 +495,9 @@ public class MotilalOswalAdapter implements BrokerAdapter {
                 log.warn("MOFSL getPositions failed: {}", root.path("message").asText());
                 return Collections.emptyList();
             }
-            return parsePositions(root.path("data"));
+            List<BrokerPosition> positions = parsePositions(root.path("data"));
+            log.info("MOFSL: positions ok ({} open)", positions.size());
+            return positions;
         } catch (Exception e) {
             log.warn("MOFSL getPositions failed: {}", e.getMessage());
             return Collections.emptyList();
