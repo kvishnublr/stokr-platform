@@ -15,6 +15,13 @@ SSH_OPTS="-i $SSH_KEY -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChe
 LINES=$(ssh $SSH_OPTS "${DEPLOY_USER}@${DEPLOY_HOST}" \
   "journalctl -u stokr-lite --since '-6 hours' --no-pager -o short-iso 2>/dev/null | grep -E 'MOFSL' | grep -E 'login successful|login failed|startup login|margin fetch failed|available margin=' | tail -20" || true)
 
+# Diagnostics that reveal no account data: is the service logging to the journal at all, and
+# how many Motilal accounts did the startup login find.
+ssh $SSH_OPTS "${DEPLOY_USER}@${DEPLOY_HOST}" \
+  "echo \"service log lines (last 10 min): \$(journalctl -u stokr-lite --since '-10 min' --no-pager 2>/dev/null | wc -l)\"; \
+   systemctl show stokr-lite -p StandardOutput -p ActiveEnterTimestamp 2>/dev/null; \
+   journalctl -u stokr-lite --since '-6 hours' --no-pager 2>/dev/null | grep -o 'MOFSL: startup found.*' | tail -3" || true
+
 if [ -z "$LINES" ]; then
   echo "No MOFSL login/margin lines in the last 6 hours of the stokr-lite log."
   echo "(The service logs a login attempt at every start if a Motilal account is connected.)"

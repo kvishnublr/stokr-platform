@@ -67,7 +67,11 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     @PostConstruct
     public void autoLoginOnStartup() {
         try {
-            for (BrokerAccount acct : repository.findByBrokerNameAndStatus("MOTILALOSWAL", "ACTIVE")) {
+            List<BrokerAccount> active = repository.findByBrokerNameAndStatus("MOTILALOSWAL", "ACTIVE");
+            long complete = active.stream().filter(a -> a.getMofslPassword() != null
+                && a.getMofslTotpSecret() != null && a.getMofslApiKey() != null).count();
+            log.info("MOFSL: startup found {} active account(s), {} with full credentials", active.size(), complete);
+            for (BrokerAccount acct : active) {
                 if (acct.getMofslPassword() != null && acct.getMofslTotpSecret() != null && acct.getMofslApiKey() != null) {
                     log.info("MOFSL: auto-login on startup for clientCode={}", acct.getClientId());
                     try {
