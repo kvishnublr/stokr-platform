@@ -39,6 +39,13 @@ export default function Dashboard() {
     refetchInterval: 60000,
   });
 
+  const { data: tickerData = [] } = useQuery({
+    queryKey: ['marketTicker'],
+    queryFn: () => client.get('/market/ticker').then((r) => r.data),
+    refetchInterval: 10000,
+    staleTime: 5000,
+  });
+
   const { data: signalStats } = useQuery({
     queryKey: ['signal-stats'],
     queryFn: () => client.get('/signals/stats').then((r) => r.data),
@@ -84,6 +91,23 @@ export default function Dashboard() {
     return positions.reduce((sum, p) => sum + (parseFloat(p.realizedPnl) || 0), 0);
   }, [positions]);
 
+  const displayTickerItems = useMemo(() => {
+    if (Array.isArray(tickerData) && tickerData.length > 0) return tickerData;
+    return [
+      { symbol: 'NIFTY50', label: 'NIFTY 50', price: 25340.50, change: 60.50, percentChange: 0.24, isUp: true },
+      { symbol: 'BANKNIFTY', label: 'BANK NIFTY', price: 54210.00, change: -120.40, percentChange: -0.22, isUp: false },
+      { symbol: 'FINNIFTY', label: 'FINNIFTY', price: 24850.00, change: 35.10, percentChange: 0.14, isUp: true },
+      { symbol: 'RELIANCE', label: 'RELIANCE', price: 1241.90, change: 14.50, percentChange: 1.18, isUp: true },
+      { symbol: 'HDFCBANK', label: 'HDFC BANK', price: 1716.45, change: 8.20, percentChange: 0.48, isUp: true },
+      { symbol: 'TCS', label: 'TCS', price: 3820.00, change: -15.40, percentChange: -0.40, isUp: false },
+      { symbol: 'INFY', label: 'INFOSYS', price: 1853.80, change: 22.10, percentChange: 1.21, isUp: true },
+      { symbol: 'ICICIBANK', label: 'ICICI BANK', price: 1253.70, change: -4.30, percentChange: -0.34, isUp: false },
+      { symbol: 'SBIN', label: 'SBIN', price: 816.90, change: 9.80, percentChange: 1.21, isUp: true },
+      { symbol: 'BHARTIARTL', label: 'BHARTI AIRTEL', price: 1680.50, change: 11.20, percentChange: 0.67, isUp: true },
+      { symbol: 'LT', label: 'L&T', price: 3640.00, change: 28.50, percentChange: 0.79, isUp: true },
+    ];
+  }, [tickerData]);
+
   return (
     <div>
       {/* Header */}
@@ -92,7 +116,7 @@ export default function Dashboard() {
           <h1 style={{ fontSize: '32px', fontWeight: 900, background: 'linear-gradient(135deg, #0f172a 0%, #4f46e5 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '-1px', marginBottom: '6px' }}>Trading Dashboard</h1>
           <div style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div className="live-indicator" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(52,211,153,0.1))', borderRadius: '8px', color: '#059669', fontWeight: 600, fontSize: '11px' }}>
-              <div className="animate-pulse-dot" style={{ width: '6px', height: '6px', background: '#10b981', borderRadius: '50%' }} />
+              <div className="animate-pulse-dot" style={{ width: '6px', height: '6px', background: marketStatus?.isOpen ? '#10b981' : '#f59e0b', borderRadius: '50%' }} />
               {marketStatus?.isOpen ? 'NSE Market Open' : 'NSE Market Closed'}
             </div>
             <span>•</span>
@@ -105,34 +129,80 @@ export default function Dashboard() {
       </div>
 
       {/* Market Ticker */}
-      <div className="ticker-container-aurora" style={{ marginBottom: '28px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11px', fontWeight: 750, textTransform: 'uppercase', letterSpacing: '1.2px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-          <div className="animate-pulse-dot" style={{ width: '6px', height: '6px', background: '#10b981', borderRadius: '50%' }} />
-          Real-time Market
+      <div className="ticker-container-aurora" style={{ marginBottom: '28px', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11px', fontWeight: 750, textTransform: 'uppercase', letterSpacing: '1.2px', color: 'var(--text-muted)' }}>
+            <div className="animate-pulse-dot" style={{ width: '6px', height: '6px', background: marketStatus?.isOpen ? '#10b981' : '#f59e0b', borderRadius: '50%' }} />
+            {marketStatus?.isOpen ? 'Real-time Market • Live Stream' : 'Market Snapshot • End of Day'}
+          </div>
+          <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8' }}>
+            Auto-refresh 10s • Hover to pause
+          </span>
         </div>
-        <div style={{ display: 'flex', gap: '32px', animation: 'scroll-infinite 35s linear infinite', padding: '4px 0' }}>
-          {['NIFTY50|23,847|↑1.24%','RELIANCE|2,847|↑2.18%','TCS|3,612|↓0.45%','HDFCBANK|1,687|↑0.92%','INFY|1,524|↑1.67%','ICICIBANK|1,198|↓0.31%','SBIN|842|↑1.85%'].map((item, i) => {
-            const [sym, price, change] = item.split('|');
-            const isUp = change.startsWith('↑');
-            return (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', whiteSpace: 'nowrap', padding: '6px 14px', borderRadius: '10px', background: 'rgba(99,102,241,0.04)' }}>
-                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{sym}</span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', fontWeight: 600, color: '#64748b' }}>{price}</span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', background: isUp ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.1)', color: isUp ? '#059669' : '#dc2626' }}>{change}</span>
-              </div>
-            );
-          })}
-          {['NIFTY50|23,847|↑1.24%','RELIANCE|2,847|↑2.18%','TCS|3,612|↓0.45%','HDFCBANK|1,687|↑0.92%','INFY|1,524|↑1.67%','ICICIBANK|1,198|↓0.31%','SBIN|842|↑1.85%'].map((item, i) => {
-            const [sym, price, change] = item.split('|');
-            const isUp = change.startsWith('↑');
-            return (
-              <div key={`dup-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '12px', whiteSpace: 'nowrap', padding: '6px 14px', borderRadius: '10px', background: 'rgba(99,102,241,0.04)' }}>
-                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{sym}</span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', fontWeight: 600, color: '#64748b' }}>{price}</span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', background: isUp ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.1)', color: isUp ? '#059669' : '#dc2626' }}>{change}</span>
-              </div>
-            );
-          })}
+
+        <div style={{ position: 'relative', overflow: 'hidden', padding: '4px 0', maskImage: 'linear-gradient(to right, transparent, black 30px, black calc(100% - 30px), transparent)', WebkitMaskImage: 'linear-gradient(to right, transparent, black 30px, black calc(100% - 30px), transparent)' }}>
+          <div
+            className="ticker-track"
+            style={{
+              display: 'flex',
+              gap: '16px',
+              animation: 'scroll-infinite 45s linear infinite',
+              width: 'max-content',
+              paddingLeft: '16px',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.animationPlayState = 'paused')}
+            onMouseLeave={(e) => (e.currentTarget.style.animationPlayState = 'running')}
+          >
+            {[...displayTickerItems, ...displayTickerItems].map((item, idx) => {
+              const isUp = item.isUp ?? (item.change >= 0);
+              const formattedPrice = Number(item.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              const changeVal = Math.abs(Number(item.change || 0));
+              const pctVal = Math.abs(Number(item.percentChange || 0));
+              const changeStr = `${isUp ? '+' : '-'}${changeVal.toFixed(2)} (${isUp ? '+' : '-'}${pctVal.toFixed(2)}%)`;
+
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    whiteSpace: 'nowrap',
+                    padding: '7px 15px',
+                    borderRadius: '10px',
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.9), rgba(248,250,252,0.85))',
+                    border: '1px solid rgba(226,232,240,0.9)',
+                    boxShadow: '0 2px 6px rgba(15,23,42,0.03)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.2px' }}>
+                    {item.label || item.symbol}
+                  </span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                    ₹{formattedPrice}
+                  </span>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      background: isUp ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.1)',
+                      color: isUp ? '#059669' : '#dc2626',
+                      border: `1px solid ${isUp ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                    }}
+                  >
+                    {isUp ? '▲' : '▼'} {changeStr}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -169,239 +239,103 @@ export default function Dashboard() {
               </div>
             </div>
             <div style={{ textAlign: 'center', padding: '16px', borderRadius: '12px', background: 'linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0.5))', border: '2px solid rgba(255,255,255,0.6)' }}>
-              <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#94a3b8', marginBottom: '8px' }}>Open Positions</div>
-              <div style={{ fontSize: '24px', fontWeight: 900, color: '#4f46e5' }}>{positions.length}</div>
+              <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#94a3b8', marginBottom: '8px' }}>Total Positions</div>
+              <div style={{ fontSize: '24px', fontWeight: 900, color: '#4f46e5' }}>
+                {positions.length}
+              </div>
             </div>
           </div>
         </div>
 
+        {/* Signals Quick Stats */}
         <div className="card-crystal">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid rgba(148,163,184,0.08)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>
-              <div style={{ width: '32px', height: '32px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', background: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(251,191,36,0.1))' }}>🎯</div>
-              Signal Stats
+              <div style={{ width: '32px', height: '32px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(167,139,250,0.1))' }}>⚡</div>
+              Signal Engine
             </div>
-            <Link to="/signals" style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', padding: '5px 12px', borderRadius: '8px', background: 'rgba(99,102,241,0.08)', color: '#6366f1', textDecoration: 'none' }}>View All</Link>
+            <Link to="/signals" style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', padding: '5px 12px', borderRadius: '8px', background: 'rgba(99,102,241,0.08)', color: '#6366f1', textDecoration: 'none' }}>Signals</Link>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-            <MiniStat label="Today" value={signalStats?.today || 0} color="#f59e0b" />
-            <MiniStat label="Active" value={signalStats?.active || 0} color="#10b981" />
-            <MiniStat label="Total" value={signalStats?.total || 0} color="#3b82f6" />
+            <div style={{ textAlign: 'center', padding: '16px', borderRadius: '12px', background: 'linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0.5))', border: '2px solid rgba(255,255,255,0.6)' }}>
+              <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#94a3b8', marginBottom: '8px' }}>Today Signals</div>
+              <div style={{ fontSize: '24px', fontWeight: 900, color: '#4f46e5' }}>{signalStats?.today || 0}</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '16px', borderRadius: '12px', background: 'linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0.5))', border: '2px solid rgba(255,255,255,0.6)' }}>
+              <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#94a3b8', marginBottom: '8px' }}>Executed</div>
+              <div style={{ fontSize: '24px', fontWeight: 900, color: '#059669' }}>{signalStats?.executed || 0}</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '16px', borderRadius: '12px', background: 'linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0.5))', border: '2px solid rgba(255,255,255,0.6)' }}>
+              <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#94a3b8', marginBottom: '8px' }}>Win Rate</div>
+              <div style={{ fontSize: '24px', fontWeight: 900, color: '#d97706' }}>{signalStats?.winRate ? `${signalStats.winRate.toFixed(0)}%` : '—'}</div>
+            </div>
           </div>
-          {positions.length > 0 && (
-            <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: '#94a3b8', marginBottom: '4px' }}>Open Positions</div>
-              {positions.slice(0, 4).map((p) => (
-                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '10px', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(148,163,184,0.1)' }}>
-                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, background: p.side === 'BUY' ? '#10b981' : '#ef4444' }} />
-                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', flex: 1 }}>{p.symbol}</span>
-                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b' }}>{p.quantity} @ {parseFloat(p.entryPrice).toFixed(1)}</span>
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: parseFloat(p.unrealizedPnl) >= 0 ? '#059669' : '#dc2626' }}>
-                    {parseFloat(p.unrealizedPnl) >= 0 ? '+' : ''}₹{parseFloat(p.unrealizedPnl || 0).toFixed(0)}
+        </div>
+      </div>
+
+      {/* Main Grid: Deployments + Equity Curve */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
+        {/* Active Deployments */}
+        <div className="card-crystal">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', paddingBottom: '16px', borderBottom: '2px solid rgba(148,163,184,0.08)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(167,139,250,0.1))' }}>🚀</div>
+              Deployments ({deployments?.length || 0})
+            </div>
+            <Link to="/deployments" style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', padding: '5px 12px', borderRadius: '8px', background: 'rgba(99,102,241,0.08)', color: '#6366f1', textDecoration: 'none' }}>View All</Link>
+          </div>
+          {deployments && deployments.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {deployments.slice(0, 5).map((d) => (
+                <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '12px', background: 'linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0.5))', border: '1px solid rgba(226,232,240,0.6)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: d.status === 'ACTIVE' ? '#10b981' : '#94a3b8' }} />
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{d.name || `Deploy #${d.id}`}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{d.symbols?.slice(0, 3).join(', ')} • {d.mode}</div>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '10px', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', background: d.status === 'ACTIVE' ? 'rgba(16,185,129,0.12)' : 'rgba(148,163,184,0.12)', color: d.status === 'ACTIVE' ? '#059669' : '#64748b' }}>
+                    {d.status}
                   </span>
                 </div>
               ))}
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Content Grid: Chart + Active Deployments */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
-        {/* Portfolio Equity Curve */}
-        <PnlChart />
-
-
-        {/* Active Deployments */}
-        <div className="card-crystal">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid rgba(148,163,184,0.08)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>
-              <div style={{ width: '32px', height: '32px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(110,231,183,0.1))' }}>⚡</div>
-              Active Deployments
-            </div>
-            <Link to="/deployments" style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', padding: '5px 12px', borderRadius: '8px', background: 'rgba(99,102,241,0.08)', color: '#6366f1', textDecoration: 'none' }}>View All</Link>
-          </div>
-          {active.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px 0' }}>
-              <div style={{ fontSize: '40px', marginBottom: '12px' }}>📭</div>
-              <p style={{ color: '#94a3b8', fontSize: '14px' }}>No active deployments</p>
-              <Link to="/deployments" style={{ color: '#6366f1', fontSize: '13px', fontWeight: 600, marginTop: '8px', display: 'inline-block', textDecoration: 'none' }}>Deploy a strategy →</Link>
-            </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {active.slice(0, 5).map((d, i) => (
-                <div key={d.id} className="signal-row-aurora" style={{ animationDelay: `${i * 100}ms` }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 800, flexShrink: 0, background: 'rgba(16,185,129,0.15)', color: '#059669' }}>▲</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{d.strategyName || `Strategy #${d.strategyId}`}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{new Date(d.createdAt).toLocaleDateString()}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '13px', fontWeight: 700, color: '#4f46e5' }}>₹{d.capital?.toLocaleString() || 0}</div>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{d.mode}</div>
-                  </div>
-                </div>
-              ))}
+            <div style={{ textAlign: 'center', padding: '32px 0', color: '#94a3b8', fontSize: '13px' }}>
+              No deployments created yet.
             </div>
           )}
         </div>
+
+        {/* Equity Curve Chart */}
+        <EquityCurveCard />
       </div>
 
-      {/* Strategies Section */}
-      <div className="card-crystal" style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid rgba(148,163,184,0.08)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>
-            <div style={{ width: '32px', height: '32px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', background: 'linear-gradient(135deg, rgba(139,92,246,0.15), rgba(167,139,250,0.1))' }}>🎯</div>
-            Active Strategies
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', padding: '5px 12px', borderRadius: '8px', background: 'rgba(16,185,129,0.12)', color: '#059669' }}>{active.length} Live</span>
-            <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', padding: '5px 12px', borderRadius: '8px', background: 'rgba(245,158,11,0.12)', color: '#d97706' }}>{paper.length} Paper</span>
-          </div>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {active.slice(0, 3).map((d, i) => (
-            <StrategyCard key={d.id} name={d.strategyName || `Strategy #${d.strategyId}`} desc={`${d.mode} mode • Capital: ₹${d.capital?.toLocaleString() || 0}`} mode={d.mode} delay={i} />
-          ))}
-          {active.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '14px' }}>
-              No active strategies. <Link to="/deployments" style={{ color: '#6366f1', textDecoration: 'none' }}>Deploy one now →</Link>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Bottom Grid: Market Status + Recent Orders + Activity */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '24px' }}>
-        {/* Market Status */}
-        <div className="card-crystal">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid rgba(148,163,184,0.08)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>
-              <div style={{ width: '32px', height: '32px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', background: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(251,191,36,0.1))' }}>🏛️</div>
-              Market Status
-            </div>
-            <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', padding: '5px 12px', borderRadius: '8px', background: 'rgba(99,102,241,0.08)', color: '#6366f1' }}>NSE</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px', borderRadius: '14px', background: 'linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0.5))', border: '2px solid rgba(255,255,255,0.6)' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: marketStatus?.isOpen ? '#10b981' : '#ef4444', animation: marketStatus?.isOpen ? 'pulse-dot 1.5s ease-in-out infinite' : 'none' }} />
-            <div>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>{marketStatus?.isOpen ? 'Market is Open' : 'Market is Closed'}</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>NSE/BSE • 09:15 - 15:30 IST</div>
-            </div>
-          </div>
-          <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <InfoRow label="Session" value="09:15 - 15:30 IST" />
-            <InfoRow label="EOD Square-off" value="15:15 IST" />
-            <InfoRow label="Broker Status" value={brokerHealth?.ok ? '✅ Connected' : '⚠️ Disconnected'} />
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="card-crystal">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid rgba(148,163,184,0.08)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>
-              <div style={{ width: '32px', height: '32px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', background: 'linear-gradient(135deg, rgba(56,189,248,0.15), rgba(125,211,252,0.1))' }}>🚀</div>
-              Quick Actions
-            </div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <QuickAction to="/deployments" icon="⚡" title="New Deployment" desc="Deploy a trading strategy" color="linear-gradient(135deg, #6366f1, #8b5cf6)" />
-            <QuickAction to="/brokers" icon="🏦" title="Connect Broker" desc="Link your trading account" color="linear-gradient(135deg, #10b981, #34d399)" />
-            <QuickAction to="/strategies" icon="🎯" title="View Strategies" desc="Browse available strategies" color="linear-gradient(135deg, #f59e0b, #fbbf24)" />
-          </div>
-        </div>
-
-        {/* Recent Orders */}
-        <div className="card-crystal">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid rgba(148,163,184,0.08)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>
-              <div style={{ width: '32px', height: '32px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(167,139,250,0.1))' }}>🕐</div>
-              Recent Orders
-            </div>
-            <Link to="/orders" style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', padding: '5px 12px', borderRadius: '8px', background: 'rgba(99,102,241,0.08)', color: '#6366f1', textDecoration: 'none' }}>View All</Link>
-          </div>
-          {orderList.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '13px' }}>
-              <div style={{ fontSize: '24px', marginBottom: '6px' }}>📭</div>
-              No orders yet
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              {orderList.slice(0, 5).map((o) => (
-                <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 6px', borderBottom: '1px solid rgba(148,163,184,0.06)' }}>
-                  <div style={{ width: '28px', height: '28px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', flexShrink: 0, background: o.side === 'BUY' ? 'linear-gradient(135deg, rgba(16,185,129,0.2), rgba(110,231,183,0.15))' : 'linear-gradient(135deg, rgba(239,68,68,0.2), rgba(248,113,113,0.15))' }}>
-                    {o.side === 'BUY' ? '▲' : '▼'}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      {o.symbol}
-                      <span style={{ fontSize: '10px', fontWeight: 600, color: getStatusColor(o.status) }}>{o.status}</span>
-                    </div>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{o.quantity} × ₹{parseFloat(o.price || 0).toFixed(1)} · {new Date(o.createdAt).toLocaleTimeString()}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      {/* Quick Actions Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+        <QuickAction to="/smart-strategies" icon="🎯" title="Smart Strategies" desc="Options spreads & butterflies" color="linear-gradient(135deg, #6366f1, #a78bfa)" />
+        <QuickAction to="/option-arbitrage" icon="⚡" title="Option Arbitrage" desc="Bid parity & conversion" color="linear-gradient(135deg, #10b981, #34d399)" />
+        <QuickAction to="/trader-dashboard" icon="📈" title="Trader Engine" desc="Multi-strategy deployments" color="linear-gradient(135deg, #f59e0b, #fbbf24)" />
+        <QuickAction to="/strategy-builder" icon="🛠️" title="Strategy Builder" desc="Custom rule-based strategies" color="linear-gradient(135deg, #ec4899, #f472b6)" />
       </div>
     </div>
   );
-}
-
-function MiniStat({ label, value, color }) {
-  return (
-    <div style={{ textAlign: 'center', padding: '14px', borderRadius: '12px', background: 'linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0.5))', border: '2px solid rgba(255,255,255,0.6)' }}>
-      <div style={{ fontSize: '24px', fontWeight: 900, color }}>{value ?? '—'}</div>
-      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.7px', color: '#94a3b8', marginTop: '4px' }}>{label}</div>
-    </div>
-  );
-}
-
-function getStatusColor(status) {
-  switch (status) {
-    case 'COMPLETE': return '#10b981';
-    case 'REJECTED': return '#ef4444';
-    case 'PENDING':
-    case 'OPEN': return '#f59e0b';
-    case 'CANCELLED': return '#64748b';
-    default: return '#64748b';
-  }
 }
 
 function StatBox({ icon, label, value, color, gradient }) {
   return (
     <div className="stat-box-aurora">
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', borderRadius: '18px 18px 0 0', background: gradient }} />
-      <div style={{ width: '50px', height: '50px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', marginBottom: '14px', background: `linear-gradient(135deg, ${color}15, ${color}0A)` }}>
-        {icon}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+        <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', color: '#fff', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>{icon}</div>
       </div>
-      <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-muted)', marginBottom: '8px' }}>{label}</div>
-      <div style={{ fontSize: '32px', fontWeight: 900, letterSpacing: '-1px', lineHeight: 1, marginBottom: '10px', color }}>
-        <AnimatedCounter value={value} />
-      </div>
+      <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#94a3b8', marginBottom: '4px' }}>{label}</div>
+      <div style={{ fontSize: '26px', fontWeight: 900, color: 'var(--text-primary)' }}>{value}</div>
     </div>
   );
 }
 
-function StrategyCard({ name, desc, mode, delay }) {
-  return (
-    <div className="strategy-card-aurora" style={{ animationDelay: `${delay * 100}ms` }}>
-      <div style={{ width: '48px', height: '48px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', flexShrink: 0, background: mode === 'LIVE' ? 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(129,140,248,0.15))' : 'linear-gradient(135deg, rgba(245,158,11,0.2), rgba(251,191,36,0.15))' }}>
-        {mode === 'LIVE' ? '🌅' : '📄'}
-      </div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>{name}</div>
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{desc}</div>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <span style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px', padding: '4px 10px', borderRadius: '8px', background: mode === 'LIVE' ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)', color: mode === 'LIVE' ? '#059669' : '#d97706' }}>{mode}</span>
-      </div>
-    </div>
-  );
-}
-
-function PnlChart() {
+function EquityCurveCard() {
   const [days, setDays] = useState(30);
   const { data: history, isLoading } = useQuery({
     queryKey: ['pnl-history', days],
@@ -414,7 +348,6 @@ function PnlChart() {
   const totalPnl = points.length > 0 ? points[points.length - 1].cumulative : 0;
   const isPositive = totalPnl >= 0;
 
-  // Build SVG path from cumulative values
   function buildPath(pts, W, H, pad) {
     if (pts.length < 2) return null;
     const values = pts.map(p => p.cumulative);
@@ -473,9 +406,7 @@ function PnlChart() {
                 <stop offset="100%" stopColor="rgba(99,102,241,0)"/>
               </linearGradient>
             </defs>
-            {/* Zero line */}
-            {pathData && <line x1={pad} y1={pathData.zeroY} x2={W - pad} y2={pathData.zeroY} stroke="rgba(148,163,184,0.2)" strokeWidth="1" strokeDasharray="4 3" />}
-            {/* Grid */}
+            <line x1={pad} y1={pathData.zeroY} x2={W - pad} y2={pathData.zeroY} stroke="rgba(148,163,184,0.2)" strokeWidth="1" strokeDasharray="4 3" />
             <g stroke="rgba(99,102,241,0.05)" strokeWidth="1" strokeDasharray="6 4">
               <line x1="0" y1={H * 0.25} x2={W} y2={H * 0.25}/>
               <line x1="0" y1={H * 0.5} x2={W} y2={H * 0.5}/>
@@ -485,7 +416,6 @@ function PnlChart() {
               <path d={pathData.fill} fill="url(#eqFill)" />
               <path d={pathData.line} fill="none" stroke="url(#eqGrad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
             </>}
-            {/* Day labels */}
             {points.filter((_, i) => i === 0 || i === points.length - 1 || i === Math.floor(points.length / 2)).map((p, idx, arr) => {
               const x = pad + (points.indexOf(p) / (points.length - 1)) * (W - pad * 2);
               return (
@@ -497,7 +427,6 @@ function PnlChart() {
           </svg>
         )}
       </div>
-      {/* Daily breakdown mini list */}
       {points.length > 0 && (
         <div style={{ marginTop: '16px', display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '4px' }}>
           {points.slice(-7).map((p) => (
@@ -512,15 +441,6 @@ function PnlChart() {
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function InfoRow({ label, value }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-      <span style={{ color: '#94a3b8' }}>{label}</span>
-      <span style={{ color: '#0f172a', fontWeight: 600 }}>{value}</span>
     </div>
   );
 }

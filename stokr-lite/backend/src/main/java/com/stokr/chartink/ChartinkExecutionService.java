@@ -126,6 +126,17 @@ public class ChartinkExecutionService {
             return;
         }
 
+        // SL distance floor: reject if SL is tighter than 0.5%
+        BigDecimal preCheckSl = signal.getStopLoss() != null ? signal.getStopLoss()
+                : calculateStopLoss(price, side, config);
+        double slDistPct = Math.abs(price.doubleValue() - preCheckSl.doubleValue()) / price.doubleValue() * 100.0;
+        if (slDistPct < 0.5) {
+            log.warn("Chartink: SL too tight for {} ({}% from entry), skipping", symbol, String.format("%.3f", slDistPct));
+            signal.setStatus("REJECTED_SL_TOO_TIGHT");
+            signalRepository.save(signal);
+            return;
+        }
+
         // Place order
         try {
             BrokerOrderResponse response = placeBrokerOrder(symbol, side, quantity, userId, config);

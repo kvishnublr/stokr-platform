@@ -81,10 +81,11 @@ public class EntryManager {
             return false;
         }
 
-        // Check max positions limit (default: 5 per deployment)
-        if (openPositions.size() >= 5) {
-            log.info("Deployment {} has {} open positions (max 5), skipping entry",
-                    deployment.getId(), openPositions.size());
+        // Check max positions limit (matches StrategyConfig.maxPositions default)
+        int maxPositions = 2;
+        if (openPositions.size() >= maxPositions) {
+            log.info("Deployment {} has {} open positions (max {}), skipping entry",
+                    deployment.getId(), openPositions.size(), maxPositions);
             return false;
         }
 

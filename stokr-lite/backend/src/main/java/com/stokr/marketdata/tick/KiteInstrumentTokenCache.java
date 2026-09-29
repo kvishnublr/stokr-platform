@@ -3,6 +3,7 @@ package com.stokr.marketdata.tick;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -28,6 +29,13 @@ public class KiteInstrumentTokenCache {
         } catch (Exception e) {
             log.warn("Failed to load instruments on startup: {}", e.getMessage());
         }
+    }
+
+    /** New weekly contracts are listed every trading day; reload before the open. */
+    @Scheduled(cron = "0 45 8 * * MON-FRI", zone = "Asia/Kolkata")
+    public void dailyRefresh() {
+        refresh();
+        log.info("Daily instrument refresh: {} NFO tokens", symbolToToken.size());
     }
 
     public void refresh() {
@@ -63,8 +71,11 @@ public class KiteInstrumentTokenCache {
                     newMap.put(symbol, token);
                 }
             }
-            symbolToToken.clear();
-            symbolToToken.putAll(newMap);
+            // Keep the previous map if the download came back empty.
+            if (!newMap.isEmpty()) {
+                symbolToToken.clear();
+                symbolToToken.putAll(newMap);
+            }
         } catch (Exception e) {
             log.error("Failed to refresh instruments: {}", e.getMessage());
         }

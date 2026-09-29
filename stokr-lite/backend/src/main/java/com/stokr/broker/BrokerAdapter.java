@@ -15,6 +15,11 @@ public interface BrokerAdapter {
 
     BigDecimal getAvailableMargin(String accessToken);
 
+    /** Reason the most recent getAvailableMargin call fell back to 0, or null if it succeeded. */
+    default String lastMarginError() {
+        return null;
+    }
+
     String getOrderStatus(String accessToken, String orderId);
 
     // Calculate actual hedged margin for NFO positions from broker

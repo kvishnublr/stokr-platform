@@ -126,12 +126,12 @@ public class ButterflySpreadService {
                 int lotSize = OptionChainService.getLotSize(u);
 
                 for (java.time.LocalDate monthlyExpiry : java.util.stream.Stream.of(
-                optionChainService.getWeeklyExpiryDate(u),
+                optionChainService.getNearestExpiry(u),
                 optionChainService.getMonthlyExpiryDate(u)
             ).filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.toList())) {
 
                 List<Integer> strikes = new ArrayList<>();
-                for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
+                for (int i = -10; i <= 10; i++) strikes.add(atmStrike + i * step);
 
                 List<String> instruments = new ArrayList<>();
                 for (int strike : strikes) {
@@ -258,7 +258,7 @@ public class ButterflySpreadService {
             int lotSize = OptionChainService.getLotSize(underlying);
 
             for (java.time.LocalDate monthlyExpiry : java.util.stream.Stream.of(
-                optionChainService.getWeeklyExpiryDate(underlying),
+                optionChainService.getNearestExpiry(underlying),
                 optionChainService.getMonthlyExpiryDate(underlying)
             ).filter(java.util.Objects::nonNull).distinct().collect(java.util.stream.Collectors.toList())) {
 

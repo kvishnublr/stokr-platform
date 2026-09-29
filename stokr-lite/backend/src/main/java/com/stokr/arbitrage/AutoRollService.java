@@ -52,7 +52,7 @@ public class AutoRollService {
         Map<String, Object> settings = autoExecService.getSettings();
 
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
 
         List<LivePosition> flies = positionRepo.findAllOpen().stream()
             .filter(p -> "BUTTERFLY_SPREAD".equals(p.getStrategyType()))
@@ -255,7 +255,7 @@ public class AutoRollService {
             int k1 = k2 - width;
             int k3 = k2 + width;
 
-            LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
+            LocalDate expiry = optionChainService.getNearestExpiry(underlying);
             if (expiry == null) return null;
 
             String s1 = optionChainService.buildNfoSymbol(underlying, expiry, k1, optionType);

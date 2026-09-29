@@ -29,7 +29,9 @@ public class LivePosition {
 
     private String underlying;
     private Integer strike;
+    @Column(columnDefinition = "TEXT")
     private String action;
+    @Column(length = 100)
     private String strategyType;
 
     /** Contract expiry this position was actually traded on -- the payoff chart shows this
@@ -82,6 +84,15 @@ public class LivePosition {
      */
     @Column(columnDefinition = "TEXT")
     private String legsJson;
+
+    private Double slPct;
+    private Double targetPct;
+    private Integer timeExitMinutes;
+    private Double maxLossAmount;
+    private Double maxProfitAmount;
+    private String exitReason;
+    private Double trailingSlLevel;
+    private Double peakPnl;
 
     private LocalDateTime enteredAt;
     private LocalDateTime exitedAt;
@@ -138,6 +149,14 @@ public class LivePosition {
         map.put("errorMessage", errorMessage);
         var legs2 = getLegs();
         if (legs2 != null) map.put("legList", legs2);
+        map.put("slPct", slPct);
+        map.put("targetPct", targetPct);
+        map.put("timeExitMinutes", timeExitMinutes);
+        map.put("maxLossAmount", maxLossAmount);
+        map.put("maxProfitAmount", maxProfitAmount);
+        map.put("exitReason", exitReason);
+        map.put("trailingSlLevel", trailingSlLevel);
+        map.put("peakPnl", peakPnl);
         map.put("enteredAt", enteredAt != null ? enteredAt.toString() : null);
         map.put("exitedAt", exitedAt != null ? exitedAt.toString() : null);
         map.put("createdAt", createdAt != null ? createdAt.toString() : null);

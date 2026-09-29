@@ -1,0 +1,171 @@
+package com.stokr.smartstrategy;
+
+import com.stokr.arbitrage.QuotePolicy;
+import com.stokr.marketdata.MarketCalendar;
+import com.stokr.arbitrage.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.time.Duration;
+import java.time.LocalDate;
+import java.util.*;
+
+@Service
+public class RatioButterflyScanner {
+
+    private static final Logger log = LoggerFactory.getLogger(RatioButterflyScanner.class);
+    private static final double RISK_FREE_RATE = 0.065;
+
+    private final OptionChainService optionChainService;
+    private final ZerodhaSpotPriceFetcher spotFetcher;
+
+    private static final Map<String, String> SPOT_KEYS = Map.of(
+        "NIFTY", "NSE:NIFTY 50", "BANKNIFTY", "NSE:NIFTY BANK",
+        "MIDCPNIFTY", "NSE:NIFTY MID SELECT", "FINNIFTY", "NSE:NIFTY FIN SERVICE"
+    );
+
+    public RatioButterflyScanner(OptionChainService optionChainService, ZerodhaSpotPriceFetcher spotFetcher) {
+        this.optionChainService = optionChainService;
+        this.spotFetcher = spotFetcher;
+    }
+
+    public List<Map<String, Object>> scan(String underlying) {
+        List<String> targets = "ALL".equalsIgnoreCase(underlying)
+            ? List.of("NIFTY", "BANKNIFTY") : List.of(underlying);
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (String u : targets) {
+            try { results.addAll(scanForUnderlying(u)); } catch (Exception e) {
+                log.error("Ratio butterfly scan failed for {}: {}", u, e.getMessage());
+            }
+        }
+        results.sort((a, b) -> Double.compare(
+            ((Number) b.getOrDefault("riskReward", 0)).doubleValue(),
+            ((Number) a.getOrDefault("riskReward", 0)).doubleValue()));
+        return results;
+    }
+
+    private List<Map<String, Object>> scanForUnderlying(String underlying) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        String spotKey = SPOT_KEYS.getOrDefault(underlying, "NSE:NIFTY 50");
+        double[] spotFut = spotFetcher.getSpotAndFutures(spotKey,
+            FuturesKeyResolver.resolveFuturesKey(underlying, spotFetcher, spotKey));
+        double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
+        if (spot <= 0) return results;
+
+        LocalDate expiry = optionChainService.getNearestExpiry(underlying);
+        long dte = Math.max(1, Duration.between(LocalDate.now().atStartOfDay(), expiry.atStartOfDay()).toDays());
+        int step = OptionChainService.getStrikeStep(underlying);
+        int lotSize = OptionChainService.getLotSize(underlying);
+        int atmStrike = (int) (Math.round(spot / step) * step);
+
+        List<String> instruments = new ArrayList<>();
+        for (int i = -4; i <= 14; i++) {
+            int s = atmStrike + i * step;
+            instruments.addAll(optionChainService.buildNfoSymbolCandidates(underlying, expiry, s, "CE"));
+            instruments.addAll(optionChainService.buildNfoSymbolCandidates(underlying, expiry, s, "PE"));
+        }
+        Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
+
+        log.info("Ratio [{}]: spot={}, atm={}, expiry={}, dte={}, quotes={}", underlying, spot, atmStrike, expiry, dte, quotes.size());
+        double years = PopModel.yearsToExpiry(expiry);
+        double atmIv = PopModel.atmIv(getQuote(quotes, underlying, expiry, atmStrike, "CE"),
+            getQuote(quotes, underlying, expiry, atmStrike, "PE"), spot, atmStrike, years);
+        for (String optType : List.of("CE", "PE")) {
+            int dir = "CE".equals(optType) ? 1 : -1;
+            for (int bodyOffset = 1; bodyOffset <= 6; bodyOffset++) {
+                int buyStrike = atmStrike;
+                int sellStrike = atmStrike + dir * bodyOffset * step;
+                int farBuyStrike = atmStrike + dir * (bodyOffset * 2) * step;
+
+                OptionChainService.OptionQuote buyQ = getQuote(quotes, underlying, expiry, buyStrike, optType);
+                OptionChainService.OptionQuote sellQ = getQuote(quotes, underlying, expiry, sellStrike, optType);
+                OptionChainService.OptionQuote farBuyQ = getQuote(quotes, underlying, expiry, farBuyStrike, optType);
+                if (buyQ == null || sellQ == null || farBuyQ == null) continue;
+                double buyAsk = buyQ.effectiveAsk(), sellBid = sellQ.effectiveBid(), farAsk = farBuyQ.effectiveAsk();
+                if (buyAsk <= 0 || sellBid <= 0 || farAsk <= 0) continue;
+
+                double cost = buyAsk - 3 * sellBid + 2 * farAsk;
+                int wingWidth = Math.abs(sellStrike - buyStrike);
+                double maxProfit = (wingWidth - cost) * lotSize;
+                // Beyond the far wing the legs net to zero options, locking in a loss of
+                // wingWidth + cost (a net credit reduces it). Non-positive ⇒ bad quotes, skip.
+                double maxLoss = OptionPayoffs.ratioButterflyMaxLoss(buyStrike, sellStrike, cost) * lotSize;
+                if (maxLoss <= 0) continue;
+
+                double costLimit = dte <= 3 ? step * 0.3 : dte <= 7 ? step * 0.6 : step * 1.5;
+                log.debug("RATIO {} {}{} body={} cost={} costLimit={} maxProfit={} maxLoss={}",
+                    underlying, optType, bodyOffset, sellStrike, round2(cost), round2(costLimit), round2(maxProfit), round2(maxLoss));
+                if (cost > costLimit) continue;
+
+                double txnCost = ArbitrageCosts.PER_LEG_BROKERAGE * 6 + 50;
+                maxLoss += txnCost;
+                double riskReward = maxProfit / maxLoss;
+                double rrMin = dte <= 3 ? 3.0 : dte <= 7 ? 2.0 : 1.0;
+                log.debug("RATIO {} {}{} rr={} rrMin={}", underlying, optType, bodyOffset, round2(riskReward), rrMin);
+                if (riskReward < rrMin) continue;
+
+                Map<String, Object> opp = new LinkedHashMap<>();
+                opp.put("strategyType", "RATIO_BUTTERFLY");
+                opp.put("underlying", underlying);
+                opp.put("optionType", optType);
+                opp.put("buyStrike", buyStrike);
+                opp.put("sellStrike", sellStrike);
+                opp.put("farBuyStrike", farBuyStrike);
+                opp.put("expiry", expiry.toString());
+                opp.put("expiryDate", expiry.toString());
+                opp.put("dte", dte);
+                opp.put("lotSize", lotSize);
+                opp.put("spotPrice", round2(spot));
+                opp.put("buyPrice", round2(buyAsk));
+                opp.put("sellPrice", round2(sellBid));
+                opp.put("farBuyPrice", round2(farAsk));
+                opp.put("netCost", round2(cost));
+                opp.put("netCostRs", round2(cost * lotSize));
+                opp.put("maxProfit", round2(maxProfit));
+                opp.put("maxLoss", round2(maxLoss));
+                opp.put("riskReward", round2(riskReward));
+                opp.put("sweetSpot", sellStrike);
+                OptionPayoffs.Range be = OptionPayoffs.ratioButterflyBreakevens("CE".equals(optType), buyStrike, sellStrike, cost);
+                opp.put("breakEvenLow", Double.isNaN(be.low()) ? null : round2(be.low()));
+                opp.put("breakEvenHigh", Double.isNaN(be.high()) ? null : round2(be.high()));
+                opp.put("action", String.format("BUY 1x%d%s @ %.1f | SELL 3x%d%s @ %.1f | BUY 2x%d%s @ %.1f",
+                    buyStrike, optType, buyAsk, sellStrike, optType, sellBid, farBuyStrike, optType, farAsk));
+                opp.put("legList", List.of(
+                    Map.of("strike", buyStrike, "optionType", optType, "side", "BUY", "qty", 1, "price", buyAsk,
+                        "symbol", getSymbol(quotes, underlying, expiry, buyStrike, optType)),
+                    Map.of("strike", sellStrike, "optionType", optType, "side", "SELL", "qty", 3, "price", sellBid,
+                        "symbol", getSymbol(quotes, underlying, expiry, sellStrike, optType)),
+                    Map.of("strike", farBuyStrike, "optionType", optType, "side", "BUY", "qty", 2, "price", farAsk,
+                        "symbol", getSymbol(quotes, underlying, expiry, farBuyStrike, optType))
+                ));
+                // Model probability of finishing inside the profit zone (lognormal, ATM IV)
+                opp.put("estimatedWinRate", PopModel.popPct(spot, be.low(), be.high(), years, atmIv));
+                opp.put("atmIv", round2(atmIv * 100));
+                opp.put("edgePoints", round2(Math.abs(cost)));
+                opp.put("edgeAfterCosts", round2(maxProfit - txnCost));
+                results.add(opp);
+            }
+        }
+        return results;
+    }
+
+    private OptionChainService.OptionQuote getQuote(Map<String, OptionChainService.OptionQuote> quotes,
+            String underlying, LocalDate expiry, int strike, String optType) {
+        for (String c : optionChainService.buildNfoSymbolCandidates(underlying, expiry, strike, optType)) {
+            OptionChainService.OptionQuote q = QuotePolicy.usable(quotes.get(c), MarketCalendar.isMarketOpenNow());
+            if (q != null) return q;
+        }
+        return null;
+    }
+
+    private String getSymbol(Map<String, OptionChainService.OptionQuote> quotes,
+            String underlying, LocalDate expiry, int strike, String optType) {
+        for (String c : optionChainService.buildNfoSymbolCandidates(underlying, expiry, strike, optType)) {
+            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) return c;
+        }
+        return underlying + strike + optType;
+    }
+
+    private double round2(double v) { return Math.round(v * 100.0) / 100.0; }
+}

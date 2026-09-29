@@ -2,6 +2,7 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
+import { useGlobalExecutionBroker } from '../context/ExecutionBrokerContext';
 
 // Black-Scholes helpers for the "Today" MTM curve (theoretical value if spot moved to X
 // right now, same remaining time-to-expiry -- not a decay simulation). Mirrors
@@ -95,7 +96,48 @@ const STRATEGY_LABELS = {
   BUTTERFLY_SPREAD: '🦋 Butterfly',
   CONDOR_SPREAD: '🎯 Condor',
   IRON_CONDOR: '🛡️ Iron Condor',
+  MORNING_RANGE_THETA: '🌅 Morning Theta',
+  EXPIRY_THETA_CRUSH: '⏰ Theta Crush',
+  JADE_LIZARD: '🦎 Jade Lizard',
+  RATIO_BUTTERFLY: '🦋 Ratio Butterfly',
+  BROKEN_WING_BUTTERFLY: '🔥 Broken Wing',
+  SKEW_HARVEST: '📊 Skew Harvest',
+  BOX_SPREAD_ARB: '📦 Box Spread',
+  CALENDAR_SPREAD_EDGE: '📅 Calendar',
 };
+
+/** Label for a strategy code, falling back to Title Case (MORNING_RANGE_THETA → Morning Range Theta). */
+function strategyLabel(code) {
+  if (!code) return '—';
+  return STRATEGY_LABELS[code] || String(code).toLowerCase().split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+/** Legs grouped one line per option type: "CE  S 23000 @52.8 · B 23100 @27.6". */
+function LegsCell({ legs }) {
+  const groups = ['CE', 'PE', 'FUT']
+    .map(t => ({ t, legs: legs.filter(l => (l.optionType || 'FUT') === t).sort((a, b) => a.strike - b.strike) }))
+    .filter(g => g.legs.length > 0);
+  return (
+    <div className="flex flex-col gap-1">
+      {groups.map(g => (
+        <div key={g.t} className="flex items-center gap-1.5 whitespace-nowrap">
+          <span className={`w-7 text-center px-1 py-0.5 rounded text-[8px] font-black tracking-wide ${g.t === 'CE' ? 'bg-sky-50 text-sky-700 border border-sky-200' : g.t === 'PE' ? 'bg-violet-50 text-violet-700 border border-violet-200' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>{g.t}</span>
+          {g.legs.map((leg, i) => (
+            <span key={i} className="inline-flex items-center gap-1 font-mono text-[10px]">
+              {i > 0 && <span className="text-slate-300">·</span>}
+              <span className={`w-4 h-4 inline-flex items-center justify-center rounded text-[8px] font-black text-white ${leg.side === 'BUY' ? 'bg-emerald-500' : 'bg-rose-500'}`}>
+                {leg.side === 'BUY' ? 'B' : 'S'}{(leg.qty || 1) > 1 ? leg.qty : ''}
+              </span>
+              <span className="font-bold text-slate-800">{leg.strike}</span>
+              <span className="text-slate-400">@{Number(leg.price || 0).toFixed(1)}</span>
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const TOAST_STYLES = {
   success: { bg: 'bg-white', border: 'border-emerald-400', bar: 'bg-emerald-500', icon: '✅', iconBg: 'bg-emerald-100', iconText: 'text-emerald-600', titleText: 'text-emerald-700', defaultTitle: 'Success' },
@@ -293,25 +335,9 @@ export default function OptionArbitrage() {
   const [activeGroup, setActiveGroup] = useState('core');
   const [underlyings, setUnderlyings] = useState(['ALL']);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [executionBroker, setExecutionBroker] = useState('PAPER');
-  const [liveBrokerPref, setLiveBrokerPref] = useState('ZERODHA');
-  
-  const handleTradeModeChange = (mode) => {
-    if (mode === 'PAPER') {
-      changeExecutionBroker('PAPER');
-    } else {
-      changeExecutionBroker(liveBrokerPref);
-    }
-  };
-  
-  const handleLiveBrokerChange = (broker) => {
-    setLiveBrokerPref(broker);
-    changeExecutionBroker(broker);
-  };
+  const { executionBroker, changeExecutionBroker } = useGlobalExecutionBroker();
+
   const [pendingLiveDeploy, setPendingLiveDeploy] = useState(null);
-  // Child views (BidParityView, HistoryView, each spread view) fire deploy requests through
-  // the module-level emitter rather than a threaded prop -- see requestLiveDeploy above.
-  // Bypass modal entirely for Paper trades
   useLiveDeployRequests((opp) => {
     if (executionBroker === 'PAPER') {
       handleExecuteInline(opp, 1);
@@ -319,74 +345,13 @@ export default function OptionArbitrage() {
       setPendingLiveDeploy(opp);
     }
   });
-  const [isTestingBroker, setIsTestingBroker] = useState(false);
-  const [mofslModalOpen, setMofslModalOpen] = useState(false);
-  const [mofslForm, setMofslForm] = useState({ clientCode: '', password: '', totpSecret: '' });
-  const [mofslSaving, setMofslSaving] = useState(false);
-  const [mofslError, setMofslError] = useState(null);
 
-  const handleMofslConnect = async () => {
-    setMofslSaving(true);
-    setMofslError(null);
-    try {
-        await client.post('/brokers/motilaloswal/connect', mofslForm);
-        showToast('Motilal Oswal connected successfully!', 'success');
-        setMofslModalOpen(false);
-    } catch(e) {
-        setMofslError(e.response?.data?.error || e.message || 'Connection failed');
-    } finally {
-        setMofslSaving(false);
-    }
-  };
   const [maxSignals, setMaxSignals] = useState(() => {
     const saved = localStorage.getItem('stokr_max_signals');
     return saved ? parseInt(saved) : 300;
   });
 
-  const fetchBrokerRouting = async () => {
-    try {
-      const res = await client.get('/brokers/decoupled-routing');
-      if (res.data?.executionBroker) {
-        setExecutionBroker(res.data.executionBroker);
-      }
-    } catch (e) {
-      // silent
-    }
-  };
-
-  const changeExecutionBroker = async (broker) => {
-    setExecutionBroker(broker);
-    try {
-      await client.post('/brokers/decoupled-routing', { executionBroker: broker });
-      showToast(`Order Execution Broker updated to ${broker}`, 'info');
-    } catch (e) {
-      showToast('Failed to update execution broker', 'error');
-    }
-  };
-
-  const testBrokerConnection = async () => {
-    setIsTestingBroker(true);
-    try {
-      const res = await client.post('/brokers/test-connection', { broker: executionBroker });
-      if (res.data?.ok) {
-        showToast(res.data.message, 'success');
-      } else {
-        const msg = res.data?.message || 'Broker test failed';
-        if (msg.includes('No active') && executionBroker === 'MOTILALOSWAL') {
-            setMofslModalOpen(true);
-        } else {
-            showToast(msg, 'error');
-        }
-      }
-    } catch (e) {
-      showToast('Broker connection test error: ' + e.message, 'error');
-    } finally {
-      setIsTestingBroker(false);
-    }
-  };
-
   useEffect(() => {
-    fetchBrokerRouting();
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
@@ -545,17 +510,22 @@ export default function OptionArbitrage() {
   };
 
 
-  // PREFETCH / BACKGROUND SCANNING
-  // The user requested that all scanners run continuously in the background so tabs load instantly.
+  // PREFETCH / BACKGROUND SCANNING — all scanners run continuously so tabs show cached data instantly.
+  // Backend caches responses for 8s, so rapid tab switches don't re-scan. Frontend staleTime=30s means
+  // switching tabs within 30s shows cached data with zero loading state.
   const bgInterval = autoRefresh ? 30000 : false;
-  useQuery({ queryKey: ['bid-parity-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/parity/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
-  useQuery({ queryKey: ['box-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/box-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
-  useQuery({ queryKey: ['vertical-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/vertical-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
-  useQuery({ queryKey: ['butterfly-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/butterfly-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
-  useQuery({ queryKey: ['condor-spread-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/condor-spread/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
-  useQuery({ queryKey: ['iron-condor-scan', 'ALL'], queryFn: async () => (await client.get('/option-arbitrage/iron-condor/scan', { params: { underlying: 'ALL' } })).data, refetchInterval: bgInterval });
-  useQuery({ queryKey: ['cash-surge-scan'], queryFn: async () => (await client.get('/option-arbitrage/cash-trade/surge-scan')).data, refetchInterval: bgInterval });
-  useQuery({ queryKey: ['cash-momentum-scan'], queryFn: async () => (await client.get('/option-arbitrage/cash-trade/momentum-scan')).data, refetchInterval: bgInterval });
+  const scanFn = (url, params) => async () => (await client.get(url, { params })).data;
+  useQuery({ queryKey: ['bid-parity-scan', 'ALL'], queryFn: scanFn('/option-arbitrage/parity/scan', { underlying: 'ALL' }), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['box-spread-scan', 'ALL'], queryFn: scanFn('/option-arbitrage/box-spread/scan', { underlying: 'ALL' }), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['vertical-spread-scan', 'ALL'], queryFn: scanFn('/option-arbitrage/vertical-spread/scan', { underlying: 'ALL' }), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['butterfly-spread-scan', 'ALL'], queryFn: scanFn('/option-arbitrage/butterfly-spread/scan', { underlying: 'ALL' }), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['condor-spread-scan', 'ALL'], queryFn: scanFn('/option-arbitrage/condor-spread/scan', { underlying: 'ALL' }), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['iron-condor-scan', 'ALL'], queryFn: scanFn('/option-arbitrage/iron-condor/scan', { underlying: 'ALL' }), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['cash-surge-scan'], queryFn: scanFn('/option-arbitrage/cash-trade/surge-scan'), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['cash-momentum-scan'], queryFn: scanFn('/option-arbitrage/cash-trade/momentum-scan'), refetchInterval: bgInterval, staleTime: 25000 });
+  // Prefetch candidates so Candidates tabs load instantly too
+  useQuery({ queryKey: ['butterfly-candidates', 'ALL', 0.35], queryFn: scanFn('/option-arbitrage/butterfly-spread/candidates', { underlying: 'ALL', maxCostRatio: 0.35 }), refetchInterval: bgInterval, staleTime: 25000 });
+  useQuery({ queryKey: ['vertical-candidates', 'ALL', 0.35], queryFn: scanFn('/option-arbitrage/vertical-spread/candidates', { underlying: 'ALL', maxCostRatio: 0.35 }), refetchInterval: bgInterval, staleTime: 25000 });
   return (
     <div className="w-full max-w-full space-y-5 font-sans text-slate-900">
       <ToastContainer toasts={toasts} dismiss={dismissToast} />
@@ -1163,23 +1133,41 @@ function PositionTriggersPanel({ positionId }) {
 }
 
 /* Live Positions Section — standalone, always visible, 2s tick-by-tick refresh */
-function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
+function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFilter, assetFilter }) {
+  const { liveBrokerPref } = useGlobalExecutionBroker();
   const [collapsed, setCollapsed] = useState(!defaultExpanded);
   const [rollingId, setRollingId] = useState(null);
   const [closingId, setClosingId] = useState(null);
+  const [goLiveId, setGoLiveId] = useState(null);
+  const [goLiveConfirm, setGoLiveConfirm] = useState(null);
+  const [goLiveResult, setGoLiveResult] = useState(null); // { posId, type: 'success'|'error', message, detail }
   const [expandedPosId, setExpandedPosId] = useState(null);
+  const [sortCol, setSortCol] = useState('enteredAt');
+  const [sortDir, setSortDir] = useState('desc');
+  const toggleSort = (col) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir(col === 'enteredAt' ? 'desc' : 'asc'); }
+  };
+  const SortTh = ({ col, children, className = '' }) => (
+    <th className={`px-2 py-2.5 cursor-pointer select-none whitespace-nowrap transition-colors ${sortCol === col ? 'bg-indigo-50/80 text-indigo-700' : 'hover:bg-slate-100'} ${className}`} onClick={() => toggleSort(col)}>
+      <span className="inline-flex items-center gap-0.5">{children}<span className={`text-[8px] ${sortCol === col ? 'text-indigo-500' : 'text-slate-300'}`}>{sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span></span>
+    </th>
+  );
   // Defaults to whatever mode the Execution Broker dropdown is currently in, so switching
   // to a live broker doesn't leave old paper positions looking like they might be real --
   // "Live Positions" was showing paper trades with no way to tell them apart or filter
   // them out. Still overridable via the pills below.
-  const [brokerFilter, setBrokerFilter] = useState(executionBroker);
+  const [internalBrokerFilter, setInternalBrokerFilter] = useState('ALL');
   const prevExecBroker = useRef(executionBroker);
   useEffect(() => {
     if (executionBroker !== prevExecBroker.current) {
-      setBrokerFilter(executionBroker);
+      setInternalBrokerFilter(executionBroker);
       prevExecBroker.current = executionBroker;
     }
   }, [executionBroker]);
+
+  const brokerFilter = modeFilter || internalBrokerFilter;
+  const setBrokerFilter = setInternalBrokerFilter;
 
   const { data, refetch } = useQuery({
     queryKey: ['livePositions'],
@@ -1200,12 +1188,36 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
   const isToday = (p) => typeof p.enteredAt === 'string' && p.enteredAt.slice(0, 10) === todayIST;
 
   const isPaper = (p) => !p.broker || p.broker === 'PAPER';
-  // LIVE positions are actual money and must ALWAYS be shown in My Positions as long as they are OPEN.
-  // Only PAPER positions should be filtered by today to avoid cluttering with stale simulated trades.
-  const allPositions = (data?.positions || []).filter(p => !isPaper(p) || p.status === 'OPEN' || isToday(p));
+  const isActiveStatus = (p) => p.status === 'OPEN' || p.status === 'RUNNING' || p.status === 'EXECUTING' || p.status === 'PARTIAL' || p.status === 'DETECTED';
+  const allPositions = (data?.positions || []).filter(p => isActiveStatus(p));
   const positions = brokerFilter === 'ALL' ? allPositions
     : brokerFilter === 'PAPER' ? allPositions.filter(isPaper)
     : allPositions.filter(p => !isPaper(p));
+  const sortedPositions = useMemo(() => {
+    const arr = [...positions];
+    const dir = sortDir === 'asc' ? 1 : -1;
+    arr.sort((a, b) => {
+      let va, vb;
+      switch (sortCol) {
+        case 'enteredAt': va = a.enteredAt || ''; vb = b.enteredAt || ''; break;
+        case 'broker': va = a.broker || 'PAPER'; vb = b.broker || 'PAPER'; break;
+        case 'strategy': va = a.strategyType || ''; vb = b.strategyType || ''; break;
+        case 'underlying': va = a.underlying || ''; vb = b.underlying || ''; break;
+        case 'strike': va = a.strike || 0; vb = b.strike || 0; break;
+        case 'expiry': va = a.expiryDate || ''; vb = b.expiryDate || ''; break;
+        case 'edge': va = a.targetEdge || 0; vb = b.targetEdge || 0; break;
+        case 'edgeProgress': va = a.edgeCaptured || 0; vb = b.edgeCaptured || 0; break;
+        case 'pnl': va = a.currentPnl != null ? Number(a.currentPnl) : 0; vb = b.currentPnl != null ? Number(b.currentPnl) : 0; break;
+        case 'maxLoss': va = a.maxLoss || 0; vb = b.maxLoss || 0; break;
+        case 'lots': va = a.lots || 0; vb = b.lots || 0; break;
+        case 'status': va = a.status || ''; vb = b.status || ''; break;
+        default: va = a.enteredAt || ''; vb = b.enteredAt || '';
+      }
+      if (typeof va === 'string') return dir * va.localeCompare(vb);
+      return dir * (va - vb);
+    });
+    return arr;
+  }, [positions, sortCol, sortDir]);
   const filteredTotalPnl = positions.reduce((s, p) => s + (p.currentPnl != null ? Number(p.currentPnl) : 0), 0);
   const openPositions = positions.filter(p => p.status === 'OPEN');
 
@@ -1235,6 +1247,38 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
       alert(`❌ Failed: ${e.response?.data?.message || e.response?.data?.error || e.message}`);
     } finally {
       setClosingId(null);
+    }
+  };
+
+  const promptGoLive = (p) => {
+    const broker = liveBrokerPref || 'ZERODHA';
+    const pnl = p.currentPnl != null ? Number(p.currentPnl) : 0;
+    setGoLiveConfirm({ id: p.id, underlying: p.underlying, strike: p.strike, lots: p.lots || 1, broker, pnl, strategyType: p.strategyType, action: p.action, legList: p.legList });
+  };
+  const executeGoLive = async () => {
+    if (!goLiveConfirm) return;
+    const { id, broker, lots, underlying, strike } = goLiveConfirm;
+    setGoLiveId(id);
+    setGoLiveConfirm(null);
+    setGoLiveResult(null);
+    try {
+      const res = await client.post(`/option-arbitrage/positions/${id}/go-live`, { broker, lots });
+      const d = res.data;
+      setGoLiveResult({ posId: id, type: 'success', message: d.message || `${underlying} ${strike} entered LIVE via ${broker}` });
+      refetch();
+      setTimeout(() => setGoLiveResult(r => r?.posId === id ? null : r), 8000);
+    } catch (e) {
+      const status = e.response?.status;
+      const msg = e.response?.data?.message || e.message || 'Unknown error';
+      const detail = status === 502 ? 'Backend is restarting (CI deploy in progress). Wait 30s and retry.'
+        : status === 503 ? 'Service temporarily unavailable. The server may be restarting.'
+        : status >= 500 ? `Server error (${status}). Check if the backend is running.`
+        : status === 400 ? msg
+        : `${msg} (HTTP ${status || 'network error'})`;
+      setGoLiveResult({ posId: id, type: 'error', message: msg, detail });
+      setTimeout(() => setGoLiveResult(r => r?.posId === id ? null : r), 15000);
+    } finally {
+      setGoLiveId(null);
     }
   };
 
@@ -1294,126 +1338,167 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
 
         {!collapsed && positions.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full text-[11px] text-left">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold">
+            <table className="w-full text-[11px] text-left border-collapse">
+              <thead className="bg-gradient-to-b from-slate-50 to-slate-100/80 border-b-2 border-slate-200 text-[9px] text-slate-500 uppercase tracking-wider font-extrabold">
                 <tr>
-                  <th className="px-3 py-2">Time</th>
-                  <th className="px-3 py-2">Broker</th>
-                  <th className="px-3 py-2">Strategy</th>
-                  <th className="px-3 py-2">Underlying</th>
-                  <th className="px-3 py-2">Strike</th>
-                  <th className="px-3 py-2">Action</th>
-                  <th className="px-3 py-2 text-right">CE Entry</th>
-                  <th className="px-3 py-2 text-right">PE Entry</th>
-                  <th className="px-3 py-2 text-right">FUT Entry</th>
-                  <th className="px-3 py-2 text-right">Edge</th>
-                  <th className="px-3 py-2 text-center">Edge Progress</th>
-                  <th className="px-3 py-2 text-right">Live P&amp;L</th>
-                  <th className="px-3 py-2 text-right">Lots</th>
-                  <th className="px-3 py-2 text-center">Status</th>
-                  <th className="px-3 py-2 text-center">Rollover</th>
-                  <th className="px-3 py-2 text-center">Close</th>
-                  <th className="px-3 py-2 text-center">Error</th>
+                  <SortTh col="enteredAt">Time</SortTh>
+                  <SortTh col="broker">Broker</SortTh>
+                  <SortTh col="strategy">Strategy</SortTh>
+                  <SortTh col="underlying">Symbol</SortTh>
+                  <SortTh col="strike" className="text-right">Strike</SortTh>
+                  <SortTh col="expiry">Expiry</SortTh>
+                  <th className="px-2 py-2.5 text-left">Legs · Entry</th>
+                  <SortTh col="edge" className="text-right">Edge</SortTh>
+                  <SortTh col="edgeProgress" className="text-center">Progress</SortTh>
+                  <SortTh col="pnl" className="text-right">P&amp;L</SortTh>
+                  <SortTh col="maxLoss" className="text-right">Max Loss</SortTh>
+                  <SortTh col="lots" className="text-center">Lots</SortTh>
+                  <SortTh col="status" className="text-center">Status</SortTh>
+                  <th className="px-2 py-2.5 text-center">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {positions.map(p => {
+              <tbody>
+                {sortedPositions.map((p, idx) => {
                   const pnl = p.currentPnl != null ? Number(p.currentPnl) : null;
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
-                  const canShowPayoff = Array.isArray(p.legList) && p.legList.length >= 1;
+                  const mxLoss = p.maxLoss || 0;
+                  const canShowPayoff = true;
                   const isExpanded = expandedPosId === p.id;
+                  const rowBg = isExpanded ? 'bg-indigo-50/40' : captured >= 90 ? 'bg-amber-50/50' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40';
                   return (
                     <React.Fragment key={p.id}>
                     <tr onClick={() => canShowPayoff && setExpandedPosId(isExpanded ? null : p.id)}
-                      className={`hover:bg-slate-50 ${captured >= 90 ? 'bg-amber-50' : ''} ${canShowPayoff ? 'cursor-pointer' : ''} ${isExpanded ? 'bg-fuchsia-50/60' : ''}`}>
-                      <td className="px-3 py-2 font-mono text-[10px] text-slate-600">{fmtTime(p.enteredAt)}</td>
-                      <td className="px-3 py-2">
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${p.broker === 'PAPER' || !p.broker ? 'bg-slate-100 text-slate-500 border-slate-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300'}`}>
-                          {p.broker === 'PAPER' || !p.broker ? '📄 PAPER' : `🔴 ${p.broker}`}
+                      className={`${rowBg} hover:bg-indigo-50/60 transition-colors border-b border-slate-100 ${canShowPayoff ? 'cursor-pointer' : ''}`}>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {p.enteredAt ? (
+                          <div className="leading-tight">
+                            <div className="font-mono text-[11px] font-bold text-slate-700">
+                              {new Date(p.enteredAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                            </div>
+                            <div className="text-[9px] text-slate-400">
+                              {new Date(p.enteredAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                            </div>
+                          </div>
+                        ) : <span className="text-slate-400">--</span>}
+                      </td>
+                      <td className="px-2 py-2.5">
+                        {isPaper(p)
+                          ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-bold">📄 Paper</span>
+                          : <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold">🔴 {p.broker}</span>
+                        }
+                      </td>
+                      <td className="px-2 py-2.5">
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap">
+                          {strategyLabel(p.strategyType)}
                         </span>
                       </td>
-                      <td className="px-3 py-2">
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">
-                          {STRATEGY_LABELS[p.strategyType] || p.strategyType || '—'}
-                        </span>
+                      <td className="px-2 py-2.5 font-black text-slate-800 text-xs">{p.underlying}</td>
+                      <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-700 whitespace-nowrap">
+                        {p.strike ?? (Array.isArray(p.legList) && p.legList.length > 0
+                          ? <span className="text-[10px] text-slate-500">{Math.min(...p.legList.map(l => l.strike))}–{Math.max(...p.legList.map(l => l.strike))}</span>
+                          : '--')}
                       </td>
-                      <td className="px-3 py-2 font-bold text-slate-800">{p.underlying}</td>
-                      <td className="px-3 py-2 font-bold text-slate-700">{p.strike}</td>
-                      <td className="px-3 py-2 text-purple-700 font-bold text-[10px]">{p.action?.substring(0, 18)}</td>
-                      {p.isMultiLeg ? (
-                        <td colSpan={3} className="px-3 py-2 text-[9px] text-slate-600 font-mono">
-                          {Array.isArray(p.legList) && p.legList.length > 0
-                            ? p.legList.map((leg, i) => (
-                                <span key={i} className={`inline-block mr-2 ${leg.side === 'BUY' ? 'text-emerald-700' : 'text-red-600'}`}>
-                                  {leg.strike}{leg.optionType} {leg.side}@{Number(leg.price || 0).toFixed(1)}
-                                </span>
-                              ))
-                            : `${p.legList?.length || 0}-leg spread (no futures)`}
-                        </td>
-                      ) : (
-                        <>
-                          <td className="px-3 py-2 text-right font-mono">₹{p.ceEntryPrice?.toFixed(1) || '--'}</td>
-                          <td className="px-3 py-2 text-right font-mono">₹{p.peEntryPrice?.toFixed(1) || '--'}</td>
-                          <td className="px-3 py-2 text-right font-mono">₹{p.futEntryPrice?.toFixed(1) || '--'}</td>
-                        </>
-                      )}
-                      <td className="px-3 py-2 text-right font-mono font-bold text-indigo-700">₹{target?.toFixed(0) || '--'}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1.5">
-                          <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full transition-all ${captured >= 90 ? 'bg-amber-500' : captured >= 50 ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                      <td className="px-2 py-2.5 text-[10px] font-mono text-slate-500 whitespace-nowrap">
+                        {(p.expiryDate || p.expiry) ? new Date((p.expiryDate || p.expiry) + (String(p.expiryDate || p.expiry).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '--'}
+                      </td>
+                      <td className="px-2 py-2.5">
+                        {p.isMultiLeg ? (
+                          <div>
+                            {Array.isArray(p.legList) && p.legList.length > 0
+                              ? <LegsCell legs={p.legList} />
+                              : <span className="text-slate-400 text-[9px]">{p.legList?.length || 0}-leg</span>}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 font-mono text-[10px]">
+                            {p.ceEntryPrice ? <span className="text-blue-600">CE@{p.ceEntryPrice.toFixed(1)}</span> : null}
+                            {p.peEntryPrice ? <span className="text-purple-600">PE@{p.peEntryPrice.toFixed(1)}</span> : null}
+                            {p.futEntryPrice ? <span className="text-slate-600">FUT@{p.futEntryPrice.toFixed(1)}</span> : null}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-2 py-2.5 text-right font-mono font-bold text-indigo-700">₹{target?.toFixed(0) || '--'}</td>
+                      <td className="px-2 py-2.5">
+                        <div className="flex items-center gap-1 min-w-[80px]">
+                          <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all ${captured >= 90 ? 'bg-gradient-to-r from-amber-400 to-amber-500' : captured >= 50 ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : 'bg-gradient-to-r from-blue-400 to-blue-500'}`}
                               style={{ width: `${Math.min(100, captured)}%` }} />
                           </div>
-                          <span className={`text-[10px] font-bold ${captured >= 90 ? 'text-amber-600' : captured >= 50 ? 'text-emerald-600' : 'text-blue-600'}`}>{captured}%</span>
+                          <span className={`text-[9px] font-black min-w-[28px] text-right ${captured >= 90 ? 'text-amber-600' : captured >= 50 ? 'text-emerald-600' : 'text-blue-600'}`}>{captured}%</span>
                         </div>
                       </td>
-                      <td className={`px-3 py-2 text-right font-mono font-bold ${pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {pnl !== 0 ? `₹${Math.round(pnl).toLocaleString('en-IN')}` : '--'}
+                      <td className="px-2 py-2.5 text-right">
+                        <span className={`font-mono font-black text-xs ${pnl > 0 ? 'text-emerald-600' : pnl < 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                          {pnl != null && pnl !== 0 ? `${pnl > 0 ? '+' : ''}₹${Math.round(pnl).toLocaleString('en-IN')}` : '--'}
+                        </span>
                       </td>
-                      <td className="px-3 py-2 text-right font-bold">{p.lots}</td>
-                      <td className="px-3 py-2 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${statusColor(p.status)}`}>{p.status}</span>
+                      <td className="px-2 py-2.5 text-right">
+                        <span className={`font-mono font-bold text-[10px] ${mxLoss > 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                          {mxLoss > 0 ? `₹${Math.round(mxLoss).toLocaleString('en-IN')}` : '--'}
+                        </span>
                       </td>
-                      <td className="px-3 py-2 text-center">
-                        {p.status === 'OPEN' && !p.isMultiLeg && (
-                          <button
-                            disabled={rollingId === p.id}
-                            onClick={() => handleRollover(p.id, p.underlying, p.strike)}
-                            className={`px-2 py-1 rounded-lg text-[9px] font-bold transition border ${
-                              rollingId === p.id
-                                ? 'bg-slate-200 text-slate-500 border-slate-300 cursor-wait'
-                                : 'bg-indigo-50 text-indigo-700 border-indigo-300 hover:bg-indigo-100 hover:border-indigo-400'
-                            }`}
-                          >
-                            {rollingId === p.id ? '⏳ Rolling...' : '🔄 Roll CE+PE'}
-                          </button>
-                        )}
+                      <td className="px-2 py-2.5 text-center font-bold text-slate-700">{p.lots}</td>
+                      <td className="px-2 py-2.5 text-center">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-black border ${statusColor(p.status)}`}>{p.status}</span>
                       </td>
-                      <td className="px-3 py-2 text-center">
-                        {p.status === 'OPEN' && (
-                          <button
-                            disabled={closingId === p.id}
-                            onClick={(e) => { e.stopPropagation(); handleClosePosition(p.id, p.underlying, p.strike, p.broker); }}
-                            className={`px-2 py-1 rounded-lg text-[9px] font-bold transition border ${
-                              closingId === p.id
-                                ? 'bg-slate-200 text-slate-500 border-slate-300 cursor-wait'
-                                : 'bg-red-50 text-red-700 border-red-300 hover:bg-red-100 hover:border-red-400'
-                            }`}
-                          >
-                            {closingId === p.id ? '⏳ Closing...' : '✖ Close'}
-                          </button>
-                        )}
+                      <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center gap-1 justify-center">
+                          {p.status === 'OPEN' && isPaper(p) && (
+                            <button disabled={goLiveId === p.id} onClick={() => promptGoLive(p)}
+                              className={`px-2 py-1 rounded-md text-[9px] font-bold transition shadow-sm ${goLiveId === p.id ? 'bg-slate-200 text-slate-400 cursor-wait' : 'bg-gradient-to-b from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700 shadow-emerald-200'}`}>
+                              {goLiveId === p.id ? '⏳' : '⚡ Live'}
+                            </button>
+                          )}
+                          {p.status === 'OPEN' && !p.isMultiLeg && (
+                            <button disabled={rollingId === p.id} onClick={() => handleRollover(p.id, p.underlying, p.strike)}
+                              className={`px-2 py-1 rounded-md text-[9px] font-bold transition shadow-sm ${rollingId === p.id ? 'bg-slate-200 text-slate-400 cursor-wait' : 'bg-gradient-to-b from-indigo-500 to-indigo-600 text-white hover:from-indigo-600 hover:to-indigo-700 shadow-indigo-200'}`}>
+                              {rollingId === p.id ? '⏳' : '🔄 Roll'}
+                            </button>
+                          )}
+                          {p.status === 'OPEN' && (
+                            <button disabled={closingId === p.id} onClick={() => handleClosePosition(p.id, p.underlying, p.strike, p.broker)}
+                              className={`px-2 py-1 rounded-md text-[9px] font-bold transition shadow-sm ${closingId === p.id ? 'bg-slate-200 text-slate-400 cursor-wait' : 'bg-gradient-to-b from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700 shadow-red-200'}`}>
+                              {closingId === p.id ? '⏳' : '✕ Close'}
+                            </button>
+                          )}
+                          {p.errorMessage && (
+                            <span className="text-[9px] text-red-500 max-w-[120px] truncate" title={p.errorMessage}>⚠ {p.errorMessage.substring(0, 30)}</span>
+                          )}
+                        </div>
                       </td>
-                      <td className="px-3 py-2 text-[9px] text-red-600 max-w-[200px] truncate">{p.errorMessage || '--'}</td>
                     </tr>
                     {isExpanded && canShowPayoff && (
-                      <tr className="bg-fuchsia-50/40 border-b border-fuchsia-100">
-                        <td colSpan={17} className="p-3">
+                      <tr className="bg-indigo-50/30 border-b border-indigo-100">
+                        <td colSpan={14} className="p-3">
                           <DetailedOpportunityExpandedRow item={p} executionBroker={executionBroker} title={`Open Position — ${p.underlying} ${p.action}`} />
                           {p.status === 'OPEN' && p.opportunityId && (
                             <PositionTriggersPanel positionId={p.opportunityId} />
                           )}
+                        </td>
+                      </tr>
+                    )}
+                    {goLiveResult && goLiveResult.posId === p.id && (
+                      <tr className={goLiveResult.type === 'success' ? 'bg-emerald-50' : 'bg-red-50'}>
+                        <td colSpan={14} className="px-4 py-2.5">
+                          <div className="flex items-start gap-2">
+                            <span className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-black ${goLiveResult.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`}>
+                              {goLiveResult.type === 'success' ? '✓' : '✕'}
+                            </span>
+                            <div className="min-w-0">
+                              <div className={`text-xs font-black ${goLiveResult.type === 'success' ? 'text-emerald-800' : 'text-red-800'}`}>
+                                {goLiveResult.type === 'success' ? 'Live Trade Entered' : 'Go Live Failed'}
+                              </div>
+                              <div className={`text-[11px] mt-0.5 ${goLiveResult.type === 'success' ? 'text-emerald-700' : 'text-red-700'}`}>
+                                {goLiveResult.message}
+                              </div>
+                              {goLiveResult.detail && goLiveResult.detail !== goLiveResult.message && (
+                                <div className="text-[10px] mt-1 text-red-600 bg-red-100 rounded px-2 py-1 font-mono">
+                                  {goLiveResult.detail}
+                                </div>
+                              )}
+                            </div>
+                            <button onClick={() => setGoLiveResult(null)} className="ml-auto text-slate-400 hover:text-slate-600 text-xs">✕</button>
+                          </div>
                         </td>
                       </tr>
                     )}
@@ -1425,6 +1510,89 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
           </div>
         )}
       </div>
+
+      {/* Go Live Confirmation Modal */}
+      {goLiveConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setGoLiveConfirm(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-[420px] overflow-hidden animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-600 px-5 py-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                  <span className="text-white text-lg">⚡</span>
+                </div>
+                <div>
+                  <h3 className="text-white font-black text-sm">Go Live</h3>
+                  <p className="text-emerald-100 text-[10px] font-medium">Deploy to {goLiveConfirm.broker}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="px-5 py-4 space-y-3">
+              <div className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
+                <div>
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">Underlying</div>
+                  <div className="text-lg font-black text-slate-800">{goLiveConfirm.underlying}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">Strike</div>
+                  <div className="text-lg font-black text-slate-800">{goLiveConfirm.strike}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">Lots</div>
+                  <div className="text-lg font-black text-slate-800">{goLiveConfirm.lots}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-indigo-50 rounded-lg px-3 py-2 border border-indigo-100">
+                  <div className="text-[9px] text-indigo-500 font-bold uppercase">Strategy</div>
+                  <div className="text-xs font-bold text-indigo-700">{strategyLabel(goLiveConfirm.strategyType)}</div>
+                </div>
+                <div className="bg-violet-50 rounded-lg px-3 py-2 border border-violet-100">
+                  <div className="text-[9px] text-violet-500 font-bold uppercase">Broker</div>
+                  <div className="text-xs font-bold text-violet-700">{goLiveConfirm.broker}</div>
+                </div>
+                <div className={`rounded-lg px-3 py-2 border ${goLiveConfirm.pnl >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
+                  <div className={`text-[9px] font-bold uppercase ${goLiveConfirm.pnl >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>Paper P&L</div>
+                  <div className={`text-xs font-bold ${goLiveConfirm.pnl >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>₹{Math.round(goLiveConfirm.pnl).toLocaleString('en-IN')}</div>
+                </div>
+              </div>
+
+              {goLiveConfirm.legList && goLiveConfirm.legList.length > 0 && (
+                <div className="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                  <div className="text-[9px] text-slate-500 font-bold uppercase mb-1">Legs</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {goLiveConfirm.legList.map((leg, i) => (
+                      <span key={i} className={`px-2 py-0.5 rounded text-[10px] font-bold ${leg.side === 'BUY' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                        {leg.side} {leg.strike}{leg.optionType} @₹{Number(leg.price || 0).toFixed(1)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                <span className="text-amber-500 text-sm">⚠️</span>
+                <p className="text-[10px] text-amber-700 font-medium">This will place <span className="font-black">real orders</span> with {goLiveConfirm.broker}. Margin will be blocked.</p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button onClick={() => setGoLiveConfirm(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition">
+                Cancel
+              </button>
+              <button onClick={executeGoLive}
+                className="px-5 py-2 text-xs font-black text-white bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg hover:from-emerald-600 hover:to-teal-700 shadow-lg shadow-emerald-200 transition">
+                ⚡ Confirm Go Live
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1718,21 +1886,29 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
 
 
 function CashPositionsSection() {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const { data, refetch } = useQuery({
     queryKey: ['cashPositions'],
     queryFn: async () => {
       const res = await client.get('/option-arbitrage/cash-positions');
       return res.data;
     },
-    refetchInterval: 1000,
-    staleTime: 2000,
+    refetchInterval: 10000,
+    staleTime: 8000,
   });
 
   const positions = data?.positions || [];
-  if (positions.length === 0) return null;
-
-
+    if (positions.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 text-center shadow-sm">
+        <div className="flex items-center justify-center gap-2 mb-1.5">
+          <span className="text-lg">????</span>
+          <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Cash Equity & Stock Strategy Positions</h4>
+        </div>
+        <p className="text-xs text-slate-500 font-medium">No open cash equity trades right now. Live stock positions populate automatically during market hours (9:15 AM - 3:30 PM IST) when strategy signals trigger.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1758,32 +1934,42 @@ function CashPositionsSection() {
           <table className="w-full text-[11px] text-left">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold">
               <tr>
-                <th className="px-3 py-2">Time</th>
                 <th className="px-3 py-2">Symbol</th>
                 <th className="px-3 py-2">Strategy</th>
+                <th className="px-3 py-2 text-center">Days</th>
                 <th className="px-3 py-2 text-right">Qty</th>
                 <th className="px-3 py-2 text-right">Entry</th>
                 <th className="px-3 py-2 text-right">Current</th>
                 <th className="px-3 py-2 text-right">Target</th>
                 <th className="px-3 py-2 text-right">Stop Loss</th>
-                <th className="px-3 py-2 text-right">Live P&amp;L</th>
+                <th className="px-3 py-2 text-right">P&amp;L</th>
+                <th className="px-3 py-2 text-right">P&amp;L %</th>
                 <th className="px-3 py-2 text-center">Broker</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {positions.map(p => {
-                const pnl = p.currentPnl != null ? Number(p.currentPnl) : null;
+                const pnl = p.currentPnl != null ? Number(p.currentPnl) : 0;
+                const pnlPct = p.pnlPct != null ? Number(p.pnlPct) : 0;
+                const holdDays = p.holdDays != null ? Number(p.holdDays) : 0;
+                const maxDays = p.strategyType === 'CASH_SURGE' ? 3 : 5;
+                const isStale = holdDays >= maxDays;
                 return (
-                  <tr key={p.id} className="hover:bg-slate-50">
-                    <td className="px-3 py-2 font-mono text-[10px] text-slate-600">{fmtTime(p.enteredAt)}</td>
+                  <tr key={p.id} className={`hover:bg-slate-50 ${isStale ? 'bg-amber-50' : ''}`}>
                     <td className="px-3 py-2 font-bold text-slate-800">{p.symbol}</td>
-                    <td className="px-3 py-2 text-slate-500 text-[10px]">{p.strategyType}</td>
+                    <td className="px-3 py-2">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${p.strategyType === 'CASH_SURGE' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {p.strategyType === 'CASH_SURGE' ? 'SURGE' : 'SWING'}
+                      </span>
+                    </td>
+                    <td className={`px-3 py-2 text-center font-bold text-[10px] ${isStale ? 'text-amber-600' : 'text-slate-500'}`}>{holdDays}d{isStale ? ' ⚠' : ''}</td>
                     <td className="px-3 py-2 text-right font-bold">{p.quantity}</td>
                     <td className="px-3 py-2 text-right font-mono">₹{Number(p.entryPrice || 0).toFixed(1)}</td>
-                    <td className="px-3 py-2 text-right font-mono">₹{Number(p.currentPrice || 0).toFixed(1)}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold">₹{Number(p.currentPrice || 0).toFixed(1)}</td>
                     <td className="px-3 py-2 text-right font-mono text-emerald-600">₹{Number(p.targetPrice || 0).toFixed(1)}</td>
                     <td className="px-3 py-2 text-right font-mono text-red-500">₹{Number(p.stopLossPrice || 0).toFixed(1)}</td>
                     <td className={`px-3 py-2 text-right font-mono font-bold ${pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>₹{Math.round(pnl).toLocaleString('en-IN')}</td>
+                    <td className={`px-3 py-2 text-right font-mono font-bold text-[10px] ${pnlPct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%</td>
                     <td className="px-3 py-2 text-center text-[10px] text-slate-500">{p.broker}</td>
                   </tr>
                 );
@@ -1837,9 +2023,9 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
       action: c.action || 'SELL_FAR_BUY_NEAR',
       cePrice: c.nearPrice || 0,
       pePrice: c.farPrice || 0,
-      edgeAfterCosts: c.edgeAfterCosts || c.spread * 25,
+      edgeAfterCosts: c.edgeAfterCosts || (c.netDebit || 0) * 25,
       confidence: 90,
-      legs: `BUY NEAR (${c.nearSymbol || ''} @ ₹${c.nearPrice}) | SELL FAR (${c.farSymbol || ''} @ ₹${c.farPrice})`
+      legs: `SELL NEAR (${c.nearSymbol || ''} @ ₹${c.nearBid || c.nearPrice}) | BUY FAR (${c.farSymbol || ''} @ ₹${c.farAsk || c.farPrice})`
     }));
 
     return [...opportunities, ...mappedCal, ...(verticalOpportunities || []), ...(butterflyOpportunities || []), ...(condorSpreadOpportunities || [])];
@@ -2120,7 +2306,8 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       const res = await client.get('/option-arbitrage/bid-parity/scan', { params: { underlying } });
       return res.data;
     },
-    refetchInterval: 15000
+    refetchInterval: 15000,
+    staleTime: 10000
   });
 
   const today = new Date().toLocaleDateString('en-CA');
@@ -2447,6 +2634,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       const res = await client.get('/option-arbitrage/box-spread/scan', { params: { underlying } });
       return res.data;
     },
+    staleTime: 10000,
     refetchInterval: 30000
   });
 
@@ -2861,6 +3049,7 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
       const res = await client.get('/option-arbitrage/vertical-spread/scan', { params: { underlying } });
       return res.data;
     },
+    staleTime: 10000,
     refetchInterval: 30000
   });
 
@@ -3126,7 +3315,8 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
       const res = await client.get('/option-arbitrage/vertical-spread/candidates', { params: { underlying, maxCostRatio } });
       return res.data;
     },
-    refetchInterval: 30000
+    refetchInterval: 30000,
+    staleTime: 15000
   });
 
   const { data: execSettings } = useQuery({
@@ -3632,9 +3822,23 @@ function blackScholesPrice(S, K, t, r, v, type) {
 
 
 
-function DetailedOpportunityExpandedRow({ item, executionBroker, setPendingLiveDeploy, title = "Signal Breakdown" }) {
+export function DetailedOpportunityExpandedRow({ item, executionBroker, setPendingLiveDeploy, title = "Signal Breakdown" }) {
   let oppToPass = item;
-  if ((!Array.isArray(item.legList) || item.legList.length < 2) && typeof item.legs === 'string') {
+  if (!Array.isArray(oppToPass.legList) || oppToPass.legList.length === 0) {
+    const isReversal = String(oppToPass.action || oppToPass.strategyType || '').toUpperCase().includes('REVERSAL');
+    const synthesized = [];
+    const ceP = Number(oppToPass.ceEntryPrice || oppToPass.cePrice || oppToPass.ceAsk || 0);
+    const peP = Number(oppToPass.peEntryPrice || oppToPass.pePrice || oppToPass.peBid || 0);
+    const futP = Number(oppToPass.futEntryPrice || oppToPass.futuresPrice || 0);
+    const stk = Number(oppToPass.strike || oppToPass.atmStrike || 0);
+    if (ceP > 0) synthesized.push({ side: isReversal ? 'BUY' : 'SELL', optionType: 'CE', strike: stk, price: ceP, qty: 1 });
+    if (peP > 0) synthesized.push({ side: isReversal ? 'SELL' : 'BUY', optionType: 'PE', strike: stk, price: peP, qty: 1 });
+    if (futP > 0) synthesized.push({ side: isReversal ? 'SELL' : 'BUY', optionType: 'FUT', strike: 0, price: futP, qty: 1 });
+    if (synthesized.length > 0) {
+      oppToPass = { ...oppToPass, legList: synthesized };
+    }
+  }
+  if ((!Array.isArray(oppToPass.legList) || oppToPass.legList.length < 2) && typeof item.legs === 'string') {
     const legStrs = item.legs.split('|').map(s => s.trim()).filter(Boolean);
     const legList = legStrs.map(ls => {
       let side = ls.includes('BUY') ? 'BUY' : 'SELL';
@@ -3734,7 +3938,7 @@ function DetailedOpportunityExpandedRow({ item, executionBroker, setPendingLiveD
         <div className="bg-white border border-indigo-100 rounded-xl overflow-hidden shadow-sm">
           <div className="bg-slate-50 border-b border-indigo-100 px-3 py-2 flex justify-between items-center">
             <span className="text-xs font-black text-slate-600 uppercase">Execution Legs</span>
-            <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">{oppToPass.expiryDate || oppToPass.expiry || '--'}</span>
+            <span className="inline-flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700 text-white font-black text-xs px-3 py-1 rounded-full shadow-md border border-indigo-300">📅 EXPIRY: {oppToPass.expiryDate || oppToPass.expiry || '--'}</span>
           </div>
           {hasLegs ? (
             <table className="w-full text-left text-xs">
@@ -3903,8 +4107,9 @@ function ArbitrageSignalPayoffChart({ opp }) {
   const totalMax = maxProfitPerShare * lotSize;
   const totalMin = maxLossPerShare * lotSize;
 
-  const expiryLabel = opp.expiryDate
-    ? new Date(opp.expiryDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  const expVal = opp.expiryDate || opp.expiry;
+  const expiryLabel = expVal
+    ? new Date(expVal + (String(expVal).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     : null;
 
   return (
@@ -3914,7 +4119,7 @@ function ArbitrageSignalPayoffChart({ opp }) {
           Payoff at Expiry — guaranteed by the convexity bound, not a probability estimate
         </div>
         {expiryLabel && (
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-violet-50 text-violet-700 border-violet-200" title="This payoff is priced off THIS contract expiry -- comparing against another tool with a different expiry selected will show different premiums even for identical strikes.">
+          <span className="inline-flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700 text-white font-black text-xs px-3 py-1 rounded-full shadow-md border border-indigo-300" title="This payoff is priced off THIS contract expiry -- comparing against another tool with a different expiry selected will show different premiums even for identical strikes.">
             📅 Expiry {expiryLabel}
           </span>
         )}
@@ -3938,7 +4143,7 @@ function ArbitrageSignalPayoffChart({ opp }) {
           <div className="text-[9px] text-indigo-600">cost: ₹{chart.cost.toFixed(2)}/share</div>
         </div>
       </div>
-      <div className="relative overflow-x-auto">
+      <div className="relative w-full flex flex-col items-center justify-center mx-auto my-3 overflow-x-auto text-center">
         <svg ref={chartRef} viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full h-[180px] cursor-crosshair"
           onMouseMove={handleMove} onMouseLeave={() => setHover(null)}>
           <defs>
@@ -4012,6 +4217,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
       const res = await client.get('/option-arbitrage/butterfly-spread/scan', { params: { underlying } });
       return res.data;
     },
+    staleTime: 10000,
     refetchInterval: 30000
   });
 
@@ -4429,7 +4635,8 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
       const res = await client.get('/option-arbitrage/butterfly-spread/candidates', { params: { underlying, maxCostRatio } });
       return res.data;
     },
-    refetchInterval: 30000
+    refetchInterval: 30000,
+    staleTime: 15000
   });
 
   const { data: execSettings } = useQuery({
@@ -4439,7 +4646,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
   });
 
   const candidates = data?.candidates || [];
-  const rowKey = (c) => `${c.underlying}-${c.optionType}-${c.k1}-${c.k2}-${c.k3}`;
+  const rowKey = (c) => `${c.underlying}-${c.optionType}-${c.k1}-${c.k2}-${c.k3}-${c.expiryDate}`;
 
   const toggleSort = (col) => { if (sortCol === col) setSortAsc(!sortAsc); else { setSortCol(col); setSortAsc(col === 'strikes' || col === 'underlying'); } };
   const sortIcon = (col) => sortCol === col ? (sortAsc ? ' ▲' : ' ▼') : ' ↕';
@@ -4518,7 +4725,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
 
     return (
       <tr>
-        <td colSpan={16} className="p-0">
+        <td colSpan={14} className="p-0">
           <div className="bg-gradient-to-br from-white via-amber-50/30 to-indigo-50/30 border-t-2 border-amber-200 p-4 space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               <div className="bg-white rounded-xl border border-slate-200 p-2 text-center">
@@ -4765,6 +4972,7 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
       const res = await client.get('/option-arbitrage/condor-spread/scan', { params: { underlying } });
       return res.data;
     },
+    staleTime: 10000,
     refetchInterval: 30000
   });
 
@@ -5666,6 +5874,8 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
                   <ColHead col="strike">Strategy Type</ColHead>
                   <ColHead col="confidence">Risk / Range</ColHead>
                   <ColHead col="edgeAfterCosts" right>Edge / Premium</ColHead>
+                  <th className="px-2 py-3 text-right text-[10px] font-bold">Live P&L</th>
+                  <th className="px-2 py-3 text-right text-[10px] font-bold">Max Loss</th>
                   <th className="px-3 py-3 text-center">Status</th>
                   <th className="px-3 py-3 text-center">Action</th>
                 </tr>
@@ -5710,6 +5920,35 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
                           <div className={`font-mono font-black text-sm ${edge >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{edge >= 0 ? '+' : ''}₹{Math.round(edge)}</div>
                           <div className="text-slate-500 font-mono text-[10px] mt-0.5">Credit: {opp.credit ? opp.credit.toFixed(1) : '--'} pt</div>
                         </td>
+                        {(() => {
+                          const livePnl = opp.id ? icPnlMap[String(opp.id)] : null;
+                          const maxLossVal = (() => {
+                            if (opp.maxLossRs) return opp.maxLossRs;
+                            if (opp.legList && opp.legList.length >= 4) {
+                              const strikes = opp.legList.map(l => Number(l.strike)).sort((a,b)=>a-b);
+                              let wingW = Infinity;
+                              for (let i = 1; i < strikes.length; i++) wingW = Math.min(wingW, strikes[i] - strikes[i-1]);
+                              const credit = Number(opp.credit) || 0;
+                              const lotSz = Number(opp.lotSize) || 25;
+                              return (wingW - credit) * lotSz;
+                            }
+                            return null;
+                          })();
+                          const nearMaxLoss = livePnl != null && maxLossVal && livePnl < 0 && Math.abs(livePnl) >= maxLossVal * 0.7;
+                          return (<>
+                            <td className={`px-2 py-3 text-right font-mono font-black text-sm ${nearMaxLoss ? 'bg-emerald-50 animate-pulse' : ''}`}>
+                              {livePnl != null
+                                ? <span className={`px-1.5 py-0.5 rounded ${Number(livePnl) >= 0 ? 'text-emerald-600 bg-emerald-50' : nearMaxLoss ? 'text-emerald-700 bg-emerald-100 border border-emerald-300 font-black' : 'text-red-500 bg-red-50'}`}>
+                                    {Number(livePnl) >= 0 ? '+' : ''}₹{Math.round(Number(livePnl)).toLocaleString('en-IN')}
+                                    {nearMaxLoss && <span className="ml-1 text-[9px]">ENTRY</span>}
+                                  </span>
+                                : <span className="text-slate-300">--</span>}
+                            </td>
+                            <td className="px-2 py-3 text-right font-mono text-[11px] text-red-400">
+                              {maxLossVal ? `₹${Math.round(maxLossVal).toLocaleString('en-IN')}` : '--'}
+                            </td>
+                          </>);
+                        })()}
                         <td className="px-3 py-3 text-center align-middle">
                           <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${stColor}`}>{st}</span>
                         </td>
@@ -5722,7 +5961,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
                       </tr>
                       {isExp && (
                         <tr className="bg-indigo-50/40 border-b border-indigo-100">
-                          <td colSpan={7} className="p-3">
+                          <td colSpan={8} className="p-3">
                               <DetailedOpportunityExpandedRow item={opp} executionBroker={executionBroker} setPendingLiveDeploy={(o) => handleExecuteInline(o)} title="Iron Condor Breakdown" />
                           </td>
                         </tr>
@@ -7394,7 +7633,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
     </div>
   );
 }
-export { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS };
+export { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS, strategyLabel };
 
 function TopPicksView({ executionBroker, handleExecuteInline }) {
   const [underlying, setUnderlying] = React.useState('ALL');

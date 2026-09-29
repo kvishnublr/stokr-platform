@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
@@ -14,6 +15,9 @@ public interface CashPositionRepository extends JpaRepository<CashPosition, Long
 
     @Query("SELECT c FROM CashPosition c WHERE c.status IN ('CLOSED', 'EXITED') ORDER BY c.exitedAt DESC")
     List<CashPosition> findAllClosed();
+
+    @Query(value = "SELECT * FROM cash_positions WHERE status IN ('CLOSED', 'EXITED') ORDER BY exited_at DESC LIMIT 200", nativeQuery = true)
+    List<CashPosition> findRecentClosed();
 
     @Query("SELECT COUNT(c) FROM CashPosition c WHERE c.status = 'OPEN'")
     long countAllOpen();

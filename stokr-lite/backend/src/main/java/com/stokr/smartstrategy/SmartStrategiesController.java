@@ -1,0 +1,357 @@
+package com.stokr.smartstrategy;
+
+import com.stokr.arbitrage.OptionArbAutoExecService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+@RestController
+@RequestMapping("/api/smart-strategies")
+public class SmartStrategiesController {
+
+    private static final Logger log = LoggerFactory.getLogger(SmartStrategiesController.class);
+
+    private final RatioButterflyScanner ratioButterflyScanner;
+    private final BrokenWingButterflyScanner bwbScanner;
+    private final SkewHarvestScanner skewHarvestScanner;
+    private final ExpiryThetaCrushScanner thetaCrushScanner;
+    private final BoxSpreadArbScanner boxSpreadScanner;
+    private final JadeLizardScanner jadeLizardScanner;
+    private final CalendarSpreadEdgeScanner calendarSpreadScanner;
+    private final OptionArbAutoExecService autoExecService;
+    private final SmartStrategyExecutionService executionService;
+    private final IronCondorScanner ironCondorScanner;
+    private final SmartAutoEntryService autoEntryService;
+    private final PortfolioRiskManager riskManager;
+    private final StrategyScoreEngine scoreEngine;
+    private final TradePerformanceService performanceService;
+    private final MarketRegimeDetector regimeDetector;
+    private final AdaptiveStrategyScanner adaptiveScanner;
+
+    private final ConcurrentHashMap<String, CachedResult> cache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Map<String, Object>> lastGoodCache = new ConcurrentHashMap<>();
+
+    public SmartStrategiesController(RatioButterflyScanner ratioButterflyScanner,
+                                      BrokenWingButterflyScanner bwbScanner,
+                                      SkewHarvestScanner skewHarvestScanner,
+                                      ExpiryThetaCrushScanner thetaCrushScanner,
+                                      BoxSpreadArbScanner boxSpreadScanner,
+                                      JadeLizardScanner jadeLizardScanner,
+                                      CalendarSpreadEdgeScanner calendarSpreadScanner,
+                                      OptionArbAutoExecService autoExecService,
+                                      SmartStrategyExecutionService executionService,
+                                      IronCondorScanner ironCondorScanner,
+                                      SmartAutoEntryService autoEntryService,
+                                      PortfolioRiskManager riskManager,
+                                      StrategyScoreEngine scoreEngine,
+                                      TradePerformanceService performanceService,
+                                      MarketRegimeDetector regimeDetector,
+                                      AdaptiveStrategyScanner adaptiveScanner) {
+        this.ratioButterflyScanner = ratioButterflyScanner;
+        this.bwbScanner = bwbScanner;
+        this.skewHarvestScanner = skewHarvestScanner;
+        this.thetaCrushScanner = thetaCrushScanner;
+        this.boxSpreadScanner = boxSpreadScanner;
+        this.jadeLizardScanner = jadeLizardScanner;
+        this.calendarSpreadScanner = calendarSpreadScanner;
+        this.autoExecService = autoExecService;
+        this.executionService = executionService;
+        this.ironCondorScanner = ironCondorScanner;
+        this.autoEntryService = autoEntryService;
+        this.riskManager = riskManager;
+        this.scoreEngine = scoreEngine;
+        this.performanceService = performanceService;
+        this.regimeDetector = regimeDetector;
+        this.adaptiveScanner = adaptiveScanner;
+        // Wire regime detector into score engine for IV-aware scoring
+        scoreEngine.setRegimeDetector(regimeDetector);
+    }
+
+    @GetMapping("/ratio-butterfly/scan")
+    public ResponseEntity<Map<String, Object>> scanRatioButterfly(@RequestParam(defaultValue = "ALL") String underlying) {
+        return cachedScan("ratio-butterfly:" + underlying, () -> {
+            List<Map<String, Object>> opps = ratioButterflyScanner.scan(underlying);
+            tryAutoExec(opps);
+            return wrapResponse(opps, "RATIO_BUTTERFLY", underlying);
+        });
+    }
+
+    @GetMapping("/broken-wing-butterfly/scan")
+    public ResponseEntity<Map<String, Object>> scanBWB(@RequestParam(defaultValue = "ALL") String underlying) {
+        return cachedScan("bwb:" + underlying, () -> {
+            List<Map<String, Object>> opps = bwbScanner.scan(underlying);
+            tryAutoExec(opps);
+            return wrapResponse(opps, "BROKEN_WING_BUTTERFLY", underlying);
+        });
+    }
+
+    @GetMapping("/skew-harvest/scan")
+    public ResponseEntity<Map<String, Object>> scanSkewHarvest(@RequestParam(defaultValue = "ALL") String underlying) {
+        return cachedScan("skew-harvest:" + underlying, () -> {
+            List<Map<String, Object>> opps = skewHarvestScanner.scan(underlying);
+            tryAutoExec(opps);
+            return wrapResponse(opps, "SKEW_HARVEST", underlying);
+        });
+    }
+
+    @GetMapping("/theta-crush/scan")
+    public ResponseEntity<Map<String, Object>> scanThetaCrush(@RequestParam(defaultValue = "ALL") String underlying) {
+        return cachedScan("theta-crush:" + underlying, () -> {
+            List<Map<String, Object>> opps = thetaCrushScanner.scan(underlying);
+            tryAutoExec(opps);
+            return wrapResponse(opps, "EXPIRY_THETA_CRUSH", underlying);
+        });
+    }
+
+    @GetMapping("/box-spread/scan")
+    public ResponseEntity<Map<String, Object>> scanBoxSpread(@RequestParam(defaultValue = "ALL") String underlying) {
+        return cachedScan("box-spread:" + underlying, () -> {
+            List<Map<String, Object>> opps = boxSpreadScanner.scan(underlying);
+            tryAutoExec(opps);
+            return wrapResponse(opps, "BOX_SPREAD_ARB", underlying);
+        });
+    }
+
+    @GetMapping("/jade-lizard/scan")
+    public ResponseEntity<Map<String, Object>> scanJadeLizard(@RequestParam(defaultValue = "ALL") String underlying) {
+        return cachedScan("jade-lizard:" + underlying, () -> {
+            List<Map<String, Object>> opps = jadeLizardScanner.scan(underlying);
+            tryAutoExec(opps);
+            return wrapResponse(opps, "JADE_LIZARD", underlying);
+        });
+    }
+
+    @GetMapping("/calendar-spread/scan")
+    public ResponseEntity<Map<String, Object>> scanCalendarSpread(@RequestParam(defaultValue = "ALL") String underlying) {
+        return cachedScan("calendar-spread:" + underlying, () -> {
+            List<Map<String, Object>> opps = calendarSpreadScanner.scan(underlying);
+            tryAutoExec(opps);
+            return wrapResponse(opps, "CALENDAR_SPREAD_EDGE", underlying);
+        });
+    }
+
+    @GetMapping("/adaptive/scan")
+    public ResponseEntity<Map<String, Object>> scanAdaptive(@RequestParam(defaultValue = "ALL") String underlying) {
+        return cachedScan("adaptive:" + underlying, () -> {
+            List<Map<String, Object>> opps = adaptiveScanner.scan(underlying);
+            tryAutoExec(opps);
+            return wrapResponse(opps, "ADAPTIVE", underlying);
+        });
+    }
+
+    @GetMapping("/iron-condor/scan")
+    public ResponseEntity<Map<String, Object>> scanIronCondor(@RequestParam(defaultValue = "ALL") String underlying) {
+        return cachedScan("iron-condor:" + underlying, () -> {
+            List<Map<String, Object>> opps = ironCondorScanner.scan(underlying);
+            return wrapResponse(opps, "IRON_CONDOR", underlying);
+        });
+    }
+
+    @GetMapping("/all/scan")
+    public ResponseEntity<Map<String, Object>> scanAll(@RequestParam(defaultValue = "ALL") String underlying) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketOpen", isMarketOpen());
+        resp.put("lastScannedAt", ZonedDateTime.now(ZoneId.of("Asia/Kolkata"))
+            .format(DateTimeFormatter.ofPattern("hh:mm:ss a")));
+
+        try { resp.put("ratioButterfly", ratioButterflyScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("ratioButterfly", List.of()); }
+        try { resp.put("brokenWingButterfly", bwbScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("brokenWingButterfly", List.of()); }
+        try { resp.put("skewHarvest", skewHarvestScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("skewHarvest", List.of()); }
+        try { resp.put("thetaCrush", thetaCrushScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("thetaCrush", List.of()); }
+        try { resp.put("boxSpread", boxSpreadScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("boxSpread", List.of()); }
+        try { resp.put("jadeLizard", jadeLizardScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("jadeLizard", List.of()); }
+        try { resp.put("calendarSpread", calendarSpreadScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("calendarSpread", List.of()); }
+        try { resp.put("ironCondor", ironCondorScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("ironCondor", List.of()); }
+        try { resp.put("adaptive", adaptiveScanner.scan(underlying)); }
+        catch (Exception e) { resp.put("adaptive", List.of()); }
+
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/enter")
+    public ResponseEntity<Map<String, Object>> enterTrade(@RequestBody Map<String, Object> request) {
+        return ResponseEntity.ok(executionService.enterTrade(request));
+    }
+
+    @GetMapping("/positions")
+    public ResponseEntity<List<Map<String, Object>>> getPositions() {
+        return ResponseEntity.ok(executionService.getActivePositions());
+    }
+
+    @PostMapping("/exit/{positionId}")
+    public ResponseEntity<Map<String, Object>> exitPosition(@PathVariable Long positionId) {
+        return ResponseEntity.ok(executionService.exitPosition(positionId));
+    }
+
+    @PostMapping("/auto-entry/toggle")
+    public ResponseEntity<Map<String, Object>> toggleAutoEntry(@RequestBody Map<String, Object> body) {
+        boolean enable = Boolean.TRUE.equals(body.get("enabled"));
+        autoEntryService.setEnabled(enable);
+        return ResponseEntity.ok(autoEntryService.getStatus());
+    }
+
+    @GetMapping("/auto-entry/status")
+    public ResponseEntity<Map<String, Object>> autoEntryStatus() {
+        return ResponseEntity.ok(autoEntryService.getStatus());
+    }
+
+    @GetMapping("/portfolio/risk")
+    public ResponseEntity<Map<String, Object>> portfolioRisk() {
+        return ResponseEntity.ok(riskManager.getPortfolioSummary());
+    }
+
+    @PostMapping("/score")
+    public ResponseEntity<Map<String, Object>> scoreOpportunity(@RequestBody Map<String, Object> opportunity) {
+        double score = scoreEngine.score(opportunity);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("score", score);
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/top-picks")
+    public ResponseEntity<Map<String, Object>> topPicks(@RequestParam(defaultValue = "ALL") String underlying) {
+        List<Map<String, Object>> all = new ArrayList<>();
+        try { all.addAll(ironCondorScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(jadeLizardScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(bwbScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(ratioButterflyScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(skewHarvestScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(boxSpreadScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(thetaCrushScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(calendarSpreadScanner.scan(underlying)); } catch (Exception e) {}
+
+        List<Map<String, Object>> ranked = scoreEngine.rankAndFilter(all, 40.0);
+        List<Map<String, Object>> top = ranked.size() > 10 ? ranked.subList(0, 10) : ranked;
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("picks", top);
+        result.put("totalScanned", all.size());
+        result.put("aboveThreshold", ranked.size());
+        result.put("marketOpen", isMarketOpen());
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/performance")
+    public ResponseEntity<Map<String, Object>> performance() {
+        return ResponseEntity.ok(performanceService.getPerformanceReport());
+    }
+
+    @GetMapping("/performance/daily")
+    public ResponseEntity<Map<String, Object>> dailyPerformance(@RequestParam(defaultValue = "30") int days) {
+        return ResponseEntity.ok(performanceService.getDailyPerformance(days));
+    }
+
+    @GetMapping("/regime")
+    public ResponseEntity<Map<String, Object>> marketRegime(@RequestParam(defaultValue = "ALL") String underlying) {
+        if ("ALL".equals(underlying)) {
+            return ResponseEntity.ok(regimeDetector.getAllRegimes());
+        }
+        var regime = regimeDetector.getRegime(underlying);
+        if (regime == null) {
+            return ResponseEntity.ok(Map.of("error", "No regime data for " + underlying));
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("underlying", underlying);
+        result.put("regime", regime.regime().name());
+        result.put("spotPrice", regime.spotPrice());
+        result.put("ivRank", regime.ivRank());
+        result.put("atmIV", regime.atmIV());
+        result.put("strategyWeights", regime.strategyWeights());
+        return ResponseEntity.ok(result);
+    }
+
+    private void tryAutoExec(List<Map<String, Object>> opps) {
+        if (!isMarketOpen()) return;
+        if (opps == null || opps.isEmpty()) return;
+        List<Map<String, Object>> actionable = opps.stream()
+            .filter(o -> o.containsKey("legList") && o.get("legList") != null)
+            .filter(o -> !"PRE_EXPIRY_SETUP".equals(o.get("subType")))
+            .toList();
+        if (!actionable.isEmpty()) {
+            try { autoExecService.evaluateAndExecuteFromMaps(actionable); }
+            catch (Exception e) { log.debug("Smart strategy auto-exec: {}", e.getMessage()); }
+        }
+    }
+
+    private Map<String, Object> wrapResponse(List<Map<String, Object>> opps, String strategyType, String underlying) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("strategyType", strategyType);
+        resp.put("underlying", underlying);
+        resp.put("opportunities", opps);
+        resp.put("count", opps.size());
+        boolean marketOpen = isMarketOpen();
+        resp.put("marketOpen", marketOpen);
+        if (!marketOpen) {
+            resp.put("ltpBased", true);
+        }
+        // Scanners price from bid/ask while the market is open and from LTP otherwise (QuotePolicy).
+        String priceSource = marketOpen ? "BID_ASK" : "LTP";
+        for (Map<String, Object> o : opps) o.putIfAbsent("priceSource", priceSource);
+        resp.put("lastScannedAt", ZonedDateTime.now(ZoneId.of("Asia/Kolkata"))
+            .format(DateTimeFormatter.ofPattern("hh:mm:ss a")));
+        return resp;
+    }
+
+    private ResponseEntity<Map<String, Object>> cachedScan(String key, java.util.function.Supplier<Map<String, Object>> fn) {
+        CachedResult cached = cache.get(key);
+        if (cached != null && System.currentTimeMillis() - cached.ts < 15000) {
+            return ResponseEntity.ok(cached.data);
+        }
+        try {
+            Map<String, Object> result = fn.get();
+            cache.put(key, new CachedResult(result, System.currentTimeMillis()));
+            @SuppressWarnings("unchecked")
+            List<?> opps = (List<?>) result.get("opportunities");
+            log.info("Scan [{}]: {} opportunities found", key, opps != null ? opps.size() : 0);
+            if (opps != null && !opps.isEmpty()) {
+                lastGoodCache.put(key, result);
+            }
+            if ((opps == null || opps.isEmpty()) && lastGoodCache.containsKey(key)) {
+                Map<String, Object> stale = new LinkedHashMap<>(lastGoodCache.get(key));
+                stale.put("stale", true);
+                stale.put("staleReason", "No fresh data — showing last known opportunities (LTP based)");
+                stale.put("lastScannedAt", ZonedDateTime.now(ZoneId.of("Asia/Kolkata"))
+                    .format(DateTimeFormatter.ofPattern("hh:mm:ss a")));
+                stale.put("marketOpen", isMarketOpen());
+                return ResponseEntity.ok(stale);
+            }
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.warn("Scan failed for {}: {}", key, e.getMessage());
+            if (lastGoodCache.containsKey(key)) {
+                Map<String, Object> stale = new LinkedHashMap<>(lastGoodCache.get(key));
+                stale.put("stale", true);
+                stale.put("staleReason", "Scan error — showing last known opportunities");
+                stale.put("lastScannedAt", ZonedDateTime.now(ZoneId.of("Asia/Kolkata"))
+                    .format(DateTimeFormatter.ofPattern("hh:mm:ss a")));
+                stale.put("marketOpen", isMarketOpen());
+                return ResponseEntity.ok(stale);
+            }
+            throw e;
+        }
+    }
+
+    private boolean isMarketOpen() {
+        return com.stokr.marketdata.MarketCalendar.isMarketOpenNow();
+    }
+
+    private record CachedResult(Map<String, Object> data, long ts) {}
+}

@@ -44,7 +44,7 @@ spring:
 
 # JWT Configuration
 jwt:
-  secret: ${JWT_SECRET:4uJj9/XZRn3bB7mTGI9uJVC3p8XLDwKgbA/RG7Osz90=}
+  secret: ${JWT_SECRET:#{T(java.util.UUID).randomUUID().toString()}}
   expiration: 86400000        # 24 hours in ms
   refresh-expiration: 604800000  # 7 days in ms
 
@@ -69,6 +69,10 @@ broker:
 stokr:
   ui:
     base-url: ${STOKR_UI_BASE_URL:http://localhost:5173}
+  market:
+    # NSE trading holidays (yyyy-MM-dd, comma-separated). Weekends are always closed.
+    # Scanners show LTP-based previews and auto-entry/execution stay off on these days.
+    holidays: ${STOKR_MARKET_HOLIDAYS:}
 
 # Trading Configuration
 trading:
@@ -95,7 +99,7 @@ server:
   servlet:
     context-path: /
   error:
-    include-message: always
+    include-message: never
 
 # Actuator
 management:

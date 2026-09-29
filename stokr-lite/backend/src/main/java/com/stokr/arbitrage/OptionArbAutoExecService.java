@@ -32,9 +32,9 @@ public class OptionArbAutoExecService {
 
     private final List<Map<String, Object>> execLogs = Collections.synchronizedList(new ArrayList<>());
 
-    /** Settings-key prefixes for each of the 6 real auto-executing strategies. */
+    /** Settings-key prefixes for each of the 7 real auto-executing strategies. */
     private static final List<String> STRATEGY_PREFIXES =
-        List.of("bidParity", "box", "vertical", "butterfly", "condor", "ironCondor");
+        List.of("bidParity", "box", "vertical", "butterfly", "condor", "ironCondor", "calendar");
 
     private static String strategyPrefix(String strategyType) {
         String s = strategyType == null ? "" : strategyType.toUpperCase();
@@ -44,6 +44,7 @@ public class OptionArbAutoExecService {
         if (s.contains("BUTTERFLY")) return "butterfly";
         if (s.contains("IRON")) return "ironCondor";
         if (s.contains("CONDOR")) return "condor";
+        if (s.contains("CALENDAR")) return "calendar";
         return "bidParity";
     }
 
@@ -65,13 +66,14 @@ public class OptionArbAutoExecService {
         // couldn't have different edge requirements, and Vertical/Butterfly/Condor/Iron Condor
         // had no dedicated control at all (they rode on "ALL").
         for (String prefix : STRATEGY_PREFIXES) {
+            double minEdge = "bidParity".equals(prefix) ? 1500.0 : 500.0;
             for (String u : List.of("Nifty", "Banknifty", "Finnifty", "Midcpnifty")) {
                 defaults.put(prefix + u + "Enabled", true);
-                defaults.put(prefix + u + "MinEdge", 800.0);
+                defaults.put(prefix + u + "MinEdge", minEdge);
                 defaults.put(prefix + u + "Lots", 1);
             }
         }
-        defaults.put("maxOpenPositions", 1);
+        defaults.put("maxOpenPositions", 50);
         defaults.put("maxDailyLoss", 5000.0);
         defaults.put("stopLossEnabled", true);
         defaults.put("stopLossPct", 50.0);
@@ -429,7 +431,9 @@ public class OptionArbAutoExecService {
                 opp.setUnderlying((String) m.get("underlying"));
                 opp.setStrike(m.get("strike") instanceof Number n ? n.intValue() : null);
                 opp.setAction((String) m.get("action"));
-                opp.setStrategyType((String) m.get("strategyType"));
+                String stratType = (String) m.get("strategyType");
+                if (stratType == null) stratType = (String) m.get("type");
+                opp.setStrategyType(stratType);
                 opp.setType((String) m.get("type"));
                 opp.setLegs((String) m.get("legs"));
                 Object spot = m.get("spotPrice");
@@ -441,7 +445,7 @@ public class OptionArbAutoExecService {
                 opp.setExpiryDate(m.get("expiryDate") instanceof String s ? LocalDate.parse(s) : null);
                 if (opp.getExpiryDate() == null && opp.getUnderlying() != null) {
                     try {
-                        opp.setExpiryDate(optionChainService.getWeeklyExpiryDate(opp.getUnderlying()));
+                        opp.setExpiryDate(optionChainService.getNearestExpiry(opp.getUnderlying()));
                     } catch (Exception ignored) {}
                 }
                 Object eac = m.get("edgeAfterCosts");
@@ -481,6 +485,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
         long currentOpen = positionRepo.countOpenLive(); 
         for (OptionArbOpportunity opp : newOpps) {
             if (opp.getUnderlying() == null || opp.getEdgeAfterCosts() == null) continue;
+            if (opp.getEdgePoints() == null) continue;
 
             String prefix = strategyPrefix(opp.getStrategyType());
             String key = prefix + capitalize(opp.getUnderlying());
@@ -577,8 +582,8 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                         var futQuotes = optionChainService.fetchQuotes(List.of(futSymbol));
                         if (futQuotes.containsKey(futSymbol)) {
                             var futQ = futQuotes.get(futSymbol);
-                            // REVERSAL buys FUT, CONVERSION sells FUT
-                            futLive = isReversal ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice);
+                            boolean isBuyFut = opp.getAction() != null && opp.getAction().contains("BUY FUT");
+                            futLive = isBuyFut ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice);
                         }
                     } catch (Exception ignored) {}
                 }
@@ -604,7 +609,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
         if (!Boolean.TRUE.equals(settings.get("enabled"))) return;
 
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 29))) return;
 
         String broker = (String) settings.getOrDefault("broker", "NAVIA");
         if ("PAPER".equalsIgnoreCase(broker) || "PAPER".equalsIgnoreCase(mode)) {
@@ -763,11 +768,16 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
      * Check all open positions for roll-over.
      * When live P&L reaches rolloverThresholdPct% of target edge, square off and open new position.
      */
-    @Scheduled(fixedDelayString = "30000", initialDelay = 30000)
+    @Scheduled(fixedDelayString = "5000", initialDelay = 5000)
     public synchronized void checkRollover() {
+        // Exits can only be executed while the market trades; off-hours quotes are stale LTPs
+        // and must not trip stop-losses or targets.
+        if (!com.stokr.marketdata.MarketCalendar.isMarketOpenNow()) return;
 
+        LocalDate todayIST = LocalDate.now(ZoneId.of("Asia/Kolkata"));
         List<LivePosition> openPositions = positionRepo.findAllOpen().stream()
                 .filter(p -> "OPEN".equals(p.getStatus()))
+                .filter(p -> p.getExpiryDate() == null || !p.getExpiryDate().isBefore(todayIST))
                 .toList();
         if (openPositions.isEmpty()) return;
 
@@ -793,12 +803,51 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             return;
         }
 
-for (LivePosition pos : openPositions) {            String broker = pos.getBroker() != null ? pos.getBroker() : "PAPER";            Map<String, Object> settings = getSettings(broker);            boolean autoExitEnabled = Boolean.TRUE.equals(settings.get("autoExitEnabled"));            boolean stopLossEnabled = Boolean.TRUE.equals(settings.get("stopLossEnabled"));            if (!autoExitEnabled && !stopLossEnabled) continue;            double autoExitThresholdPct = ((Number) settings.getOrDefault("autoExitThresholdPct", 90.0)).doubleValue();            boolean isPaper = "PAPER".equalsIgnoreCase(broker);            Long userId = null;            BrokerAccount account = null;            BrokerAdapter adapter = null;            if (!isPaper) {                try {                    List<BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");                    if (accounts.isEmpty()) continue;                    account = accounts.get(0);                    userId = account.getUserId();                    adapter = brokerService.getAdapter(broker);                } catch (Exception e) {                    log.error("Rollover: broker setup failed for {}: {}", broker, e.getMessage());                    continue;                }            }
+for (LivePosition pos : openPositions) {
+            String broker = pos.getBroker() != null ? pos.getBroker() : "PAPER";
+            Map<String, Object> settings = getSettings(broker);
+            boolean autoExitEnabled = Boolean.TRUE.equals(settings.get("autoExitEnabled"));
+            boolean stopLossEnabled = Boolean.TRUE.equals(settings.get("stopLossEnabled"));
+
+            // Check if this position has per-position triggers set (profit exit / loss re-entry)
+            boolean hasPositionTriggers = false;
+            if (pos.getOpportunityId() != null) {
+                OptionArbOpportunity triggerCheck = oppRepo.findById(pos.getOpportunityId()).orElse(null);
+                if (triggerCheck != null && (triggerCheck.getProfitExitTrigger() != null || triggerCheck.getLossReentryTrigger() != null)) {
+                    hasPositionTriggers = true;
+                }
+            }
+
+            if (!autoExitEnabled && !stopLossEnabled && !hasPositionTriggers && !hasSmartExitRules(pos)) continue;
+
+            double autoExitThresholdPct = ((Number) settings.getOrDefault("autoExitThresholdPct", 90.0)).doubleValue();
+            boolean isPaper = "PAPER".equalsIgnoreCase(broker);
+            Long userId = null;
+            BrokerAccount account = null;
+            BrokerAdapter adapter = null;
+            if (!isPaper) {
+                try {
+                    List<BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");
+                    if (accounts.isEmpty()) continue;
+                    account = accounts.get(0);
+                    userId = account.getUserId();
+                    adapter = brokerService.getAdapter(broker);
+                } catch (Exception e) {
+                    log.error("Rollover: broker setup failed for {}: {}", broker, e.getMessage());
+                    continue;
+                }
+            }
 boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
 
             double pnl;
             if (isMultiLeg) {
+                // A leg without a quote would be dropped from the P&L sum and could fire a false
+                // SL/target — only evaluate when every leg is priced.
+                if (!allLegsQuoted(pos, quotes)) {
+                    log.debug("Exit check skipped for position {} — missing leg quote(s)", pos.getId());
+                    continue;
+                }
                 pnl = computeMultiLegPnl(pos, quotes);
             } else {
                 String actionStr = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
@@ -892,7 +941,9 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 }
             }
 
-            if (targetEdge <= 0) continue;
+            // Legacy arb positions are driven by targetEdge; Smart Strategy positions carry their own
+            // SL / target / time-exit rules and no targetEdge, so they must not be skipped here.
+            if (targetEdge <= 0 && !hasSmartExitRules(pos)) continue;
 
             double pnlPerLot = lots > 0 ? pnl / lots : 0;
             double pctAchieved = targetEdge > 0 ? (pnlPerLot / targetEdge) * 100 : 0;
@@ -904,8 +955,12 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
 
             // Stop-loss: close position if loss exceeds threshold
             if (stopLossEnabled && targetEdge > 0 && pnlPerLot < 0) {
+                java.time.LocalDateTime entryTime = pos.getEnteredAt() != null ? pos.getEnteredAt() : pos.getCreatedAt();
+                boolean inGracePeriod = entryTime != null &&
+                    java.time.Duration.between(entryTime, java.time.LocalDateTime.now()).getSeconds() < 30;
+
                 double lossPct = Math.abs(pnlPerLot / targetEdge) * 100;
-                if (lossPct >= stopLossPct) {
+                if (!inGracePeriod && lossPct >= stopLossPct) {
                     shouldExit = true;
                     exitReason = "STOP_LOSS";
                     log.info("STOP_LOSS: {} {} strike {} — loss {}% exceeds threshold {}% (P&L ₹{})",
@@ -917,7 +972,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             }
 
             // Auto-exit: close position when target edge met (no re-entry)
-            if (autoExitEnabled && pctAchieved >= autoExitThresholdPct) {
+            if (autoExitEnabled && targetEdge > 0 && pctAchieved >= autoExitThresholdPct) {
                 shouldExit = true;
                 exitReason = "AUTO_EXIT";
                 log.info("AUTO_EXIT: {} {} strike {} — {}% of target ₹{} reached (P&L ₹{})",
@@ -925,6 +980,100 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         String.format("%.0f", targetEdge), String.format("%.0f", pnl));
                 addLog("AUTO_EXIT", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrike()
                         + " — " + String.format("%.0f", pctAchieved) + "% of target reached (₹" + String.format("%.0f", pnl) + ")");
+            }
+
+            // Per-position SL (Smart Strategies)
+            if (!shouldExit && pos.getSlPct() != null && pos.getSlPct() > 0 && pos.getMaxLossAmount() != null && pos.getMaxLossAmount() > 0) {
+                double slThreshold = pos.getMaxLossAmount() * pos.getSlPct() / 100.0;
+                if (pnl < 0 && Math.abs(pnl) >= slThreshold) {
+                    shouldExit = true;
+                    exitReason = "PER_POSITION_SL";
+                    log.info("PER_POS_SL: {} {} — loss ₹{} >= SL ₹{} ({}%)", pos.getUnderlying(),
+                        pos.getStrategyType(), String.format("%.0f", Math.abs(pnl)), String.format("%.0f", slThreshold), pos.getSlPct());
+                    addLog("PER_POS_SL", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrategyType()
+                        + " — loss ₹" + String.format("%.0f", Math.abs(pnl)) + " hit " + pos.getSlPct() + "% SL");
+                }
+            }
+
+            // Per-position target (Smart Strategies)
+            if (!shouldExit && pos.getTargetPct() != null && pos.getTargetPct() > 0 && pos.getMaxProfitAmount() != null && pos.getMaxProfitAmount() > 0) {
+                double targetThreshold = pos.getMaxProfitAmount() * pos.getTargetPct() / 100.0;
+                if (pnl > 0 && pnl >= targetThreshold) {
+                    shouldExit = true;
+                    exitReason = "PER_POSITION_TARGET";
+                    log.info("PER_POS_TARGET: {} {} — profit ₹{} >= target ₹{} ({}%)", pos.getUnderlying(),
+                        pos.getStrategyType(), String.format("%.0f", pnl), String.format("%.0f", targetThreshold), pos.getTargetPct());
+                    addLog("PER_POS_TARGET", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrategyType()
+                        + " — profit ₹" + String.format("%.0f", pnl) + " hit " + pos.getTargetPct() + "% target");
+                }
+            }
+
+            // Trailing stop loss (Smart Strategies) — ratchet SL upward as profit grows
+            if (!shouldExit && pos.getMaxProfitAmount() != null && pos.getMaxProfitAmount() > 0 && pos.getTargetPct() != null) {
+                double maxProfit = pos.getMaxProfitAmount();
+                double targetThreshold = maxProfit * pos.getTargetPct() / 100.0;
+                double peakPnl = pos.getPeakPnl() != null ? pos.getPeakPnl() : 0;
+
+                if (pnl > peakPnl) {
+                    pos.setPeakPnl(pnl);
+                    peakPnl = pnl;
+                }
+
+                double pctOfTarget = targetThreshold > 0 ? pnl / targetThreshold * 100 : 0;
+
+                Double currentTrailingSl = pos.getTrailingSlLevel();
+                Double newTrailingSl = currentTrailingSl;
+
+                // At 50% of target: move SL to breakeven (0)
+                if (pctOfTarget >= 50 && (currentTrailingSl == null || currentTrailingSl < 0)) {
+                    newTrailingSl = 0.0;
+                }
+                // At 70% of target: lock in 40% of peak profit
+                if (pctOfTarget >= 70 && peakPnl > 0) {
+                    double lockedLevel = peakPnl * 0.40;
+                    if (newTrailingSl == null || lockedLevel > newTrailingSl) {
+                        newTrailingSl = lockedLevel;
+                    }
+                }
+                // At 90% of target: lock in 60% of peak profit
+                if (pctOfTarget >= 90 && peakPnl > 0) {
+                    double lockedLevel = peakPnl * 0.60;
+                    if (newTrailingSl == null || lockedLevel > newTrailingSl) {
+                        newTrailingSl = lockedLevel;
+                    }
+                }
+
+                if (newTrailingSl != null && (currentTrailingSl == null || newTrailingSl > currentTrailingSl)) {
+                    pos.setTrailingSlLevel(newTrailingSl);
+                    positionRepo.save(pos);
+                    log.info("TRAILING_SL: {} {} — SL ratcheted to ₹{} (pnl ₹{}, peak ₹{}, {}% of target)",
+                        pos.getUnderlying(), pos.getStrategyType(), String.format("%.0f", newTrailingSl),
+                        String.format("%.0f", pnl), String.format("%.0f", peakPnl), String.format("%.0f", pctOfTarget));
+                }
+
+                // Check if price has fallen below trailing SL
+                if (pos.getTrailingSlLevel() != null && pnl < pos.getTrailingSlLevel()) {
+                    shouldExit = true;
+                    exitReason = "TRAILING_SL";
+                    log.info("TRAILING_SL_HIT: {} {} — pnl ₹{} below trailing SL ₹{}", pos.getUnderlying(),
+                        pos.getStrategyType(), String.format("%.0f", pnl), String.format("%.0f", pos.getTrailingSlLevel()));
+                    addLog("TRAILING_SL", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrategyType()
+                        + " — pnl ₹" + String.format("%.0f", pnl) + " below trailing SL ₹" + String.format("%.0f", pos.getTrailingSlLevel()));
+                }
+            }
+
+            // Per-position time exit (Smart Strategies) — exit N minutes before market close
+            if (!shouldExit && pos.getTimeExitMinutes() != null && pos.getTimeExitMinutes() > 0) {
+                LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+                LocalTime exitTime = LocalTime.of(15, 30).minusMinutes(pos.getTimeExitMinutes());
+                if (!now.isBefore(exitTime) && now.isBefore(LocalTime.of(15, 30))) {
+                    shouldExit = true;
+                    exitReason = "TIME_EXIT";
+                    log.info("TIME_EXIT: {} {} — {}min before close (P&L ₹{})", pos.getUnderlying(),
+                        pos.getStrategyType(), pos.getTimeExitMinutes(), String.format("%.0f", pnl));
+                    addLog("TIME_EXIT", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrategyType()
+                        + " — " + pos.getTimeExitMinutes() + "min before close (₹" + String.format("%.0f", pnl) + ")");
+                }
             }
 
             if (!shouldExit) continue;
@@ -945,6 +1094,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
 
             // Save exit prices and close position
             pos.setStatus("CLOSED");
+            pos.setExitReason(exitReason);
             pos.setExitedAt(LocalDateTime.now());
             pos.setCurrentPnl(BigDecimal.valueOf(pnl));
             if (isMultiLeg) {
@@ -1153,7 +1303,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         .side(leg.side()).quantity(leg.quantity())
                         .price(leg.price())
                         .orderType(BrokerOrderRequest.OrderType.MARKET)
-                        .productType("MIS").build();
+                        .productType("NRML").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
                 if (!resp.isSuccess()) {
                     addLog("ROLLOVER", "LEG_FAIL", leg.legKey() + " " + leg.symbol() + ": " + resp.message());
@@ -1185,7 +1335,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         .side(leg.side()).quantity(leg.quantity())
                         .price(leg.price())
                         .orderType(BrokerOrderRequest.OrderType.MARKET)
-                        .productType("MIS").build();
+                        .productType("NRML").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
                 if (!resp.isSuccess()) {
                     addLog("ROLLOVER", "LEG_FAIL", leg.legKey() + " " + leg.symbol() + ": " + resp.message());
@@ -1301,7 +1451,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         .side(side)
                         .quantity(qty).price(price)
                         .orderType(price > 0 ? BrokerOrderRequest.OrderType.LIMIT : BrokerOrderRequest.OrderType.MARKET)
-                        .productType(opp.getReentryProductType() != null ? opp.getReentryProductType() : "MIS").build();
+                        .productType(opp.getReentryProductType() != null ? opp.getReentryProductType() : "NRML").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
 
                 if (!resp.isSuccess() || resp.orderId() == null || resp.orderId().isBlank()) {
@@ -1437,7 +1587,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         .side(leg.side())
                         .quantity(leg.quantity()).price(leg.price())
                         .orderType(orderType)
-                        .productType(opp.getReentryProductType() != null ? opp.getReentryProductType() : "MIS").build();
+                        .productType(opp.getReentryProductType() != null ? opp.getReentryProductType() : "NRML").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
 
                 if (!resp.isSuccess() || resp.orderId() == null || resp.orderId().isBlank()) {
@@ -1587,6 +1737,23 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         return span * lotSize * lots * 1.15;
     }
 
+    /** Smart Strategy positions carry per-position exit rules instead of a legacy targetEdge. */
+    static boolean hasSmartExitRules(LivePosition pos) {
+        return (pos.getSlPct() != null && pos.getSlPct() > 0)
+            || (pos.getTargetPct() != null && pos.getTargetPct() > 0)
+            || (pos.getTimeExitMinutes() != null && pos.getTimeExitMinutes() > 0);
+    }
+
+    /** True when every leg of a multi-leg position has a quote in {@code quotes}. */
+    static boolean allLegsQuoted(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes) {
+        if (pos.getLegs() == null) return false;
+        for (Map<String, Object> leg : pos.getLegs()) {
+            Object sym = leg.get("symbol");
+            if (!(sym instanceof String s) || quotes.get(s) == null) return false;
+        }
+        return true;
+    }
+
     /**
      * Generic mark-to-market P&L for a multi-leg (no-futures) position: sum of per-leg
      * (current - entry) for BUY legs, (entry - current) for SELL legs, scaled by each leg's
@@ -1605,7 +1772,14 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             double bid = q.bid > 0 ? q.bid : q.lastPrice;
             double ask = q.ask > 0 ? q.ask : q.lastPrice;
             double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
-            if (q.lastPrice <= 0 || entry <= 0) continue;
+            if (entry <= 0) continue;
+            if (q.lastPrice <= 0 && q.bid <= 0 && q.ask <= 0) {
+                // Expired leg: SELL leg expired worthless = keep full premium, BUY leg = lose full premium
+                double legPnl2 = "BUY".equals(leg.get("side")) ? -entry : entry;
+                int qtyMult2 = leg.get("qty") instanceof Number n2 ? n2.intValue() : 1;
+                pnl += legPnl2 * qtyMult2;
+                continue;
+            }
             int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
             String side = (String) leg.get("side");
             // To close a BUY leg, we must SELL at the BID
@@ -1626,8 +1800,33 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         if (legs == null || legs.isEmpty()) return false;
         int lotSize = pos.getLotSize() != null ? pos.getLotSize() : getLotSize(pos.getUnderlying());
         int lots = pos.getLots() != null ? pos.getLots() : 1;
+
+        // Sort legs by bid-ask spread (widest first) to minimize slippage on illiquid legs
+        List<Map<String, Object>> sortedLegs = new java.util.ArrayList<>(legs);
+        try {
+            Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(
+                    sortedLegs.stream().map(l -> (String) l.get("symbol")).filter(java.util.Objects::nonNull).toList());
+            sortedLegs.sort((a, b) -> {
+                String symA = (String) a.get("symbol");
+                String symB = (String) b.get("symbol");
+                double spreadA = 0, spreadB = 0;
+                if (symA != null && quotes.containsKey(symA)) {
+                    OptionChainService.OptionQuote q = quotes.get(symA);
+                    spreadA = q.ask > 0 && q.bid > 0 ? q.ask - q.bid : 0;
+                }
+                if (symB != null && quotes.containsKey(symB)) {
+                    OptionChainService.OptionQuote q = quotes.get(symB);
+                    spreadB = q.ask > 0 && q.bid > 0 ? q.ask - q.bid : 0;
+                }
+                return Double.compare(spreadB, spreadA);
+            });
+            log.info("Auto-exec: Executing legs widest-spread-first for pos {}", pos.getId());
+        } catch (Exception e) {
+            log.warn("Auto-exec: Could not sort legs by spread for pos {}, using original order", pos.getId());
+        }
+
         boolean allConfirmed = true;
-        for (Map<String, Object> leg : legs) {
+        for (Map<String, Object> leg : sortedLegs) {
             String symbol = (String) leg.get("symbol");
             String side = (String) leg.get("side");
             int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
@@ -1711,7 +1910,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                     .symbol(symbol).exchange("NFO")
                     .side(closeSide).quantity(qty)
                     .price(0.0).orderType(BrokerOrderRequest.OrderType.MARKET)
-                    .productType("MIS").build();
+                    .productType("NRML").build();
             BrokerOrderResponse closeResp;
             try {
                 closeResp = adapter.placeOrder(account.getAccessToken(), closeReq);
@@ -1838,7 +2037,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         return ArbitrageCosts.netEdge(ceEntry, peEntry, futEntry, lotSize, grossEdge, action);
     }
 
-    private double computePnl(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes) {
+    public double computePnl(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes) {
         double ceBid = 0, ceAsk = 0, peBid = 0, peAsk = 0, futBid = 0, futAsk = 0;
         double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
 
@@ -1864,24 +2063,19 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         double pnl = 0;
 
         if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
-            if (action.contains("BUY CE +")) {
-                // BUY CE + SELL PE + SELL FUT (Conversion)
-                if (ceCurrent > 0 && ceEntry > 0) pnl += ceBid - ceEntry;
-                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peAsk;
-                if (action.contains("SELL FUT")) {
-                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futAsk;
-                } else if (action.contains("BUY FUT")) {
-                    if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
-                }
-            } else if (action.contains("SELL CE +")) {
-                // SELL CE + BUY PE + BUY FUT (Reversal)
+            boolean isReversal = action.contains("BUY FUT") || action.contains("SELL CE") || action.contains("REVERSAL");
+            boolean isConversion = action.contains("SELL FUT") || action.contains("BUY CE") || action.contains("CONVERSION");
+
+            if (isReversal) {
+                // Reversal: BUY FUT + BUY PE + SELL CE
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceAsk;
                 if (peCurrent > 0 && peEntry > 0) pnl += peBid - peEntry;
-                if (action.contains("SELL FUT")) {
-                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futAsk;
-                } else if (action.contains("BUY FUT")) {
-                    if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
-                }
+                if (futCurrent > 0 && futEntry > 0) pnl += futBid - futEntry;
+            } else if (isConversion) {
+                // Conversion: SELL FUT + SELL PE + BUY CE
+                if (ceCurrent > 0 && ceEntry > 0) pnl += ceBid - ceEntry;
+                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peAsk;
+                if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futAsk;
             } else {
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceBid - ceEntry;
                 if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peAsk;
@@ -1963,6 +2157,89 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             result.put("message", detail != null ? detail : "Live order failed");
         }
         return result;
+    }
+
+    @Scheduled(cron = "0 35 15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void closeExpiredPositions() {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        try {
+            List<LivePosition> expired = positionRepo.findOpenExpiredBefore(today);
+            if (expired.isEmpty()) return;
+
+            List<String> symbols = new ArrayList<>();
+            for (LivePosition p : expired) {
+                if (p.getCeSymbol() != null) symbols.add(p.getCeSymbol());
+                if (p.getPeSymbol() != null) symbols.add(p.getPeSymbol());
+                if (p.getFutSymbol() != null) symbols.add(p.getFutSymbol());
+                if (p.getLegs() != null) for (Map<String, Object> leg : p.getLegs()) {
+                    Object sym = leg.get("symbol");
+                    if (sym instanceof String s) symbols.add(s);
+                }
+            }
+            Map<String, OptionChainService.OptionQuote> quotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
+
+            int closed = 0;
+            for (LivePosition pos : expired) {
+                boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
+                double pnl = isMultiLeg ? computeMultiLegPnl(pos, quotes) : computePnl(pos, quotes);
+
+                boolean isPaper = pos.getBroker() == null || "PAPER".equalsIgnoreCase(pos.getBroker());
+                if (!isPaper) {
+                    try {
+                        List<BrokerAccount> accounts = pos.getUserId() != null
+                                ? brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(pos.getUserId(), pos.getBroker(), "ACTIVE")
+                                : List.of();
+                        if (!accounts.isEmpty()) {
+                            BrokerAccount account = accounts.get(0);
+                            BrokerAdapter adapter = brokerService.getAdapter(pos.getBroker());
+                            boolean ok = isMultiLeg ? squareOffMultiLegPosition(account, adapter, pos) : squareOffPosition(account, adapter, pos);
+                            if (!ok) {
+                                addLog("AUTO_EXPIRE", "SQUAREOFF_FAILED", pos.getUnderlying() + " " + pos.getStrike() + " live square-off failed");
+                                continue;
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.error("Auto-expire live close failed for {}: {}", pos.getId(), e.getMessage());
+                        continue;
+                    }
+                }
+
+                pos.setStatus("CLOSED");
+                pos.setExitedAt(LocalDateTime.now());
+                pos.setCurrentPnl(BigDecimal.valueOf(pnl));
+                positionRepo.save(pos);
+
+                if (pos.getOpportunityId() != null) {
+                    oppRepo.findById(pos.getOpportunityId()).ifPresent(opp -> {
+                        opp.setStatus("EXPIRED");
+                        opp.setExitTime(LocalDateTime.now());
+                        opp.setPnlAfterCosts(BigDecimal.valueOf(pnl));
+                        oppRepo.save(opp);
+                    });
+                }
+                closed++;
+            }
+            if (closed > 0) {
+                addLog("AUTO_EXPIRE", "CLOSED", "Auto-closed " + closed + " expired positions");
+                log.info("Auto-expired {} positions with expiry before {}", closed, today);
+            }
+        } catch (Exception e) {
+            log.error("closeExpiredPositions failed: {}", e.getMessage(), e);
+        }
+    }
+
+    @Scheduled(cron = "0 31 15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void closeExpiredOpportunities() {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        try {
+            int updated = oppRepo.expireRunningBefore(today);
+            if (updated > 0) {
+                addLog("AUTO_EXPIRE", "OPPS", "Expired " + updated + " RUNNING opportunities past expiry");
+                log.info("Auto-expired {} RUNNING opportunities with expiry before {}", updated, today);
+            }
+        } catch (Exception e) {
+            log.error("closeExpiredOpportunities failed: {}", e.getMessage());
+        }
     }
 
 }

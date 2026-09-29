@@ -1,20 +1,10 @@
 ﻿import { useState, useEffect } from 'react';
 import client from '../api/client';
 
-async function ensureAuthenticated() {
-  if (localStorage.getItem('token')) return;
-  try {
-    const res = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Test User', email: 'test-' + Date.now() + '@test.com', password: 'Test123!@' })
-    });
-    if (res.ok) {
-      const d = await res.json();
-      localStorage.setItem('token', d.accessToken);
-      localStorage.setItem('refreshToken', d.refreshToken);
-    }
-  } catch (e) { /* silent */ }
+function ensureAuthenticated() {
+  if (!localStorage.getItem('token')) {
+    window.location.href = '/login';
+  }
 }
 
 const STRATEGIES = [

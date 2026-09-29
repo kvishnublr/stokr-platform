@@ -1,0 +1,2546 @@
+import { useState, useMemo, useRef, useCallback, Fragment, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import client from '../api/client';
+
+const TOP_PICK_STYLES = `
+@keyframes tpShine {
+  0% { left: -100%; }
+  50%, 100% { left: 150%; }
+}
+@keyframes tpGlow {
+  0%, 100% { box-shadow: 0 0 15px -3px rgba(251,191,36,0.5), 0 0 30px -5px rgba(139,92,246,0.3); }
+  33% { box-shadow: 0 0 20px -3px rgba(236,72,153,0.5), 0 0 35px -5px rgba(251,191,36,0.3); }
+  66% { box-shadow: 0 0 20px -3px rgba(139,92,246,0.5), 0 0 35px -5px rgba(236,72,153,0.3); }
+}
+@keyframes tpBorderColor {
+  0%, 100% { border-color: #f59e0b; }
+  25% { border-color: #ec4899; }
+  50% { border-color: #8b5cf6; }
+  75% { border-color: #06b6d4; }
+}
+@keyframes tpBadgeShine {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+@keyframes tpFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-2px); }
+}
+.tp-card {
+  position: relative;
+  border: 2px solid #f59e0b;
+  border-radius: 16px;
+  overflow: hidden;
+  animation: tpGlow 4s ease-in-out infinite, tpBorderColor 6s linear infinite;
+  transition: transform 0.2s, box-shadow 0.2s;
+  cursor: pointer;
+}
+.tp-card:hover {
+  transform: scale(1.005);
+  box-shadow: 0 0 30px -3px rgba(251,191,36,0.6), 0 0 50px -5px rgba(139,92,246,0.4) !important;
+}
+.tp-card::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 60%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), rgba(255,255,255,0.15), rgba(255,255,255,0.08), transparent);
+  left: -100%;
+  animation: tpShine 4s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+.tp-card-bg {
+  background: linear-gradient(135deg, rgba(255,251,235,0.95) 0%, rgba(254,243,199,0.6) 30%, rgba(252,231,243,0.4) 60%, rgba(237,233,254,0.5) 100%);
+}
+.tp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 14px;
+  border-radius: 20px;
+  background: linear-gradient(90deg, #f59e0b, #d97706, #fbbf24, #f59e0b);
+  background-size: 300% 100%;
+  animation: tpBadgeShine 3s linear infinite;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.tp-badge:hover {
+  filter: brightness(1.15);
+  transform: scale(1.08);
+  transition: all 0.15s;
+}
+.tp-rank-chip {
+  background: linear-gradient(135deg, #7c3aed 0%, #ec4899 100%);
+  color: white;
+  font-size: 10px;
+  font-weight: 900;
+  padding: 3px 10px;
+  border-radius: 12px;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 8px rgba(124,58,237,0.35);
+  animation: tpFloat 3s ease-in-out infinite;
+}
+.tp-rank-chip.rank-1 { animation-delay: 0s; }
+.tp-rank-chip.rank-2 { animation-delay: 0.3s; background: linear-gradient(135deg, #0891b2 0%, #6366f1 100%); box-shadow: 0 2px 8px rgba(99,102,241,0.35); }
+.tp-rank-chip.rank-3 { animation-delay: 0.6s; background: linear-gradient(135deg, #059669 0%, #0891b2 100%); box-shadow: 0 2px 8px rgba(8,145,178,0.35); }
+`;
+
+const TABS = [
+  { id: 'ratio', label: 'Ratio Butterfly', shortLabel: 'Ratio', icon: '🦋', risk: 'MEDIUM', desc: 'Low cost; loses past far wing', gradient: 'from-violet-500 via-purple-500 to-fuchsia-500', lightBg: 'from-violet-50 to-purple-50', text: 'violet', accent: '#7c3aed', ring: 'ring-violet-500/30' },
+  { id: 'bwb', label: 'Broken Wing', shortLabel: 'BWB', icon: '🔥', risk: 'LOW', desc: 'Credit entry, no risk on one side', gradient: 'from-amber-500 via-orange-500 to-red-400', lightBg: 'from-amber-50 to-orange-50', text: 'amber', accent: '#f59e0b', ring: 'ring-amber-500/30' },
+  { id: 'skew', label: 'Skew Harvest', shortLabel: 'Skew', icon: '📊', risk: 'LOW', desc: 'Bullish, funded by put skew', gradient: 'from-cyan-500 via-blue-500 to-indigo-500', lightBg: 'from-cyan-50 to-blue-50', text: 'cyan', accent: '#0891b2', ring: 'ring-cyan-500/30' },
+  { id: 'theta', label: 'Theta Crush', shortLabel: 'Theta', icon: '⏰', risk: 'LOW', desc: 'Expiry-day iron fly', gradient: 'from-emerald-500 via-teal-500 to-cyan-500', lightBg: 'from-emerald-50 to-teal-50', text: 'emerald', accent: '#10b981', ring: 'ring-emerald-500/30' },
+  { id: 'box', label: 'Box Spread', shortLabel: 'Box', icon: '📦', risk: 'EXECUTION', desc: 'Payoff locked at expiry', gradient: 'from-rose-500 via-pink-500 to-fuchsia-500', lightBg: 'from-rose-50 to-pink-50', text: 'rose', accent: '#e11d48', ring: 'ring-rose-500/30' },
+  { id: 'jade', label: 'Jade Lizard', shortLabel: 'Jade', icon: '🦎', risk: 'LOW', desc: 'Defined risk, bullish tilt', gradient: 'from-lime-500 via-green-500 to-emerald-500', lightBg: 'from-lime-50 to-green-50', text: 'green', accent: '#16a34a', ring: 'ring-green-500/30' },
+  { id: 'calendar', label: 'Calendar Edge', shortLabel: 'Calendar', icon: '📅', risk: 'LOW', desc: 'Time decay differential', gradient: 'from-sky-500 via-blue-500 to-indigo-500', lightBg: 'from-sky-50 to-blue-50', text: 'sky', accent: '#0284c7', ring: 'ring-sky-500/30' },
+  { id: 'condor', label: 'Iron Condor', shortLabel: 'Condor', icon: '🦅', risk: 'LOW', desc: 'Range-bound, defined risk', gradient: 'from-indigo-500 via-purple-500 to-pink-500', lightBg: 'from-indigo-50 to-purple-50', text: 'indigo', accent: '#6366f1', ring: 'ring-indigo-500/30' },
+  { id: 'adaptive', label: 'Adaptive', shortLabel: 'Adaptive', icon: '🧠', risk: 'SMART', desc: 'Rules by IV rank & day trend', gradient: 'from-fuchsia-500 via-pink-500 to-rose-500', lightBg: 'from-fuchsia-50 to-rose-50', text: 'fuchsia', accent: '#d946ef', ring: 'ring-fuchsia-500/30' },
+];
+
+const SCAN_URLS = {
+  ratio: '/smart-strategies/ratio-butterfly/scan',
+  bwb: '/smart-strategies/broken-wing-butterfly/scan',
+  skew: '/smart-strategies/skew-harvest/scan',
+  theta: '/smart-strategies/theta-crush/scan',
+  box: '/smart-strategies/box-spread/scan',
+  jade: '/smart-strategies/jade-lizard/scan',
+  calendar: '/smart-strategies/calendar-spread/scan',
+  condor: '/smart-strategies/iron-condor/scan',
+  adaptive: '/smart-strategies/adaptive/scan',
+};
+
+const STRATEGY_INFO = {
+  ratio: { structure: 'BUY 1 ATM | SELL 3 OTM | BUY 2 FAR OTM', detail: 'Low-cost entry that peaks at the short strike. Beyond the far wing the legs net out and lock in a loss of wing width + cost — see Max Risk per lot. Win % is the option-implied probability of expiring inside the profit zone.', emptyMsg: 'No ratio butterfly setups right now. Requires near-zero cost with R:R >= 3:1. Try during market hours (9:15 AM - 3:30 PM).' },
+  bwb: { structure: 'BUY Wing | SELL 2x Body | BUY Far Wing (Asymmetric)', detail: 'Credit entry: the narrow side keeps the credit. Max loss (wide wing − narrow wing − credit) only if price runs through the far wing. Win % is option-implied.', emptyMsg: 'No broken wing butterfly setups found. Requires credit > 0 with valid asymmetric wing structure.' },
+  skew: { structure: 'SELL OTM Put Spread + BUY OTM Call Spread', detail: 'Sells a put spread and buys a call spread. Index puts are normally priced above calls, and that premium funds a bullish position. Loses the full put-spread width (plus any net debit) on a sharp fall.', emptyMsg: 'No IV skew opportunities. Requires put-call IV difference >= 2%. More common in volatile/fearful markets.' },
+  theta: { structure: 'SELL ATM Straddle + BUY Wings (Iron Butterfly)', detail: 'Short ATM straddle with wings on expiry day. Decay figures are a rule of thumb; Win % is the option-implied chance of settling between the breakevens. Positions are closed 3 minutes before the bell.', emptyMsg: 'Theta crush shows only on expiry day or 1-2 days before. Most effective on expiry day after 1:30 PM.' },
+  box: { structure: 'Bull Call Spread + Bear Put Spread (Same Strikes)', detail: 'Bull call spread + bear put spread on the same strikes: payoff is fixed at the strike width at expiry (European, cash-settled). The risk is in execution — four legs fill separately and quotes move — so Max Risk shows slippage + costs. Real edges above costs are rare; off-hours LTP \'boxes\' are usually stale prints.', emptyMsg: 'No box spread arbitrage found. Requires market mispricing where box cost < theoretical value minus transaction costs. Very rare in efficient markets.' },
+  jade: { structure: 'SELL OTM Put + BUY Far OTM Put + SELL OTM Call + BUY Further OTM Call', detail: 'Short put + bear call spread, with a far put bought to cap the downside. No upside risk only when the credit covers the call-spread width. The downside loss can be several times the credit — check Max Loss.', emptyMsg: 'No jade lizard setups found. Requires credit > 40% of call spread width. Best in moderate IV environments with slight bullish bias.' },
+  calendar: { structure: 'SELL Near-Expiry + BUY Far-Expiry (Same Strike, Same Type)', detail: 'Exploits faster time decay of near-term options. Profits from theta differential and IV term structure. Low risk, defined max loss.', emptyMsg: 'No calendar spread edge found. Requires meaningful theta differential between near and far expiry. Best when near-term IV > far-term IV.' },
+  condor: { structure: 'BUY OTM Put + SELL OTM Put + SELL OTM Call + BUY OTM Call', detail: 'Defined-risk range trade: max profit is the net credit when price stays between the short strikes. Win % is the option-implied probability of settling between the breakevens — a high Win % comes with a small credit versus the risk.', emptyMsg: 'No iron condor setups found. Requires net credit > 30% of wing width. Best in sideways/range-bound markets with moderate IV.' },
+  adaptive: { structure: 'Dynamically constructed based on market regime', detail: 'Rule-based: picks a structure from IV rank and the day\'s move (vs previous close) — iron butterfly / vol-crush in high IV, credit ratio spreads or ladders on trend days, condors otherwise. Win % is option-implied.', emptyMsg: 'No adaptive setups found. The scanner requires live market data to detect regime and construct strategies.' },
+};
+
+const STRAT_LABELS = {
+  BROKEN_WING_BUTTERFLY: 'BWB', RATIO_BUTTERFLY: 'Ratio', SKEW_HARVEST: 'Skew',
+  EXPIRY_THETA_CRUSH: 'Theta', BOX_SPREAD_ARB: 'Box', JADE_LIZARD: 'Jade',
+  CALENDAR_SPREAD_EDGE: 'Calendar', IRON_CONDOR: 'Condor', ADAPTIVE: 'Adaptive',
+};
+
+// Theoretical payoff legs for empty state diagrams (representative example strikes)
+const THEORETICAL_LEGS = {
+  ratio: (atm) => [
+    { strike: atm, optionType: 'CE', side: 'BUY', qty: 1, price: 200 },
+    { strike: atm + 200, optionType: 'CE', side: 'SELL', qty: 3, price: 80 },
+    { strike: atm + 400, optionType: 'CE', side: 'BUY', qty: 2, price: 20 },
+  ],
+  bwb: (atm) => [
+    { strike: atm + 100, optionType: 'PE', side: 'BUY', qty: 1, price: 150 },
+    { strike: atm - 100, optionType: 'PE', side: 'SELL', qty: 2, price: 100 },
+    { strike: atm - 400, optionType: 'PE', side: 'BUY', qty: 1, price: 30 },
+  ],
+  skew: (atm) => [
+    { strike: atm - 300, optionType: 'PE', side: 'SELL', qty: 1, price: 60 },
+    { strike: atm - 500, optionType: 'PE', side: 'BUY', qty: 1, price: 25 },
+    { strike: atm + 300, optionType: 'CE', side: 'BUY', qty: 1, price: 40 },
+    { strike: atm + 500, optionType: 'CE', side: 'SELL', qty: 1, price: 15 },
+  ],
+  theta: (atm) => [
+    { strike: atm, optionType: 'CE', side: 'SELL', qty: 1, price: 120 },
+    { strike: atm, optionType: 'PE', side: 'SELL', qty: 1, price: 120 },
+    { strike: atm + 300, optionType: 'CE', side: 'BUY', qty: 1, price: 30 },
+    { strike: atm - 300, optionType: 'PE', side: 'BUY', qty: 1, price: 30 },
+  ],
+  box: (atm) => [
+    { strike: atm, optionType: 'CE', side: 'BUY', qty: 1, price: 180 },
+    { strike: atm + 200, optionType: 'CE', side: 'SELL', qty: 1, price: 90 },
+    { strike: atm, optionType: 'PE', side: 'SELL', qty: 1, price: 80 },
+    { strike: atm + 200, optionType: 'PE', side: 'BUY', qty: 1, price: 110 },
+  ],
+  jade: (atm) => [
+    { strike: atm - 200, optionType: 'PE', side: 'SELL', qty: 1, price: 50 },
+    { strike: atm + 200, optionType: 'CE', side: 'SELL', qty: 1, price: 45 },
+    { strike: atm + 400, optionType: 'CE', side: 'BUY', qty: 1, price: 15 },
+  ],
+  calendar: (atm) => [
+    { strike: atm, optionType: 'CE', side: 'SELL', qty: 1, price: 80 },
+    { strike: atm, optionType: 'CE', side: 'BUY', qty: 1, price: 140 },
+  ],
+  adaptive: (atm) => [
+    { strike: atm, optionType: 'CE', side: 'SELL', qty: 1, price: 120 },
+    { strike: atm, optionType: 'PE', side: 'SELL', qty: 1, price: 120 },
+    { strike: atm + 400, optionType: 'CE', side: 'BUY', qty: 1, price: 25 },
+    { strike: atm - 400, optionType: 'PE', side: 'BUY', qty: 1, price: 25 },
+  ],
+  condor: (atm) => [
+    { strike: atm - 400, optionType: 'PE', side: 'BUY', qty: 1, price: 15 },
+    { strike: atm - 200, optionType: 'PE', side: 'SELL', qty: 1, price: 40 },
+    { strike: atm + 200, optionType: 'CE', side: 'SELL', qty: 1, price: 40 },
+    { strike: atm + 400, optionType: 'CE', side: 'BUY', qty: 1, price: 15 },
+  ],
+};
+
+export default function SmartStrategies() {
+  const [activeTab, setActiveTab] = useState('ratio');
+  const [underlying, setUnderlying] = useState('ALL');
+  const [entryModal, setEntryModal] = useState(null);
+  const tab = TABS.find(t => t.id === activeTab);
+  usePrefetchTabs(underlying);
+
+  return (
+    <div className="min-h-screen bg-[#f8fafc]">
+      <style>{TOP_PICK_STYLES}</style>
+      {/* ──── HEADER ──── */}
+      <div className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#0f172a]" />
+        <div className="absolute inset-0" style={{backgroundImage: 'radial-gradient(ellipse 80% 60% at 20% 120%, rgba(139,92,246,0.15) 0%, transparent 60%), radial-gradient(ellipse 60% 50% at 85% -10%, rgba(6,182,212,0.12) 0%, transparent 60%)'}} />
+        <div className="relative max-w-[1400px] mx-auto px-6 pt-5 pb-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-violet-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-violet-500/25">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              </div>
+              <div>
+                <h1 className="text-lg font-black text-white tracking-tight leading-none">Smart Strategies</h1>
+                <p className="text-[11px] text-slate-500 mt-0.5 font-medium">8 advanced strategies with real-time scanning</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 bg-white/[0.06] backdrop-blur-sm rounded-lg p-1 border border-white/[0.08]">
+              {['ALL', 'NIFTY', 'BANKNIFTY'].map(u => (
+                <button key={u} onClick={() => setUnderlying(u)}
+                  className={`px-4 py-1.5 rounded-md text-[11px] font-bold tracking-wide transition-all duration-200 ${
+                    underlying === u
+                      ? 'bg-white text-slate-900 shadow-md'
+                      : 'text-slate-400 hover:text-white/80 hover:bg-white/[0.05]'
+                  }`}>{u}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ──── STRATEGY NAV ──── */}
+      <div className="sticky top-0 z-30 border-b border-slate-200/50" style={{background: 'linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(248,250,252,0.98) 100%)', backdropFilter: 'blur(20px) saturate(180%)'}}>
+        <div className="max-w-[1400px] mx-auto px-6 py-3">
+          <div className="grid grid-cols-8 gap-2">
+            {TABS.map(t => {
+              const isActive = activeTab === t.id;
+              return (
+                <button key={t.id} onClick={() => setActiveTab(t.id)}
+                  className={`group relative rounded-xl px-3 py-3 transition-all duration-300 text-center ${
+                    isActive
+                      ? 'shadow-lg scale-[1.03]'
+                      : 'bg-white border border-slate-100 shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:shadow-md hover:border-slate-200 hover:-translate-y-0.5'
+                  }`}>
+                  {isActive && <div className={`absolute inset-0 rounded-xl bg-gradient-to-br ${t.gradient}`} />}
+                  <div className="relative flex flex-col items-center gap-1.5">
+                    <span className={`text-xl leading-none ${isActive ? 'drop-shadow-sm' : 'grayscale-[30%] group-hover:grayscale-0 transition-all'}`}>{t.icon}</span>
+                    <div className={`text-[11px] font-bold leading-tight ${isActive ? 'text-white' : 'text-slate-700'}`}>{t.label}</div>
+                    <div className={`text-[9px] leading-tight ${isActive ? 'text-white/50' : 'text-slate-400'}`}>{t.desc}</div>
+                    {t.risk === 'EXECUTION' && !isActive && (
+                      <span className="mt-0.5 px-1.5 py-0.5 rounded text-[7px] font-black bg-amber-50 text-amber-600 border border-amber-100 uppercase tracking-wider">Execution Risk</span>
+                    )}
+                    {t.risk === 'EXECUTION' && isActive && (
+                      <span className="mt-0.5 px-1.5 py-0.5 rounded text-[7px] font-black bg-white/20 text-white uppercase tracking-wider">Execution Risk</span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ──── AUTO-ENTRY + TOP PICKS + ACTIVE POSITIONS ──── */}
+      <div className="max-w-[1400px] mx-auto px-6 pt-5 space-y-3">
+        <AutoEntryPanel />
+        <MarketRegimePanel />
+        <PerformanceReportCard />
+        <TopPicksPanel underlying={underlying} onEnter={setEntryModal} />
+        <ActivePositionsPanel />
+      </div>
+
+      {/* ──── CONTENT ──── */}
+      <div className="max-w-[1400px] mx-auto px-6 py-5">
+        <TabContent tab={activeTab} underlying={underlying} tabInfo={tab} key={activeTab} onEnter={setEntryModal} />
+      </div>
+
+      {/* ──── ENTRY MODAL ──── */}
+      {entryModal && <EnterTradeModal opp={entryModal} onClose={() => setEntryModal(null)} />}
+    </div>
+  );
+}
+
+function useScan(tab, underlying) {
+  return useQuery({
+    queryKey: ['smart-scan', tab, underlying],
+    queryFn: async () => {
+      const res = await client.get(SCAN_URLS[tab], { params: { underlying } });
+      return res.data;
+    },
+    refetchInterval: 30000,
+    staleTime: 60000,
+    gcTime: 300000,
+    retry: 1,
+    placeholderData: (prev) => prev,
+  });
+}
+
+function usePrefetchTabs(underlying) {
+  const qc = useQueryClient();
+  useEffect(() => {
+    const tabs = Object.keys(SCAN_URLS);
+    let i = 0;
+    const id = setInterval(() => {
+      if (i >= tabs.length) { clearInterval(id); return; }
+      const tab = tabs[i++];
+      qc.prefetchQuery({
+        queryKey: ['smart-scan', tab, underlying],
+        queryFn: async () => { const res = await client.get(SCAN_URLS[tab], { params: { underlying } }); return res.data; },
+        staleTime: 60000,
+      });
+    }, 800);
+    return () => clearInterval(id);
+  }, [underlying, qc]);
+}
+
+/* ──── SHARED UI ──── */
+function Stat({ label, value, sub, color = 'text-slate-800', icon }) {
+  return (
+    <div className="relative bg-white rounded-xl border border-slate-100/80 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] transition-all duration-200 group overflow-hidden">
+      <div className="absolute top-0 right-0 w-16 h-16 opacity-[0.04] text-4xl flex items-center justify-center pointer-events-none select-none">{icon}</div>
+      <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">{label}</span>
+      <div className={`text-xl font-black ${color} leading-none mt-1.5`}>{value}</div>
+      {sub && <div className="text-[10px] text-slate-400 mt-1">{sub}</div>}
+    </div>
+  );
+}
+
+function TypeBadge({ type }) {
+  const isCE = type === 'CE';
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black border ${
+      isCE ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'
+    }`}>{type}</span>
+  );
+}
+
+function RRBadge({ value }) {
+  const v = Math.round(value);
+  return (
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black border ${
+      v >= 10 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+      v >= 5 ? 'bg-blue-50 text-blue-700 border-blue-200' :
+      'bg-slate-50 text-slate-600 border-slate-200'
+    }`}>1:{v}</span>
+  );
+}
+
+function TableShell({ tab, headerContent, children, count }) {
+  const info = STRATEGY_INFO[tab];
+  const tabData = TABS.find(t => t.id === tab);
+  return (
+    <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/40">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${tabData.gradient} flex items-center justify-center text-sm shadow-sm`}>{tabData.icon}</div>
+            <div>
+              <h3 className="text-[12px] font-bold text-slate-700">{info.structure}</h3>
+              <p className="text-[10px] text-slate-400 mt-0.5 max-w-xl">{info.detail}</p>
+            </div>
+          </div>
+          {count > 0 && (
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              {count} signal{count !== 1 ? 's' : ''}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50/60 text-[10px] text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-100">
+            {headerContent}
+          </thead>
+          <tbody className="divide-y divide-slate-50/80">
+            {children}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="flex flex-col items-center justify-center py-20">
+      <div className="relative mb-6">
+        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-cyan-400 animate-pulse shadow-lg shadow-violet-500/20" />
+        <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-md bg-white border border-slate-200 flex items-center justify-center shadow-sm">
+          <div className="w-2.5 h-2.5 border-[2px] border-slate-200 border-t-slate-600 rounded-full animate-spin" />
+        </div>
+      </div>
+      <span className="text-slate-700 font-bold text-sm">Scanning Live Chain</span>
+      <span className="text-slate-400 text-[11px] mt-1">Real-time quotes from NSE</span>
+    </div>
+  );
+}
+
+function ErrorState({ error }) {
+  const status = error?.response?.status;
+  const is502 = status === 502 || status === 503;
+  const msg = status === 401 ? 'Zerodha token expired. Reconnect via the Brokers page to resume live scanning.'
+    : is502 ? 'Backend is restarting after a deploy. Please wait 30-60 seconds and it will auto-refresh.'
+    : status === 500 ? 'Server error. Check if Zerodha market data feed is connected.'
+    : error?.message || 'Something went wrong';
+  return (
+    <div className="flex flex-col items-center justify-center py-16">
+      <div className={`w-14 h-14 rounded-xl flex items-center justify-center mb-4 ${
+        is502 ? 'bg-amber-50 border border-amber-100' : 'bg-red-50 border border-red-100'
+      }`}>
+        <span className="text-2xl">{is502 ? '🔄' : '⚠️'}</span>
+      </div>
+      <span className={`font-bold text-sm ${is502 ? 'text-amber-600' : 'text-red-500'}`}>{is502 ? 'Restarting...' : 'Scan Unavailable'}</span>
+      <span className="text-slate-400 text-[11px] mt-1.5 max-w-md text-center leading-relaxed">{msg}</span>
+    </div>
+  );
+}
+
+function EmptyState({ tab, marketOpen, lastScannedAt }) {
+  const info = STRATEGY_INFO[tab];
+  const tabData = TABS.find(t => t.id === tab);
+  const theoreticalAtm = 24500;
+  const theoreticalLegs = THEORETICAL_LEGS[tab]?.(theoreticalAtm) || [];
+
+  const isWeekend = new Date().getDay() === 0 || new Date().getDay() === 6;
+  const isMarketClosed = marketOpen === false;
+  const emptyTitle = isWeekend ? 'Weekend — Reconnect to See LTP Data'
+    : isMarketClosed ? 'Market Closed' : 'No Opportunities Right Now';
+  const emptySubtext = isWeekend
+    ? 'Scanners work on weekends using last traded prices (LTP). If you see no data, reconnect Zerodha on the Brokers page to refresh the API token.'
+    : isMarketClosed ? 'NSE hours: 9:15 AM — 3:30 PM IST. If token is expired, reconnect on Brokers page.'
+    : info.emptyMsg;
+
+  return (
+    <div className="space-y-4">
+      {/* Strategy overview */}
+      <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-5">
+        <div className="flex items-start gap-4">
+          <div className={`w-11 h-11 rounded-lg bg-gradient-to-br ${tabData.gradient} flex items-center justify-center text-xl shadow-sm shrink-0`}>
+            {tabData.icon}
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-slate-800">{tabData.label}</h3>
+            <p className="text-[11px] text-slate-500 font-medium mt-0.5">{info.structure}</p>
+            <p className="text-[11px] text-slate-400 mt-1.5 max-w-xl leading-relaxed">{info.detail}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Theoretical payoff chart */}
+      {theoreticalLegs.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+          <div className="px-5 py-2.5 border-b border-slate-100 flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-slate-500">Theoretical Payoff</span>
+            <span className="text-[9px] text-slate-400 bg-slate-50 px-2 py-0.5 rounded font-medium">Example — not a live signal</span>
+          </div>
+          <div className="p-4">
+            <PayoffChart legs={theoreticalLegs} lotSize={75} spot={theoreticalAtm} accentColor={tabData.accent || '#7c3aed'} />
+          </div>
+        </div>
+      )}
+
+      {/* Empty message */}
+      <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+        <div className="flex flex-col items-center justify-center py-10 px-8">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-3 ${
+            isMarketClosed ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'
+          }`}>
+            <span className="text-2xl">{isMarketClosed ? '🌙' : '🔍'}</span>
+          </div>
+          <span className="font-bold text-sm text-slate-600">{emptyTitle}</span>
+          <span className="text-slate-400 text-[11px] mt-1.5 max-w-sm text-center leading-relaxed">{emptySubtext}</span>
+          <div className="mt-4 flex items-center gap-3 text-[10px] text-slate-400">
+            {lastScannedAt && <span>Last scan: <span className="font-mono text-slate-500">{lastScannedAt}</span></span>}
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Auto-refresh 30s
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ──── PAYOFF CHART ──── */
+/* ???? CAPITAL REQUIRED (NSE SPAN HEDGED MARGIN ENGINE) ???? */
+function computeCapitalRequired(legs, lotSize, spot, opp) {
+  if (!legs || legs.length === 0) return 0;
+
+  const buyLegs = legs.filter(l => l.side === 'BUY');
+  const sellLegs = legs.filter(l => l.side === 'SELL');
+  const buyQty = buyLegs.reduce((sum, l) => sum + (l.qty || 1), 0);
+  const sellQty = sellLegs.reduce((sum, l) => sum + (l.qty || 1), 0);
+  
+  const totalPremiumBuy = buyLegs.reduce((sum, l) => sum + (l.price || 0) * (l.qty || 1), 0) * lotSize;
+  const totalPremiumSell = sellLegs.reduce((sum, l) => sum + (l.price || 0) * (l.qty || 1), 0) * lotSize;
+  const netDebit = Math.max(0, totalPremiumBuy - totalPremiumSell);
+
+  const stratType = opp?.strategyType || opp?.type || opp?.adaptiveType || '';
+
+  if (stratType.includes('CALENDAR') || (legs.length === 2 && legs[0].strike === legs[1].strike && legs[0].side !== legs[1].side)) {
+    const calendarMarginBuffer = spot * lotSize * 0.025;
+    return Math.round(netDebit + calendarMarginBuffer);
+  }
+
+  if (sellLegs.length === 0) {
+    return Math.round(totalPremiumBuy);
+  }
+
+  const points = computePayoff(legs, lotSize, spot, opp);
+  const minPnl = points.length > 0 ? Math.min(...points.map(p => p.pnl)) : 0;
+  const maxLoss = minPnl < 0 ? Math.abs(minPnl) : 0;
+
+  if (buyQty >= sellQty) {
+    return Math.max(Math.round(maxLoss + netDebit), Math.round(totalPremiumBuy * 0.4));
+  }
+
+  const unhedgedShortQty = sellQty - buyQty;
+  const nakedShortMarginPerLot = spot * lotSize * 0.12;
+
+  return Math.round(maxLoss + (unhedgedShortQty * nakedShortMarginPerLot) + netDebit);
+}
+
+// ── "Today" (T+0) curve ─────────────────────────────────────────────────────
+// Mark-to-market P&L if the underlying moved to each price right now, with each leg's time to
+// its own expiry unchanged. Same Black-Scholes (r = 6.5%) as the backend scanners.
+const TODAY_RATE = 0.065;
+const YEAR_MS = 365 * 24 * 3600 * 1000;
+
+function normCdf(x) {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x) / Math.SQRT2);
+  const erf = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t
+    * Math.exp(-(x * x) / 2);
+  return x >= 0 ? 0.5 * (1 + erf) : 0.5 * (1 - erf);
+}
+
+function bsPrice(call, S, K, T, sigma) {
+  if (T <= 0 || sigma <= 0) return Math.max(0, call ? S - K : K - S);
+  const sq = sigma * Math.sqrt(T);
+  const d1 = (Math.log(S / K) + (TODAY_RATE + 0.5 * sigma * sigma) * T) / sq;
+  const d2 = d1 - sq;
+  const df = Math.exp(-TODAY_RATE * T);
+  return call ? S * normCdf(d1) - K * df * normCdf(d2) : K * df * normCdf(-d2) - S * normCdf(-d1);
+}
+
+/** Implied vol by bisection (price is monotonic in sigma); null when the price is outside model bounds. */
+function impliedVol(call, price, S, K, T) {
+  if (!(price > 0) || !(T > 0)) return null;
+  let lo = 0.005, hi = 4;
+  if (price <= bsPrice(call, S, K, T, lo) || price >= bsPrice(call, S, K, T, hi)) return null;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (bsPrice(call, S, K, T, mid) > price) hi = mid; else lo = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/** Years until 15:30 IST on the leg's expiry (calendar legs carry their own), floored at 1 minute. */
+function legYears(leg, opp) {
+  const d = leg.expiry || opp?.expiryDate || opp?.expiry;
+  if (!d) return null;
+  const ms = new Date(`${String(d).slice(0, 10)}T15:30:00+05:30`).getTime();
+  if (Number.isNaN(ms)) return null;
+  return Math.max(ms - Date.now(), 60000) / YEAR_MS;
+}
+
+/** T+0 P&L at each price in `points`, or null if any leg lacks an expiry (e.g. illustrative legs). */
+function computeTodayPayoff(legs, lotSize, spot, opp, points) {
+  if (!legs || legs.length === 0 || !(spot > 0) || points.length === 0) return null;
+  const fallbackIv = opp?.atmIv > 0 ? opp.atmIv / 100 : 0.15;
+  const meta = [];
+  for (const l of legs) {
+    const T = legYears(l, opp);
+    if (T == null) return null;
+    const call = l.optionType === 'CE';
+    // Each leg's own IV (from its entry price at today's spot) keeps the skew in the curve.
+    const iv = impliedVol(call, l.price, spot, l.strike, T) || fallbackIv;
+    meta.push({ call, T, iv, strike: l.strike, price: l.price, qty: l.qty || 1, buy: l.side === 'BUY' });
+  }
+  return points.map(p => {
+    let pnl = 0;
+    for (const m of meta) {
+      const v = bsPrice(m.call, p.s, m.strike, m.T, m.iv);
+      pnl += (m.buy ? v - m.price : m.price - v) * m.qty;
+    }
+    return { s: p.s, pnl: pnl * lotSize };
+  });
+}
+
+/** Evenly spaced prices plus every strike and spot, so kinks and peaks are never sampled past. */
+function pricePoints(lo, hi, n, extras) {
+  const set = new Set();
+  const step = (hi - lo) / n;
+  for (let i = 0; i <= n; i++) set.add(Math.round(lo + i * step));
+  for (const e of extras) if (e >= lo && e <= hi) set.add(Math.round(e));
+  return [...set].sort((a, b) => a - b);
+}
+
+function computePayoff(legs, lotSize, spot, opp) {
+  if (!legs || legs.length === 0) return [];
+  const strikes = legs.map(l => l.strike);
+  const minS = Math.min(...strikes, spot);
+  const maxS = Math.max(...strikes, spot);
+  const isCalendar = (opp && (opp.strategyType === 'CALENDAR_SPREAD_EDGE' || opp.adaptiveType === 'CALENDAR')) ||
+    (legs.length === 2 && legs[0].strike === legs[1].strike && legs[0].optionType === legs[1].optionType && legs[0].side !== legs[1].side);
+
+  const range = Math.max(maxS - minS, spot * 0.035);
+  const hasNakedShort = legs.some(l => l.side === 'SELL');
+  const mult = isCalendar ? 1.5 : (hasNakedShort ? 2.5 : 0.8);
+  const lo = minS - range * mult;
+  const hi = maxS + range * mult;
+  const step = (hi - lo) / 120;
+  const points = [];
+
+  if (isCalendar) {
+    const k = strikes[0];
+    const buyLeg = legs.find(l => l.side === 'BUY');
+    const sellLeg = legs.find(l => l.side === 'SELL');
+    const buyPrice = buyLeg ? buyLeg.price : 0;
+    const sellPrice = sellLeg ? sellLeg.price : 0;
+    const netDebitPerShare = buyPrice - sellPrice;
+    
+    const targetMaxProfitRs = opp && typeof opp.maxProfit === 'number' && opp.maxProfit > 0
+      ? opp.maxProfit
+      : Math.max(sellPrice * 0.8, buyPrice * 0.25, Math.abs(netDebitPerShare) * 0.75) * lotSize;
+    
+    const peakProfitPerShare = targetMaxProfitRs / lotSize;
+    const peakTimeValue = netDebitPerShare + peakProfitPerShare;
+    const sigma = k * 0.008;
+
+    for (let s = lo; s <= hi; s += step) {
+      const timeVal = peakTimeValue * Math.exp(-Math.pow((s - k) / sigma, 2));
+      const intrinsicSell = buyLeg && buyLeg.optionType === 'CE' ? Math.max(0, s - k) : Math.max(0, k - s);
+      const nearPnl = sellPrice - intrinsicSell;
+      const farPnl = (intrinsicSell + timeVal) - buyPrice;
+      const pnlPerShare = nearPnl + farPnl;
+      points.push({ s: Math.round(s), pnl: pnlPerShare * lotSize });
+    }
+    return points;
+  }
+
+  for (const s of pricePoints(lo, hi, 240, [...strikes, spot])) {
+    let pnl = 0;
+    for (const leg of legs) {
+      const { strike, optionType, side, qty = 1, price } = leg;
+      let intrinsic = optionType === 'CE' ? Math.max(0, s - strike) : Math.max(0, strike - s);
+      let legPnl = side === 'BUY' ? (intrinsic - price) * qty : (price - intrinsic) * qty;
+      pnl += legPnl;
+    }
+    points.push({ s: Math.round(s), pnl: pnl * lotSize });
+  }
+  return points;
+}
+
+function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
+  const points = useMemo(() => computePayoff(legs, lotSize, spot, opp), [legs, lotSize, spot, opp]);
+  const todayPoints = useMemo(() => computeTodayPayoff(legs, lotSize, spot, opp, points), [legs, lotSize, spot, opp, points]);
+  const svgRef = useRef(null);
+  const [hover, setHover] = useState(null);
+
+  const handleMouseMove = useCallback((e) => {
+    const svg = svgRef.current;
+    if (!svg || points.length === 0) return;
+    const rect = svg.getBoundingClientRect();
+    const svgX = ((e.clientX - rect.left) / rect.width) * 700;
+    const PAD_L = 70, PAD_R = 40;
+    const plotW = 700 - PAD_L - PAD_R;
+    if (svgX < PAD_L || svgX > 700 - PAD_R) { setHover(null); return; }
+    // Samples include every strike, so they are not evenly spaced: pick the nearest price.
+    const lo = points[0].s, hi = points[points.length - 1].s;
+    const target = lo + ((svgX - PAD_L) / plotW) * (hi - lo);
+    let idx = 0;
+    for (let i = 1; i < points.length; i++) {
+      if (Math.abs(points[i].s - target) < Math.abs(points[idx].s - target)) idx = i;
+    }
+    setHover({ idx, svgX });
+  }, [points]);
+
+  if (points.length === 0) return null;
+
+  const W = 700, H = 260, PAD = { t: 30, r: 40, b: 40, l: 70 };
+  const plotW = W - PAD.l - PAD.r, plotH = H - PAD.t - PAD.b;
+
+  const allPnl = todayPoints ? [...points, ...todayPoints].map(p => p.pnl) : points.map(p => p.pnl);
+  const minPnl = Math.min(...allPnl);
+  const maxPnl = Math.max(...allPnl);
+  const pnlRange = maxPnl - minPnl || 1;
+  const minS = points[0].s, maxS = points[points.length - 1].s;
+  const sRange = maxS - minS || 1;
+
+  const x = s => PAD.l + ((s - minS) / sRange) * plotW;
+  const y = pnl => PAD.t + plotH - ((pnl - minPnl) / pnlRange) * plotH;
+
+  const zeroY = y(0);
+  const spotX = x(spot);
+
+  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.s).toFixed(1)},${y(p.pnl).toFixed(1)}`).join(' ');
+  const todayD = todayPoints
+    ? todayPoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.s).toFixed(1)},${y(p.pnl).toFixed(1)}`).join(' ')
+    : null;
+
+  const profitPath = [];
+  const lossPath = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const p1 = points[i], p2 = points[i + 1];
+    const x1 = x(p1.s), y1 = y(p1.pnl), x2 = x(p2.s), y2 = y(p2.pnl);
+    const zy = zeroY;
+    if (p1.pnl >= 0 && p2.pnl >= 0) {
+      profitPath.push(`M${x1},${zy} L${x1},${y1} L${x2},${y2} L${x2},${zy} Z`);
+    } else if (p1.pnl < 0 && p2.pnl < 0) {
+      lossPath.push(`M${x1},${zy} L${x1},${y1} L${x2},${y2} L${x2},${zy} Z`);
+    } else {
+      const ratio = Math.abs(p1.pnl) / (Math.abs(p1.pnl) + Math.abs(p2.pnl));
+      const cx = x1 + (x2 - x1) * ratio;
+      if (p1.pnl >= 0) {
+        profitPath.push(`M${x1},${zy} L${x1},${y1} L${cx},${zy} Z`);
+        lossPath.push(`M${cx},${zy} L${x2},${y2} L${x2},${zy} Z`);
+      } else {
+        lossPath.push(`M${x1},${zy} L${x1},${y1} L${cx},${zy} Z`);
+        profitPath.push(`M${cx},${zy} L${x2},${y2} L${x2},${zy} Z`);
+      }
+    }
+  }
+
+  const yTicks = 5;
+  const yLabels = [];
+  for (let i = 0; i <= yTicks; i++) {
+    const val = minPnl + (pnlRange * i) / yTicks;
+    yLabels.push({ val, yPos: y(val) });
+  }
+  const xTicks = 6;
+  const xLabels = [];
+  for (let i = 0; i <= xTicks; i++) {
+    const val = minS + (sRange * i) / xTicks;
+    xLabels.push({ val: Math.round(val), xPos: x(val) });
+  }
+
+  const maxProfitPt = points.reduce((a, b) => b.pnl > a.pnl ? b : a);
+  const maxLossPt = points.reduce((a, b) => b.pnl < a.pnl ? b : a);
+
+  const hoverPt = hover ? points[hover.idx] : null;
+  const hoverToday = hover && todayPoints ? todayPoints[hover.idx] : null;
+  const fmtPnl = v => `${v >= 0 ? '+' : '-'}₹${Math.abs(Math.round(v)).toLocaleString()}`;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-black text-gray-800 tracking-tight">Payoff</span>
+        <div className="flex items-center gap-4 text-[10px] flex-wrap justify-end">
+          <span className="flex items-center gap-1.5"><span className="w-4 h-0.5" style={{background:'#7c3aed'}}></span><span className="text-violet-700 font-bold">Expiry</span></span>
+          {todayPoints && (
+            <span className="flex items-center gap-1.5" title="Mark-to-market P&L if the underlying moved there now (Black-Scholes, each leg's own IV)"><span className="w-4 h-0.5" style={{background:'#2563eb'}}></span><span className="text-blue-700 font-bold">Today (T+0)</span></span>
+          )}
+          <span className="flex items-center gap-1.5"><span className="w-3 h-2.5 rounded-sm" style={{background:'#10b981'}}></span><span className="text-emerald-700 font-bold">Profit</span></span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-2.5 rounded-sm" style={{background:'#ef4444'}}></span><span className="text-red-700 font-bold">Loss</span></span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-0.5" style={{background:'#6366f1'}}></span><span className="text-indigo-700 font-bold">Spot: {spot?.toLocaleString()}</span></span>
+          {hoverPt && (
+            <span className={`font-mono font-black px-2 py-0.5 rounded-md text-[11px] ${hoverPt.pnl >= 0 ? 'text-emerald-800 bg-emerald-100 border border-emerald-300' : 'text-red-800 bg-red-100 border border-red-300'}`}>
+              {hoverPt.s.toLocaleString()} → {fmtPnl(hoverPt.pnl)}{hoverToday ? ` · today ${fmtPnl(hoverToday.pnl)}` : ''}
+            </span>
+          )}
+        </div>
+      </div>
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair" style={{ maxHeight: 280 }}
+        onMouseMove={handleMouseMove} onMouseLeave={() => setHover(null)}>
+        <defs>
+          <linearGradient id="profitFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#10b981" stopOpacity="0.08" />
+          </linearGradient>
+          <linearGradient id="lossFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ef4444" stopOpacity="0.08" />
+            <stop offset="100%" stopColor="#ef4444" stopOpacity="0.3" />
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width={W} height={H} rx="8" fill="#fafbfc" />
+        {yLabels.map((yl, i) => (
+          <g key={`y${i}`}>
+            <line x1={PAD.l} y1={yl.yPos} x2={W - PAD.r} y2={yl.yPos} stroke="#e5e7eb" strokeWidth="0.7" />
+            <text x={PAD.l - 8} y={yl.yPos + 3} textAnchor="end" fontSize="9" fill="#374151" fontFamily="monospace" fontWeight="700">
+              {yl.val >= 0 ? '' : '-'}₹{Math.abs(Math.round(yl.val)).toLocaleString()}
+            </text>
+          </g>
+        ))}
+        {xLabels.map((xl, i) => (
+          <g key={`x${i}`}>
+            <line x1={xl.xPos} y1={PAD.t} x2={xl.xPos} y2={H - PAD.b} stroke="#e5e7eb" strokeWidth="0.7" />
+            <text x={xl.xPos} y={H - PAD.b + 14} textAnchor="middle" fontSize="9" fill="#374151" fontFamily="monospace" fontWeight="700">{xl.val}</text>
+          </g>
+        ))}
+
+        {minPnl < 0 && maxPnl > 0 && (
+          <line x1={PAD.l} y1={zeroY} x2={W - PAD.r} y2={zeroY} stroke="#9ca3af" strokeWidth="1.2" strokeDasharray="6,3" />
+        )}
+
+        <path d={profitPath.join(' ')} fill="url(#profitFill)" />
+        <path d={lossPath.join(' ')} fill="url(#lossFill)" />
+        <path d={pathD} fill="none" stroke="#7c3aed" strokeWidth="2.5" strokeLinejoin="round" />
+        {todayD && <path d={todayD} fill="none" stroke="#2563eb" strokeWidth="2" strokeLinejoin="round" opacity="0.9" />}
+
+        {/* SPOT line + label */}
+        <line x1={spotX} y1={PAD.t} x2={spotX} y2={H - PAD.b} stroke="#6366f1" strokeWidth="1.5" strokeDasharray="5,3" />
+        <g transform={`translate(${spotX}, ${PAD.t - 2})`}>
+          <rect x="-28" y="-17" width="56" height="19" rx="9" fill="#6366f1" />
+          <text x="0" y="-5" textAnchor="middle" fontSize="9" fill="white" fontWeight="800" fontFamily="monospace">SPOT</text>
+        </g>
+
+        {/* Max Profit badge */}
+        <circle cx={x(maxProfitPt.s)} cy={y(maxProfitPt.pnl)} r="5" fill="#10b981" stroke="white" strokeWidth="2.5" />
+        <g transform={`translate(${x(maxProfitPt.s)}, ${y(maxProfitPt.pnl) - 14})`}>
+          <rect x={-42} y="-14" width="84" height="21" rx="10" fill="#059669" />
+          <text x="0" y="0" textAnchor="middle" fontSize="12" fill="white" fontWeight="900" fontFamily="monospace">
+            +₹{Math.round(maxProfitPt.pnl).toLocaleString()}
+          </text>
+        </g>
+
+        {/* Max Loss badge */}
+        {maxLossPt.pnl < 0 && (
+          <>
+            <circle cx={x(maxLossPt.s)} cy={y(maxLossPt.pnl)} r="5" fill="#ef4444" stroke="white" strokeWidth="2.5" />
+            <g transform={`translate(${x(maxLossPt.s)}, ${y(maxLossPt.pnl) + 22})`}>
+              <rect x={-42} y="-14" width="84" height="21" rx="10" fill="#dc2626" />
+              <text x="0" y="0" textAnchor="middle" fontSize="12" fill="white" fontWeight="900" fontFamily="monospace">
+                -₹{Math.abs(Math.round(maxLossPt.pnl)).toLocaleString()}
+              </text>
+            </g>
+          </>
+        )}
+
+        {/* Hover crosshair + tooltip */}
+        {hoverPt && (
+          <>
+            <line x1={x(hoverPt.s)} y1={PAD.t} x2={x(hoverPt.s)} y2={H - PAD.b} stroke="#6366f1" strokeWidth="1" strokeDasharray="3,2" opacity="0.5" />
+            <line x1={PAD.l} y1={y(hoverPt.pnl)} x2={W - PAD.r} y2={y(hoverPt.pnl)} stroke="#6366f1" strokeWidth="1" strokeDasharray="3,2" opacity="0.3" />
+            <circle cx={x(hoverPt.s)} cy={y(hoverPt.pnl)} r="6" fill={hoverPt.pnl >= 0 ? '#10b981' : '#ef4444'} stroke="white" strokeWidth="2.5" />
+            {hoverToday && <circle cx={x(hoverToday.s)} cy={y(hoverToday.pnl)} r="5" fill="#2563eb" stroke="white" strokeWidth="2" />}
+            <g transform={`translate(${Math.min(x(hoverPt.s) + 12, W - PAD.r - 160)}, ${Math.max(y(hoverPt.pnl) - 48, PAD.t)})`}>
+              <rect x="0" y="0" width="155" height={hoverToday ? 62 : 44} rx="8" fill="white" stroke="#e5e7eb" strokeWidth="1" />
+              <rect x="0" y="0" width="155" height={hoverToday ? 62 : 44} rx="8" fill="none" stroke={hoverPt.pnl >= 0 ? '#10b981' : '#ef4444'} strokeWidth="1.5" opacity="0.5" />
+              <text x="12" y="17" fontSize="10" fill="#6b7280" fontFamily="monospace" fontWeight="600">Price: {hoverPt.s.toLocaleString()}</text>
+              {hoverToday && (
+                <text x="12" y="35" fontSize="12" fill="#1d4ed8" fontWeight="800" fontFamily="monospace">
+                  Today:  {fmtPnl(hoverToday.pnl)}
+                </text>
+              )}
+              <text x="12" y={hoverToday ? 53 : 35} fontSize={hoverToday ? 12 : 13} fill={hoverPt.pnl >= 0 ? '#059669' : '#dc2626'} fontWeight="900" fontFamily="monospace">
+                {hoverToday ? 'Expiry: ' : 'P&L: '}{fmtPnl(hoverPt.pnl)}
+              </text>
+            </g>
+          </>
+        )}
+
+        <text x={W / 2} y={H - 4} textAnchor="middle" fontSize="10" fill="#6b7280" fontWeight="bold">Underlying Price</text>
+        <text x={12} y={H / 2} textAnchor="middle" fontSize="10" fill="#6b7280" fontWeight="bold" transform={`rotate(-90,12,${H / 2})`}>P&L (₹)</text>
+      </svg>
+    </div>
+  );
+}
+
+function AdvancedPayoff({ opp, legs, lotSize, spot, accentColor }) {
+  if (!legs || legs.length === 0) return null;
+  const points = useMemo(() => computePayoff(legs, lotSize, spot, opp), [legs, lotSize, spot, opp]);
+  const isCalendar = (opp && (opp.strategyType === 'CALENDAR_SPREAD_EDGE' || opp.adaptiveType === 'CALENDAR')) ||
+    (legs.length === 2 && legs[0].strike === legs[1].strike && legs[0].optionType === legs[1].optionType && legs[0].side !== legs[1].side);
+
+  const maxProfit = points.length > 0 ? Math.max(...points.map(p => p.pnl)) : 0;
+  const netDebitRs = legs.reduce((sum, l) => sum + (l.side === 'BUY' ? l.price : -l.price) * (l.qty || 1), 0) * lotSize;
+  const calculatedMaxLoss = points.length > 0 ? Math.min(...points.map(p => p.pnl)) : 0;
+  const maxLoss = isCalendar ? Math.min(-Math.abs(netDebitRs), calculatedMaxLoss) : calculatedMaxLoss;
+  const isRiskFree = maxLoss >= 0 && !isCalendar;
+  const rr = maxLoss < 0 ? Math.abs(maxProfit / maxLoss) : Infinity;
+  const netCredit = legs.reduce((sum, l) => sum + (l.side === 'SELL' ? l.price : -l.price) * (l.qty || 1), 0);
+  const expiry = opp.expiry || opp.expiryDate || '--';
+  const breakevens = useMemo(() => {
+    const be = [];
+    for (let i = 1; i < points.length; i++) {
+      if ((points[i-1].pnl < 0 && points[i].pnl >= 0) || (points[i-1].pnl >= 0 && points[i].pnl < 0)) {
+        const ratio = Math.abs(points[i-1].pnl) / (Math.abs(points[i-1].pnl) + Math.abs(points[i].pnl));
+        be.push(Math.round(points[i-1].s + (points[i].s - points[i-1].s) * ratio));
+      }
+    }
+    return be;
+  }, [points]);
+
+  return (
+    <div className="space-y-3 mt-2">
+      {/* Strategy Breakdown Header */}
+      <div className="flex items-center gap-2">
+        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Strategy Breakdown</span>
+        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+      </div>
+
+      {/* Execution Legs + Stats side-by-side */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
+        {/* Legs Table — 3 cols */}
+        <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b border-slate-100">
+            <span className="text-[10px] font-black text-slate-600 uppercase tracking-wider">Execution Legs</span>
+            <span className="text-[9px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded-md border border-slate-100">{expiry}</span>
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[9px] text-slate-400 font-bold uppercase tracking-wider border-b border-slate-50">
+                <th className="text-left px-4 py-2">Action</th>
+                <th className="text-left px-2 py-2">Strike</th>
+                <th className="text-left px-2 py-2">Type</th>
+                <th className="text-center px-2 py-2">Qty</th>
+                <th className="text-right px-4 py-2">Premium</th>
+              </tr>
+            </thead>
+            <tbody>
+              {legs.map((l, i) => (
+                <tr key={i} className={`border-b border-slate-50/80 ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
+                  <td className="px-4 py-2.5">
+                    <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-black ${
+                      l.side === 'SELL' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{l.side}</span>
+                  </td>
+                  <td className="px-2 py-2.5 font-mono font-bold text-slate-800">{l.strike}</td>
+                  <td className="px-2 py-2.5">
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                      l.optionType === 'CE' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>{l.optionType}</span>
+                  </td>
+                  <td className="px-2 py-2.5 text-center text-slate-500 font-bold">{l.qty || 1}</td>
+                  <td className="px-4 py-2.5 text-right font-mono font-bold text-slate-700">₹{typeof l.price === 'number' ? l.price.toFixed(2) : l.price}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-t border-slate-100">
+            <span className="text-[9px] text-slate-400 font-bold">{legs.length} legs × {lotSize} lot</span>
+            <span className={`text-[10px] font-black ${netCredit > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+              Net: {netCredit > 0 ? '+' : ''}₹{netCredit.toFixed(2)}/share
+            </span>
+          </div>
+        </div>
+
+        {/* Stat Cards — 2 cols */}
+        <div className="lg:col-span-2 grid grid-cols-2 gap-2">
+          <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl border border-emerald-200/60 p-3 flex flex-col justify-center">
+            <div className="text-[9px] font-black text-emerald-500/80 uppercase tracking-wider">Max Profit</div>
+            <div className="text-lg font-black text-emerald-600 mt-1">{maxProfit >= 0 ? "+₹" : "-₹"}{Math.abs(Math.round(maxProfit)).toLocaleString()}</div>
+          </div>
+          <div className={`rounded-xl border p-3 flex flex-col justify-center ${isRiskFree
+            ? 'bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200/60'
+            : 'bg-gradient-to-br from-red-50 to-rose-50 border-red-200/60'}`}>
+            <div className={`text-[9px] font-black uppercase tracking-wider ${isRiskFree ? 'text-emerald-500/80' : 'text-red-500/80'}`}>Max Loss</div>
+            <div className={`text-lg font-black mt-1 ${isRiskFree ? 'text-emerald-600' : 'text-red-600'}`}>
+              {isRiskFree ? 'Risk-Free' : `-₹${Math.abs(Math.round(maxLoss)).toLocaleString()}`}
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border border-amber-200/60 p-3 flex flex-col justify-center">
+            <div className="text-[9px] font-black text-amber-600/90 uppercase tracking-wider">Capital Req.*</div>
+            <div className="text-lg font-black text-amber-700 mt-1">₹{Math.round(computeCapitalRequired(legs, lotSize, spot, opp)).toLocaleString()}</div>
+          </div>
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200/60 p-3 flex flex-col justify-center">
+            <div className="text-[9px] font-black text-blue-500/80 uppercase tracking-wider">Risk:Reward</div>
+            <div className="text-lg font-black text-blue-600 mt-1">
+              {isRiskFree ? '∞' : rr >= 10 ? `${Math.round(rr)}:1` : rr >= 1 ? `${rr.toFixed(1)}:1` : `1:${(1/rr).toFixed(1)}`}
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-violet-50 to-purple-50 rounded-xl border border-violet-200/60 p-3 flex flex-col justify-center">
+            <div className="text-[9px] font-black text-violet-500/80 uppercase tracking-wider">Win Rate</div>
+            <div className="text-lg font-black text-violet-600 mt-1">{opp.estimatedWinRate ? `${Math.round(opp.estimatedWinRate)}%` : opp.winRate || '--'}</div>
+          </div>
+          {/* Breakeven */}
+          <div className="col-span-2 bg-slate-50 rounded-xl border border-slate-200/40 p-3 flex items-center justify-between">
+            <div>
+              <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Breakeven</div>
+              <div className="text-sm font-black text-slate-700 mt-0.5">{breakevens.length > 0 ? breakevens.join(' / ') : '--'}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[9px] text-slate-400">Spot: {spot}</div>
+              <div className="text-[9px] text-slate-400">Lot: {lotSize}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Payoff Chart */}
+      <PayoffChart opp={opp} legs={legs} lotSize={lotSize} spot={spot} accentColor={accentColor} />
+    </div>
+  );
+}
+
+function oppKey(o) {
+  return o.action || `${o.underlying}-${o.strategyType}-${JSON.stringify((o.legList || []).map(l => l.strike))}`;
+}
+
+function getTopKeys(opps, scoreField, count = 3) {
+  const scored = [...opps].sort((a, b) => (b[scoreField] || 0) - (a[scoreField] || 0));
+  const topMap = new Map();
+  scored.slice(0, count).forEach((o, idx) => topMap.set(oppKey(o), idx + 1));
+  return topMap;
+}
+
+function TopPickCards({ opps, topKeys, onEnter, accentColor, renderCardContent }) {
+  const [expandedKey, setExpandedKey] = useState(null);
+  const topOpps = [...opps].filter(o => topKeys.has(oppKey(o))).sort((a, b) => topKeys.get(oppKey(a)) - topKeys.get(oppKey(b)));
+  if (topOpps.length === 0) return null;
+  return (
+    <div className="space-y-3 mb-5">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-black text-slate-700">Best Opportunities</span>
+        <span className="text-[10px] text-amber-500 font-bold animate-pulse">LIVE</span>
+      </div>
+      <div className="grid grid-cols-1 gap-3">
+        {topOpps.map((o) => {
+          const key = oppKey(o);
+          const rank = topKeys.get(key);
+          const isOpen = expandedKey === key;
+          return (
+            <div key={key} className="tp-card tp-card-bg" onClick={(e) => {
+              setExpandedKey(isOpen ? null : key);
+              if (!isOpen && e.currentTarget) {
+                setTimeout(() => e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+              }
+            }}>
+              <div className="relative z-[2] p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className={`tp-rank-chip rank-${rank}`}>#{rank} TOP PICK</span>
+                    <span className="text-xs font-black text-slate-800">{o.underlying}</span>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-purple-100/90 text-purple-900 text-[11px] font-bold border border-purple-300 shadow-2xs">
+                      📅 Expiry: <span className="font-mono">{o.expiry || o.expiryDate || o.nearExpiry || 'Monthly'}</span>
+                      {o.dte !== undefined && o.dte !== null && <span className="text-[10px] text-purple-700 font-semibold">({o.dte}d)</span>}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                    <button onClick={() => onEnter?.(o)} className="tp-badge">
+                      ★ ENTER TRADE
+                    </button>
+                    <span className={`inline-block transition-transform duration-200 text-slate-400 text-sm ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+                  </div>
+                </div>
+                {renderCardContent(o, rank)}
+              </div>
+              {isOpen && (
+                <div className="relative z-[2] px-4 pb-4">
+                  <AdvancedPayoff opp={o} legs={o.legList} lotSize={o.lotSize} spot={o.spotPrice} accentColor={accentColor} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ExpandableRows({ opps, colSpan, renderRow, getLegs, getLotSize, getSpot, accentColor, onEnter, topKeys }) {
+  const [expandedKey, setExpandedKey] = useState(null);
+  return opps.map((o, i) => {
+    const key = oppKey(o);
+    const isExpanded = expandedKey === key;
+    const isTop = topKeys && topKeys.has(key);
+    return (
+      <Fragment key={key}>
+        <tr className={`cursor-pointer transition-colors ${isExpanded ? 'bg-slate-50' : ''}`}
+          onClick={() => setExpandedKey(isExpanded ? null : key)}>
+          {renderRow(o, i, isTop)}
+          <td className="px-2 py-3 text-center" onClick={e => e.stopPropagation()}>
+            <button onClick={() => onEnter?.(o)}
+              className={`px-2.5 py-1.5 rounded-lg text-white text-[10px] font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all ${
+                isTop ? 'bg-gradient-to-r from-amber-500 to-orange-500 ring-1 ring-amber-300/50' : 'bg-gradient-to-r from-violet-500 to-indigo-500'
+              }`}
+              title="Enter this trade">
+              {isTop ? '★ Enter' : 'Enter'}
+            </button>
+          </td>
+          <td className="px-2 py-3 text-center">
+            <span className={`inline-block transition-transform duration-200 text-slate-400 text-xs ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
+          </td>
+        </tr>
+        {isExpanded && (
+          <tr>
+            <td colSpan={colSpan + 2} className="px-4 py-3 bg-slate-50/50">
+              <AdvancedPayoff opp={o} legs={getLegs(o)} lotSize={getLotSize(o)} spot={getSpot(o)} accentColor={accentColor} />
+            </td>
+          </tr>
+        )}
+      </Fragment>
+    );
+  });
+}
+
+function useSort(defaultField = null, defaultDir = 'desc') {
+  const [sortField, setSortField] = useState(defaultField);
+  const [sortDir, setSortDir] = useState(defaultDir);
+  const toggle = useCallback((field) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('desc'); }
+  }, [sortField]);
+  const sorted = useCallback((arr) => {
+    if (!sortField) return arr;
+    return [...arr].sort((a, b) => {
+      const va = a[sortField] ?? 0, vb = b[sortField] ?? 0;
+      const cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [sortField, sortDir]);
+  return { sortField, sortDir, toggle, sorted };
+}
+
+function SortTh({ field, label, sort, className = '' }) {
+  const active = sort.sortField === field;
+  return (
+    <th className={`px-4 py-3 cursor-pointer select-none hover:text-slate-600 transition-colors ${className}`}
+      onClick={() => sort.toggle(field)}>
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <span className={`text-[8px] ${active ? 'text-violet-500' : 'text-slate-300'}`}>
+          {active ? (sort.sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+        </span>
+      </span>
+    </th>
+  );
+}
+
+function ScanStatusBar({ data, isFetching }) {
+  if (!data) return null;
+  const { lastScannedAt, marketOpen, count } = data;
+  return (
+    <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-2.5 text-[11px]">
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold ${
+          marketOpen ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
+        }`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${marketOpen ? 'bg-emerald-400 animate-pulse' : 'bg-slate-300'}`}></span>
+          {marketOpen ? 'Live' : 'Closed'}
+        </span>
+        {lastScannedAt && (
+          <span className="text-slate-400 font-medium">
+            Scanned <span className="font-mono text-slate-500">{lastScannedAt}</span>
+          </span>
+        )}
+        {isFetching && (
+          <span className="inline-flex items-center gap-1 text-[9px] text-violet-500 font-bold">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+            Refreshing...
+          </span>
+        )}
+      </div>
+      {count > 0 && (
+        <span className="text-[10px] text-slate-400 font-medium">
+          <span className="font-mono font-bold text-slate-600">{count}</span> found
+        </span>
+      )}
+    </div>
+  );
+}
+
+function TabContent({ tab, underlying, tabInfo, onEnter }) {
+  const { data, isLoading, isFetching, error } = useScan(tab, underlying);
+  if (isLoading && !data) return <LoadingState />;
+  if (error && !data) return <ErrorState error={error} />;
+  const opps = data?.opportunities || [];
+  if (opps.length === 0) return <EmptyState tab={tab} marketOpen={data?.marketOpen} lastScannedAt={data?.lastScannedAt} />;
+
+  const content = (() => {
+    switch (tab) {
+      case 'ratio': return <RatioContent opps={opps} onEnter={onEnter} />;
+      case 'bwb': return <BWBContent opps={opps} onEnter={onEnter} />;
+      case 'skew': return <SkewContent opps={opps} onEnter={onEnter} />;
+      case 'theta': return <ThetaContent opps={opps} onEnter={onEnter} />;
+      case 'box': return <BoxContent opps={opps} onEnter={onEnter} />;
+      case 'jade': return <JadeContent opps={opps} onEnter={onEnter} />;
+      case 'calendar': return <CalendarContent opps={opps} onEnter={onEnter} />;
+      case 'condor': return <IronCondorContent opps={opps} onEnter={onEnter} />;
+      case 'adaptive': return <AdaptiveContent opps={opps} onEnter={onEnter} />;
+      default: return null;
+    }
+  })();
+
+  return (
+    <div>
+      {data?.stale && (
+        <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200/60">
+          <span className="text-lg">⚡</span>
+          <div>
+            <span className="text-[11px] font-bold text-amber-700">Showing cached data (LTP based)</span>
+            <span className="text-[10px] text-amber-500 ml-2">{data.staleReason}</span>
+          </div>
+        </div>
+      )}
+      {data?.ltpBased && !data?.stale && (
+        <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-50 border border-blue-200/60">
+          <span className="text-lg">📊</span>
+          <div>
+            <span className="text-[11px] font-bold text-blue-700">LTP preview — market closed</span>
+            <span className="text-[10px] text-blue-500 ml-2">Every leg is priced at its Last Traded Price, so these are indicative only and cannot be entered now. From market open, scans use live bid/ask and strikes without a two-sided quote are skipped.</span>
+          </div>
+        </div>
+      )}
+      {data?.marketClosed && (
+        <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-purple-50 border border-purple-200/60">
+          <span className="text-lg">🌙</span>
+          <div>
+            <span className="text-[11px] font-bold text-purple-700">Market Closed — Showing Bid/Ask Strategy Candidates</span>
+            <span className="text-[10px] text-purple-500 ml-2">Displaying candidates & payoff curves computed from Bid/Ask quotes. Auto-execution is safely paused until market reopens.</span>
+          </div>
+        </div>
+      )}
+      <ScanStatusBar data={data} isFetching={isFetching} />
+      {content}
+    </div>
+  );
+}
+
+/* ──────── RATIO BUTTERFLY ──────── */
+function RatioContent({ opps, onEnter }) {
+  const sort = useSort('riskReward');
+  const b = opps[0];
+  const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'riskReward'), [opps]);
+  return (
+    <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#7c3aed"
+        renderCardContent={(o, rank) => (
+          <div className="grid grid-cols-2 sm:grid-cols-7 gap-3 text-center">
+            <div><div className="text-[9px] text-slate-400 font-semibold">Type</div><div className="text-xs font-black text-slate-700">{o.optionType}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Buy 1x</div><div className="text-xs font-mono text-slate-600">{o.buyStrike} @ ₹{o.buyPrice}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Sell 3x</div><div className="text-xs font-mono font-bold text-red-600">{o.sellStrike} @ ₹{o.sellPrice}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Buy 2x</div><div className="text-xs font-mono text-slate-600">{o.farBuyStrike} @ ₹{o.farBuyPrice}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">{o.netCostRs <= 0 ? 'Net Credit' : 'Net Cost'}</div><div className={`text-sm font-black ${o.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{o.netCostRs <= 0 ? `+₹${Math.abs(Math.round(o.netCostRs)).toLocaleString()}` : `₹${Math.round(o.netCostRs).toLocaleString()}`}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Max Reward</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">R:R</div><div className="text-sm font-black text-violet-600">1:{Math.round(o.riskReward)}</div></div>
+          </div>
+        )} />
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Stat label="Best R:R" value={`1:${Math.round(b.riskReward)}`} color="text-emerald-600" icon="🎯" />
+        <Stat label="Max Risk" value={`₹${Math.round(b.maxLoss).toLocaleString()}`} sub="Per lot" color="text-red-500" icon="🛡️" />
+        <Stat label="Max Reward" value={`₹${Math.round(b.maxProfit).toLocaleString()}`} sub="Per lot" color="text-emerald-600" icon="💰" />
+        <Stat label="Sweet Spot" value={b.sweetSpot} sub={b.underlying} icon="📍" />
+        <Stat label="Signals" value={opps.length} sub={b.expiry} color="text-violet-600" icon="📡" />
+      </div>
+      <TableShell tab="ratio" count={opps.length} headerContent={
+        <tr>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <SortTh field="optionType" label="Type" sort={sort} className="text-left" />
+          <th className="px-4 py-3 text-left">Buy 1x</th>
+          <th className="px-4 py-3 text-left">Sell 3x</th>
+          <th className="px-4 py-3 text-left">Buy 2x</th>
+          <SortTh field="netCostRs" label="Net Premium" sort={sort} className="text-right" />
+          <SortTh field="maxLoss" label="Max Risk" sort={sort} className="text-right" />
+          <SortTh field="maxProfit" label="Max Reward" sort={sort} className="text-right" />
+          <SortTh field="riskReward" label="R:R" sort={sort} className="text-right" />
+          <th className="px-4 py-3 text-left">Expiry</th>
+          <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
+        </tr>
+      }>
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#7c3aed" onEnter={onEnter} topKeys={topKeys}
+          getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+          renderRow={(o, i) => (<>
+            <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
+            <td className="px-4 py-3"><TypeBadge type={o.optionType} /></td>
+            <td className="px-4 py-3 font-mono text-slate-600">{o.buyStrike} <span className="text-slate-300">@</span> ₹{o.buyPrice}</td>
+            <td className="px-4 py-3 font-mono font-bold text-red-600">{o.sellStrike} <span className="text-red-300">@</span> ₹{o.sellPrice}</td>
+            <td className="px-4 py-3 font-mono text-slate-600">{o.farBuyStrike} <span className="text-slate-300">@</span> ₹{o.farBuyPrice}</td>
+            <td className={`px-4 py-3 text-right font-mono font-bold ${o.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{o.netCostRs <= 0 ? `+₹${Math.abs(Math.round(o.netCostRs)).toLocaleString()} Cr` : `₹${Math.round(o.netCostRs).toLocaleString()} Db`}</td>
+            <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right"><RRBadge value={o.riskReward} /></td>
+            <td className="px-4 py-3 text-slate-400 text-[10px]">{o.expiry}</td>
+          </>)}
+        />
+      </TableShell>
+    </div>
+  );
+}
+
+/* ──────── BROKEN WING BUTTERFLY ──────── */
+function BWBContent({ opps, onEnter }) {
+  const [bwbType, setBwbType] = useState('PE');
+  const putOpps = opps.filter(o => o.optionType === 'PE');
+  const callOpps = opps.filter(o => o.optionType === 'CE');
+  const filtered = bwbType === 'PE' ? putOpps : callOpps;
+  const sort = useSort('creditRs');
+  const sorted = sort.sorted(filtered);
+  const b = filtered[0];
+  const topKeys = useMemo(() => filtered.length > 0 ? getTopKeys(filtered, 'creditRs') : new Map(), [filtered]);
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-2 mb-1">
+        <button onClick={() => setBwbType('PE')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            bwbType === 'PE'
+              ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-200'
+              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+          }`}>
+          <span>🛡️</span> PUT BWB <span className="ml-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-white/20">{putOpps.length}</span>
+          <span className={`text-[9px] font-medium ${bwbType === 'PE' ? 'text-emerald-100' : 'text-slate-400'}`}>Zero risk if market goes UP</span>
+        </button>
+        <button onClick={() => setBwbType('CE')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            bwbType === 'CE'
+              ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-200'
+              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+          }`}>
+          <span>🛡️</span> CALL BWB <span className="ml-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-white/20">{callOpps.length}</span>
+          <span className={`text-[9px] font-medium ${bwbType === 'CE' ? 'text-blue-100' : 'text-slate-400'}`}>Zero risk if market goes DOWN</span>
+        </button>
+      </div>
+      {filtered.length === 0 ? (
+        <div className="text-center py-10 text-slate-400 text-sm">No {bwbType === 'PE' ? 'PUT' : 'CALL'} BWB opportunities right now</div>
+      ) : (<>
+        <TopPickCards opps={filtered} topKeys={topKeys} onEnter={onEnter} accentColor={bwbType === 'PE' ? '#10b981' : '#3b82f6'}
+          renderCardContent={(o) => (
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 text-center">
+              <div><div className="text-[9px] text-slate-400 font-semibold">Near Wing</div><div className="text-xs font-mono text-slate-600">{o.nearWingStrike} @ ₹{o.nearWingPrice}</div></div>
+              <div><div className="text-[9px] text-slate-400 font-semibold">Body 2x</div><div className="text-xs font-mono font-bold text-red-600">{o.bodyStrike} @ ₹{o.bodyPrice}</div></div>
+              <div><div className="text-[9px] text-slate-400 font-semibold">Far Wing</div><div className="text-xs font-mono text-slate-600">{o.farWingStrike} @ ₹{o.farWingPrice}</div></div>
+              <div><div className="text-[9px] text-slate-400 font-semibold">Credit</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.creditRs).toLocaleString()}</div></div>
+              <div><div className="text-[9px] text-slate-400 font-semibold">Max Profit</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</div></div>
+              <div><div className="text-[9px] text-slate-400 font-semibold">Max Loss</div><div className="text-sm font-black text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</div></div>
+            </div>
+          )} />
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <Stat label="Best Credit" value={`₹${Math.round(b.creditRs).toLocaleString()}`} color="text-emerald-600" icon="💵" />
+          <Stat label="Zero Risk Side" value={b.zeroRiskSide} color={bwbType === 'PE' ? 'text-emerald-600' : 'text-blue-600'} icon="🛡️" />
+          <Stat label="Max Profit" value={`₹${Math.round(b.maxProfit).toLocaleString()}`} color="text-emerald-600" icon="💰" />
+          <Stat label="Max Loss" value={`₹${Math.round(b.maxLoss).toLocaleString()}`} color="text-red-500" icon="⚠️" />
+          <Stat label="Signals" value={filtered.length} sub={b.expiry} color="text-amber-600" icon="📡" />
+        </div>
+        <div className={`px-4 py-2.5 rounded-xl text-[11px] font-medium border ${
+          bwbType === 'PE'
+            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            : 'bg-blue-50 text-blue-700 border-blue-200'
+        }`}>
+          {bwbType === 'PE'
+            ? '📈 PUT BWB — Safe if market rallies. Risk only on the downside. Ideal when you expect market to stay flat or go up.'
+            : '📉 CALL BWB — Safe if market drops. Risk only on the upside. Ideal when you expect market to stay flat or go down.'}
+        </div>
+        <TableShell tab="bwb" count={filtered.length} headerContent={
+          <tr>
+            <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+            <th className="px-4 py-3 text-left">Near Wing</th>
+            <th className="px-4 py-3 text-left">Body (2x Sell)</th>
+            <th className="px-4 py-3 text-left">Far Wing</th>
+            <SortTh field="creditRs" label="Credit" sort={sort} className="text-right" />
+            <SortTh field="maxProfit" label="Max Profit" sort={sort} className="text-right" />
+            <SortTh field="maxLoss" label="Max Loss" sort={sort} className="text-right" />
+            <SortTh field="riskReward" label="R:R" sort={sort} className="text-right" />
+            <th className="px-4 py-3 text-left">Expiry</th>
+            <th className="px-2 py-3 text-center w-8"></th>
+            <th className="px-2 py-3 text-center w-8"></th>
+          </tr>
+        }>
+          <ExpandableRows opps={sorted} colSpan={10} accentColor={bwbType === 'PE' ? '#10b981' : '#3b82f6'} onEnter={onEnter} topKeys={topKeys}
+            getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+            renderRow={(o, i) => (<>
+              <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
+              <td className="px-4 py-3 font-mono text-slate-600">{o.nearWingStrike} <span className="text-slate-300">@</span> ₹{o.nearWingPrice}</td>
+              <td className="px-4 py-3 font-mono font-bold text-red-600">{o.bodyStrike} <span className="text-red-300">@</span> ₹{o.bodyPrice}</td>
+              <td className="px-4 py-3 font-mono text-slate-600">{o.farWingStrike} <span className="text-slate-300">@</span> ₹{o.farWingPrice}</td>
+              <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.creditRs).toLocaleString()}</td>
+              <td className="px-4 py-3 text-right font-mono text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</td>
+              <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</td>
+              <td className="px-4 py-3 text-right font-mono font-bold text-slate-700">{o.riskReward?.toFixed(2)}</td>
+              <td className="px-4 py-3 text-slate-400 text-[10px]">{o.expiry}</td>
+            </>)}
+          />
+        </TableShell>
+      </>)}
+    </div>
+  );
+}
+
+/* ──────── SKEW HARVEST ──────── */
+function SkewContent({ opps, onEnter }) {
+  const sort = useSort('skewEdge');
+  const b = opps[0];
+  const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'skewEdge'), [opps]);
+  return (
+    <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#0891b2"
+        renderCardContent={(o) => (
+          <div className="grid grid-cols-6 gap-3 text-center">
+            <div><div className="text-[9px] text-slate-400 font-semibold">Put Spread</div><div className="text-xs font-mono text-slate-600">S{o.putSellStrike}/B{o.putBuyStrike}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Call Spread</div><div className="text-xs font-mono text-slate-600">B{o.callBuyStrike}/S{o.callSellStrike}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Skew Edge</div><div className="text-sm font-black text-cyan-600">{o.skewEdge}%</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">If Flat</div><div className={`text-sm font-black ${o.scenarioFlat >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>₹{Math.round(o.scenarioFlat).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">If Up</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.scenarioUp).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">If Down</div><div className="text-sm font-black text-red-500">₹{Math.round(o.scenarioDown).toLocaleString()}</div></div>
+          </div>
+        )} />
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Stat label="IV Skew Edge" value={`${b.skewEdge}%`} color="text-cyan-600" icon="📊" />
+        <Stat label={b.netCostRs <= 0 ? "Net Credit" : "Net Cost"} value={b.netCostRs <= 0 ? `+₹${Math.abs(Math.round(b.netCostRs)).toLocaleString()}` : `₹${Math.round(b.netCostRs).toLocaleString()}`} sub={b.netCostRs <= 0 ? 'Credit received' : 'Net debit'} color={b.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'} icon="💵" />
+        <Stat label="If Flat" value={`₹${Math.round(b.scenarioFlat).toLocaleString()}`} color={b.scenarioFlat >= 0 ? 'text-emerald-600' : 'text-red-500'} icon="➡️" />
+        <Stat label="If Up" value={`₹${Math.round(b.scenarioUp).toLocaleString()}`} color="text-emerald-600" icon="📈" />
+        <Stat label="If Down" value={`₹${Math.round(b.scenarioDown).toLocaleString()}`} color="text-red-500" icon="📉" />
+      </div>
+      <TableShell tab="skew" count={opps.length} headerContent={
+        <tr>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <th className="px-4 py-3 text-left">Put Spread (Sell)</th>
+          <th className="px-4 py-3 text-left">Call Spread (Buy)</th>
+          <SortTh field="putSellIV" label="Put IV" sort={sort} className="text-right" />
+          <SortTh field="callBuyIV" label="Call IV" sort={sort} className="text-right" />
+          <SortTh field="skewEdge" label="Skew" sort={sort} className="text-right" />
+          <SortTh field="netCostRs" label="Net Premium" sort={sort} className="text-right" />
+          <SortTh field="scenarioFlat" label="Flat P&L" sort={sort} className="text-right" />
+          <SortTh field="scenarioUp" label="Up P&L" sort={sort} className="text-right" />
+          <SortTh field="scenarioDown" label="Down P&L" sort={sort} className="text-right" />
+          <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
+        </tr>
+      }>
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#0891b2" onEnter={onEnter} topKeys={topKeys}
+          getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+          renderRow={(o, i) => (<>
+            <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
+            <td className="px-4 py-3 font-mono text-sm"><span className="text-red-500 font-bold">S</span>{o.putSellStrike} / <span className="text-emerald-500 font-bold">B</span>{o.putBuyStrike}</td>
+            <td className="px-4 py-3 font-mono text-sm"><span className="text-emerald-500 font-bold">B</span>{o.callBuyStrike} / <span className="text-red-500 font-bold">S</span>{o.callSellStrike}</td>
+            <td className="px-4 py-3 text-right font-mono text-slate-600">{o.putSellIV}%</td>
+            <td className="px-4 py-3 text-right font-mono text-slate-600">{o.callBuyIV}%</td>
+            <td className="px-4 py-3 text-right">
+              <span className="px-2.5 py-1 rounded-lg bg-cyan-50 text-cyan-700 border border-cyan-200 text-[10px] font-black">{o.skewEdge}%</span>
+            </td>
+            <td className={`px-4 py-3 text-right font-mono font-bold ${o.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{o.netCostRs <= 0 ? `+₹${Math.abs(Math.round(o.netCostRs)).toLocaleString()} Cr` : `₹${Math.round(o.netCostRs).toLocaleString()} Db`}</td>
+            <td className="px-4 py-3 text-right font-mono text-emerald-600">₹{Math.round(o.scenarioFlat).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.scenarioUp).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.scenarioDown).toLocaleString()}</td>
+          </>)}
+        />
+      </TableShell>
+    </div>
+  );
+}
+
+/* ──────── THETA CRUSH ──────── */
+function ThetaContent({ opps, onEnter }) {
+  const sort = useSort('thetaDecayExpected');
+  const b = opps[0];
+  const isExpiryDay = b.dte === 0;
+  const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'expectedProfitRs'), [opps]);
+
+  return (
+    <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#f59e0b"
+        renderCardContent={(o) => (
+          <div className="grid grid-cols-5 gap-3 text-center">
+            <div><div className="text-[9px] text-slate-400 font-semibold">Net Credit</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.netCreditRs ?? 0).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Expected P&L</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.expectedProfitRs ?? o.dailyDecayRs ?? 0).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Theta Decay</div><div className="text-sm font-black text-amber-600">{o.thetaDecayExpected}%</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Win Rate</div><div className="text-sm font-black text-blue-600">{o.winRate || '--'}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">DTE</div><div className="text-sm font-black text-slate-700">{o.dte}d</div></div>
+          </div>
+        )} />
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Stat label="Status" value={isExpiryDay ? 'EXPIRY DAY' : `${b.dte}d to Expiry`} color={isExpiryDay ? 'text-emerald-600' : 'text-amber-600'} icon={isExpiryDay ? '🟢' : '🟡'} />
+        <Stat label="Window" value={b.window?.split(' ')[0] || '--'} sub={b.isOptimalWindow ? 'GO NOW!' : 'Wait for optimal'} color={b.isOptimalWindow ? 'text-emerald-600' : 'text-slate-500'} icon="⏰" />
+        <Stat label="Net Credit" value={`₹${Math.round(b.netCreditRs ?? 0).toLocaleString()}`} color="text-emerald-600" icon="💵" />
+        <Stat label="Expected P&L" value={`₹${Math.round(b.expectedProfitRs ?? b.dailyDecayRs ?? 0).toLocaleString()}`} color="text-emerald-600" icon="💰" />
+        <Stat label="Win % (model)" value={b.winRate || '--'} color="text-blue-600" icon="🎯" />
+      </div>
+
+      {!isExpiryDay && (
+        <div className="bg-gradient-to-r from-amber-50 to-yellow-50 rounded-2xl border border-amber-200/60 p-5 flex items-start gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-orange-400 flex items-center justify-center shrink-0 shadow-lg shadow-amber-400/20">
+            <span className="text-xl">⏳</span>
+          </div>
+          <div>
+            <div className="text-sm font-black text-amber-800">Not Expiry Day — Preview Mode</div>
+            <div className="text-xs text-amber-600/80 mt-1 leading-relaxed">Theta Crush is most effective on expiry day after 1:30 PM when 70% of remaining time value decays in the last 90 minutes. Showing current straddle values as preview.</div>
+          </div>
+        </div>
+      )}
+
+      <TableShell tab="theta" count={opps.length} headerContent={
+        <tr>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <SortTh field="ceStrike" label="CE Strike" sort={sort} className="text-left" />
+          <SortTh field="peStrike" label="PE Strike" sort={sort} className="text-left" />
+          <SortTh field="straddleCredit" label="Straddle" sort={sort} className="text-right" />
+          <SortTh field="netCreditRs" label="Net Credit" sort={sort} className="text-right" />
+          <SortTh field="expectedProfitRs" label="Exp. P&L" sort={sort} className="text-right" />
+          <SortTh field="maxLoss" label="Max Loss" sort={sort} className="text-right" />
+          <th className="px-4 py-3 text-center">Window</th>
+          <th className="px-4 py-3 text-center">Win Rate</th>
+          <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
+        </tr>
+      }>
+        <ExpandableRows opps={sorted} colSpan={9} accentColor="#10b981" onEnter={onEnter} topKeys={topKeys}
+          getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+          renderRow={(o, i) => (<>
+            <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
+            <td className="px-4 py-3 font-mono text-slate-600">{o.ceStrike}</td>
+            <td className="px-4 py-3 font-mono text-slate-600">{o.peStrike}</td>
+            <td className="px-4 py-3 text-right font-mono">₹{o.straddleCredit ?? o.straddleValue ?? '--'}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.netCreditRs ?? o.dailyDecayRs ?? 0).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.expectedProfitRs ?? o.dailyDecayRs ?? 0).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono text-red-500">{o.maxLoss ? `₹${Math.round(o.maxLoss).toLocaleString()}` : '--'}</td>
+            <td className="px-4 py-3 text-center">
+              {o.isOptimalWindow
+                ? <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-[10px] font-black animate-pulse border border-emerald-200">OPTIMAL</span>
+                : <span className="px-2.5 py-1 bg-slate-50 text-slate-500 rounded-lg text-[10px] font-bold border border-slate-200">{o.minutesToClose ? `${o.minutesToClose}m` : 'PREVIEW'}</span>
+              }
+            </td>
+            <td className="px-4 py-3 text-center text-[11px] font-bold text-slate-600">{o.winRate || '--'}</td>
+          </>)}
+        />
+      </TableShell>
+    </div>
+  );
+}
+
+/* ──────── BOX SPREAD ARBITRAGE ──────── */
+function BoxContent({ opps, onEnter }) {
+  const sort = useSort('netEdgeRs');
+  const b = opps[0];
+  const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'netEdgeRs'), [opps]);
+  return (
+    <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#e11d48"
+        renderCardContent={(o) => (
+          <div className="grid grid-cols-5 gap-3 text-center">
+            <div><div className="text-[9px] text-slate-400 font-semibold">Edge</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.netEdgeRs).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Return</div><div className="text-sm font-black text-emerald-600">{o.returnPct}%</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Annualized</div><div className="text-sm font-black text-blue-600">{o.annualizedReturn}%</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Strikes</div><div className="text-xs font-mono text-slate-600">{o.lowerStrike}—{o.upperStrike}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Risk</div><div className="text-sm font-black text-emerald-600">{o.riskLevel}</div></div>
+          </div>
+        )} />
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Stat label="Best Edge" value={`₹${Math.round(b.netEdgeRs).toLocaleString()}`} color="text-emerald-600" icon="💎" />
+        <Stat label="Return" value={`${b.returnPct}%`} color="text-emerald-600" icon="📈" />
+        <Stat label="Annualized" value={`${b.annualizedReturn}%`} color="text-blue-600" icon="🚀" />
+        <Stat label="Risk Level" value={b.riskLevel} color="text-emerald-600" icon="🛡️" />
+        <Stat label="Signals" value={opps.length} sub={b.expiry} color="text-rose-600" icon="📡" />
+      </div>
+      <TableShell tab="box" count={opps.length} headerContent={
+        <tr>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <SortTh field="boxType" label="Type" sort={sort} className="text-left" />
+          <th className="px-4 py-3 text-left">Strikes</th>
+          <SortTh field="theoreticalValue" label="Theo Value" sort={sort} className="text-right" />
+          <SortTh field="boxCost" label="Box Cost" sort={sort} className="text-right" />
+          <SortTh field="netEdgeRs" label="Edge ₹" sort={sort} className="text-right" />
+          <SortTh field="txnCostRs" label="Txn Cost" sort={sort} className="text-right" />
+          <SortTh field="returnPct" label="Return %" sort={sort} className="text-right" />
+          <SortTh field="annualizedReturn" label="Annual %" sort={sort} className="text-right" />
+          <th className="px-4 py-3 text-left">Expiry</th>
+          <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
+        </tr>
+      }>
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#e11d48" onEnter={onEnter} topKeys={topKeys}
+          getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+          renderRow={(o, i) => (<>
+            <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
+            <td className="px-4 py-3">
+              <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border ${
+                o.boxType === 'LONG_BOX' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'
+              }`}>{o.boxType === 'LONG_BOX' ? 'LONG' : 'SHORT'}</span>
+            </td>
+            <td className="px-4 py-3 font-mono text-slate-600">{o.lowerStrike} — {o.upperStrike}</td>
+            <td className="px-4 py-3 text-right font-mono text-slate-600">₹{o.theoreticalValue}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-slate-800">₹{Math.round(Math.abs(o.boxCost)).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.netEdgeRs).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono text-red-400">₹{Math.round(o.txnCostRs).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">{o.returnPct}%</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-blue-600">{o.annualizedReturn}%</td>
+            <td className="px-4 py-3 text-slate-400 text-[10px]">{o.expiry}</td>
+          </>)}
+        />
+      </TableShell>
+    </div>
+  );
+}
+
+/* ──────── IRON LIZARD (was Jade Lizard) ──────── */
+function JadeContent({ opps, onEnter }) {
+  const sort = useSort('riskRewardRatio');
+  const b = opps[0];
+  const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'riskRewardRatio'), [opps]);
+  return (
+    <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#16a34a"
+        renderCardContent={(o) => (
+          <div className="grid grid-cols-5 gap-3 text-center">
+            <div><div className="text-[9px] text-slate-400 font-semibold">Net Credit</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.netCreditRs || o.creditRs).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Max Loss</div><div className="text-sm font-black text-red-500">₹{Math.round(o.maxLoss || o.maxLossDown).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">R:R</div><div className="text-sm font-black text-blue-600">{(o.riskRewardRatio || 0).toFixed(2)}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Win Rate</div><div className="text-sm font-black text-emerald-600">{Math.round(o.estimatedWinRate)}%</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Flat P&L</div><div className={`text-sm font-black ${o.scenarioFlat >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>₹{Math.round(o.scenarioFlat).toLocaleString()}</div></div>
+          </div>
+        )} />
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+        <Stat label="Best Credit" value={`₹${Math.round(b.netCreditRs || b.creditRs).toLocaleString()}`} sub="After costs" color="text-emerald-600" icon="💵" />
+        <Stat label="Max Loss" value={`₹${Math.round(b.maxLoss || b.maxLossDown).toLocaleString()}`} sub="Defined risk" color="text-red-500" icon="🛡️" />
+        <Stat label="R:R Ratio" value={`${(b.riskRewardRatio || 0).toFixed(2)}`} sub="Reward/Risk" color="text-blue-600" icon="📊" />
+        <Stat label="Win % (model)" value={`${Math.round(b.estimatedWinRate)}%`} color="text-blue-600" icon="🎯" />
+        <Stat label="Break Even" value={Math.round(b.breakEvenDown).toLocaleString()} sub="Downside" color="text-red-500" icon="📉" />
+        <Stat label="Signals" value={opps.length} sub={b.expiry} color="text-green-600" icon="📡" />
+      </div>
+      <TableShell tab="jade" count={opps.length} headerContent={
+        <tr>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <th className="px-4 py-3 text-left">Sell Put</th>
+          <th className="px-4 py-3 text-left">Buy Put</th>
+          <th className="px-4 py-3 text-left">Sell Call</th>
+          <th className="px-4 py-3 text-left">Buy Call</th>
+          <SortTh field="netCreditRs" label="Net Credit" sort={sort} className="text-right" />
+          <SortTh field="maxLoss" label="Max Loss" sort={sort} className="text-right" />
+          <SortTh field="riskRewardRatio" label="R:R" sort={sort} className="text-right" />
+          <SortTh field="scenarioFlat" label="Flat P&L" sort={sort} className="text-right" />
+          <SortTh field="scenarioUp" label="Up P&L" sort={sort} className="text-right" />
+          <SortTh field="scenarioDown" label="Down P&L" sort={sort} className="text-right" />
+          <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
+        </tr>
+      }>
+        <ExpandableRows opps={sorted} colSpan={11} accentColor="#16a34a" onEnter={onEnter} topKeys={topKeys}
+          getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+          renderRow={(o, i) => (<>
+            <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
+            <td className="px-4 py-3 font-mono text-red-600 font-bold">{o.putSellStrike} <span className="text-red-300">@</span> ₹{o.putSellPrice || o.putPrice}</td>
+            <td className="px-4 py-3 font-mono text-emerald-600">{o.putBuyStrike} <span className="text-emerald-300">@</span> ₹{o.putBuyPrice}</td>
+            <td className="px-4 py-3 font-mono text-red-600 font-bold">{o.callSellStrike} <span className="text-red-300">@</span> ₹{o.callSellPrice}</td>
+            <td className="px-4 py-3 font-mono text-slate-600">{o.callBuyStrike} <span className="text-slate-300">@</span> ₹{o.callBuyPrice}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.netCreditRs || o.creditRs).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.maxLoss || o.maxLossDown).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-blue-600">{(o.riskRewardRatio || 0).toFixed(2)}</td>
+            <td className="px-4 py-3 text-right font-mono text-emerald-600">₹{Math.round(o.scenarioFlat).toLocaleString()}</td>
+            <td className={`px-4 py-3 text-right font-mono font-bold ${o.scenarioUp >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+              {o.scenarioUp >= 0 ? '+' : ''}₹{Math.round(o.scenarioUp).toLocaleString()}
+            </td>
+            <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.scenarioDown).toLocaleString()}</td>
+          </>)}
+        />
+      </TableShell>
+    </div>
+  );
+}
+
+/* ──────── CALENDAR SPREAD EDGE ──────── */
+function CalendarContent({ opps, onEnter }) {
+  const sort = useSort('ivEdge');
+  const b = opps[0];
+  const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'dailyThetaEdgeRs'), [opps]);
+  return (
+    <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#0284c7"
+        renderCardContent={(o) => (
+          <div className="grid grid-cols-5 gap-3 text-center">
+            <div><div className="text-[9px] text-slate-400 font-semibold">IV Edge</div><div className="text-sm font-black text-sky-600">{o.ivEdge}%</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Daily θ</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.dailyThetaEdgeRs).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Expected P&L</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.expectedProfitRs).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Strike</div><div className="text-xs font-mono text-slate-700">{o.strike} {o.optionType}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Spread</div><div className="text-xs text-slate-500">{o.nearExpiry}→{o.farExpiry}</div></div>
+          </div>
+        )} />
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Stat label="IV Edge" value={`${b.ivEdge}%`} color="text-sky-600" icon="📊" />
+        <Stat label="Daily Theta" value={`₹${Math.round(b.dailyThetaEdgeRs).toLocaleString()}`} sub="Per lot/day" color="text-emerald-600" icon="⏰" />
+        <Stat label="Expected P&L" value={`₹${Math.round(b.expectedProfitRs).toLocaleString()}`} color="text-emerald-600" icon="💰" />
+        <Stat label="Max Loss" value={`₹${Math.round(b.maxLoss).toLocaleString()}`} sub="Debit paid" color="text-red-500" icon="🛡️" />
+        <Stat label="Signals" value={opps.length} sub={`${b.nearExpiry} → ${b.farExpiry}`} color="text-sky-600" icon="📡" />
+      </div>
+
+      {b.ivBackwardation && (
+        <div className="bg-gradient-to-r from-sky-50 to-blue-50 rounded-2xl border border-sky-200/60 p-5 flex items-start gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-sky-400 to-blue-500 flex items-center justify-center shrink-0 shadow-lg shadow-sky-400/20">
+            <span className="text-xl">🔥</span>
+          </div>
+          <div>
+            <div className="text-sm font-black text-sky-800">IV Backwardation Detected</div>
+            <div className="text-xs text-sky-600/80 mt-1 leading-relaxed">Near-term IV is higher than far-term IV — this amplifies the calendar spread edge as near-term options are relatively overpriced. Sell the expensive near-term, buy the cheap far-term.</div>
+          </div>
+        </div>
+      )}
+
+      <TableShell tab="calendar" count={opps.length} headerContent={
+        <tr>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <SortTh field="optionType" label="Type" sort={sort} className="text-left" />
+          <SortTh field="strike" label="Strike" sort={sort} className="text-right" />
+          <th className="px-4 py-3 text-left">Near Expiry</th>
+          <th className="px-4 py-3 text-left">Far Expiry</th>
+          <SortTh field="nearIV" label="Near IV" sort={sort} className="text-right" />
+          <SortTh field="farIV" label="Far IV" sort={sort} className="text-right" />
+          <SortTh field="ivEdge" label="IV Edge" sort={sort} className="text-right" />
+          <SortTh field="dailyThetaEdgeRs" label="Daily θ ₹" sort={sort} className="text-right" />
+          <SortTh field="expectedProfitRs" label="Exp. P&L" sort={sort} className="text-right" />
+          <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
+        </tr>
+      }>
+        <ExpandableRows opps={sorted} colSpan={10} accentColor="#0284c7" onEnter={onEnter} topKeys={topKeys}
+          getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+          renderRow={(o, i) => (<>
+            <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
+            <td className="px-4 py-3"><TypeBadge type={o.optionType} /></td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-slate-800">{o.strike}</td>
+            <td className="px-4 py-3 text-slate-500 text-[11px]">
+              <span className="font-mono text-red-500 font-bold">SELL</span> {o.nearExpiry} <span className="text-slate-300">@</span> ₹{o.nearPrice}
+            </td>
+            <td className="px-4 py-3 text-slate-500 text-[11px]">
+              <span className="font-mono text-emerald-500 font-bold">BUY</span> {o.farExpiry} <span className="text-slate-300">@</span> ₹{o.farPrice}
+            </td>
+            <td className="px-4 py-3 text-right font-mono text-slate-600">{o.nearIV}%</td>
+            <td className="px-4 py-3 text-right font-mono text-slate-600">{o.farIV}%</td>
+            <td className="px-4 py-3 text-right">
+              <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border ${
+                o.ivEdge > 0 ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-slate-50 text-slate-600 border-slate-200'
+              }`}>{o.ivEdge > 0 ? '+' : ''}{o.ivEdge}%</span>
+            </td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.dailyThetaEdgeRs).toLocaleString()}</td>
+            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.expectedProfitRs).toLocaleString()}</td>
+          </>)}
+        />
+      </TableShell>
+    </div>
+  );
+}
+
+/* ──────── IRON CONDOR ──────── */
+function RankBadge({ rank }) {
+  if (rank === 1) return <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 text-white text-[11px] font-black shadow-lg shadow-amber-400/30 ring-2 ring-amber-300/40">#1</span>;
+  if (rank === 2) return <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-slate-300 to-slate-400 text-white text-[11px] font-black shadow-md">#2</span>;
+  if (rank === 3) return <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-amber-600 to-orange-700 text-white text-[11px] font-black shadow-md">#3</span>;
+  if (rank <= 10) return <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold">#{rank}</span>;
+  return <span className="text-[10px] text-slate-400 font-mono">#{rank}</span>;
+}
+
+function formatRR(ratio) {
+  if (ratio >= 10) return `${Math.round(ratio)}:1`;
+  if (ratio >= 1) return `${ratio.toFixed(1)}:1`;
+  return `1:${(1/ratio).toFixed(1)}`;
+}
+
+function ScoreMeter({ score }) {
+  const pct = Math.min(100, score);
+  const color = score >= 75 ? 'from-emerald-400 to-emerald-500' : score >= 60 ? 'from-amber-400 to-orange-500' : 'from-slate-300 to-slate-400';
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-14 h-2 rounded-full bg-slate-100 overflow-hidden">
+        <div className={`h-full rounded-full bg-gradient-to-r ${color} transition-all`} style={{width: `${pct}%`}} />
+      </div>
+      <span className={`text-[11px] font-black ${score >= 75 ? 'text-emerald-600' : score >= 60 ? 'text-amber-600' : 'text-slate-500'}`}>{score}</span>
+    </div>
+  );
+}
+
+function IronCondorContent({ opps, onEnter }) {
+  const sort = useSort('score');
+  const b = opps[0];
+  const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'score'), [opps]);
+  return (
+    <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#6366f1"
+        renderCardContent={(o) => (
+          <div className="grid grid-cols-5 gap-3 text-center">
+            <div><div className="text-[9px] text-slate-400 font-semibold">Credit</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.creditRs).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Max Loss</div><div className="text-sm font-black text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">R:R</div><div className="text-sm font-black text-violet-600">{formatRR(o.rewardRiskRatio)}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Score</div><div className="text-sm font-black text-indigo-600"><ScoreMeter score={o.score} /></div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Win Rate</div><div className="text-sm font-black text-emerald-600">{Math.round(o.estimatedWinRate)}%</div></div>
+          </div>
+        )} />
+
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Stat label="Best Score" value={b.score} sub="Rank #1" color="text-indigo-600" icon="⭐" />
+        <Stat label="Top Credit" value={`₹${Math.round(b.creditRs).toLocaleString()}`} sub={`${b.credit} pts`} color="text-emerald-600" icon="💰" />
+        <Stat label="Lowest Risk" value={`₹${Math.round(Math.min(...opps.map(o => o.maxLoss))).toLocaleString()}`} sub="Best case" color="text-red-500" icon="🛡️" />
+        <Stat label="Best R:R" value={formatRR(Math.max(...opps.map(o => o.rewardRiskRatio)))} sub="Credit / Risk" color="text-violet-600" icon="📊" />
+        <Stat label="Signals" value={opps.length} sub={`${opps.filter(o => o.score >= 70).length} high-quality`} color="text-sky-600" icon="📡" />
+      </div>
+
+      {/* Info Banner */}
+      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-200/60 p-5 flex items-start gap-4">
+        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-400/20">
+          <span className="text-xl">🦅</span>
+        </div>
+        <div>
+          <div className="text-sm font-black text-indigo-800">Range-Bound Profit Zone</div>
+          <div className="text-xs text-indigo-600/80 mt-1 leading-relaxed">Profit when {b.underlying} stays between {Math.round(b.breakEvenDown)} and {Math.round(b.breakEvenUp)} ({b.breakEvenRangePct}% range). Both sides protected — max loss is always defined.</div>
+        </div>
+      </div>
+
+      {/* Full Table */}
+      <TableShell tab="condor" count={opps.length} headerContent={
+        <tr>
+          <th className="px-2 py-3 text-center w-10">Rank</th>
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <th className="px-3 py-3 text-center">Structure</th>
+          <SortTh field="creditRs" label="Credit" sort={sort} className="text-right" />
+          <SortTh field="maxLoss" label="Max Loss" sort={sort} className="text-right" />
+          <SortTh field="rewardRiskRatio" label="R:R" sort={sort} className="text-center" />
+          <SortTh field="breakEvenRangePct" label="BE Range" sort={sort} className="text-center" />
+          <SortTh field="score" label="Score" sort={sort} className="text-center" />
+          <SortTh field="estimatedWinRate" label="Win%" sort={sort} className="text-center" />
+          <SortTh field="expiry" label="Expiry" sort={sort} className="text-center" />
+          <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
+        </tr>
+      }>
+        <ExpandableRows opps={sorted} colSpan={9} accentColor="#6366f1" onEnter={onEnter} topKeys={topKeys}
+          getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+          renderRow={(o, i) => (<>
+            <td className="px-2 py-3 text-center"><RankBadge rank={i + 1} /></td>
+            <td className="px-3 py-3 font-bold text-slate-800">{o.underlying}</td>
+            <td className="px-3 py-3">
+              <div className="flex flex-col items-center gap-0.5">
+                <div className="text-[10px]">
+                  <span className="font-mono text-emerald-500 font-bold">B</span><span className="text-slate-500"> {o.putBuyStrike}PE</span>
+                  <span className="mx-0.5 text-slate-300">/</span>
+                  <span className="font-mono text-red-500 font-bold">S</span><span className="text-slate-500"> {o.putSellStrike}PE</span>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[9px] font-black bg-indigo-100/80 text-indigo-700">{o.putSellStrike} — {o.callSellStrike}</span>
+                <div className="text-[10px]">
+                  <span className="font-mono text-red-500 font-bold">S</span><span className="text-slate-500"> {o.callSellStrike}CE</span>
+                  <span className="mx-0.5 text-slate-300">/</span>
+                  <span className="font-mono text-emerald-500 font-bold">B</span><span className="text-slate-500"> {o.callBuyStrike}CE</span>
+                </div>
+              </div>
+            </td>
+            <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.creditRs).toLocaleString()}</td>
+            <td className="px-3 py-3 text-right font-mono text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</td>
+            <td className="px-3 py-3 text-center">
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${
+                o.rewardRiskRatio >= 5 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                o.rewardRiskRatio >= 1 ? 'bg-sky-50 text-sky-700 border-sky-200' :
+                'bg-amber-50 text-amber-700 border-amber-200'
+              }`}>{formatRR(o.rewardRiskRatio)}</span>
+            </td>
+            <td className="px-3 py-3 text-center">
+              <span className="text-[11px] font-bold text-indigo-600">{o.breakEvenRangePct}%</span>
+            </td>
+            <td className="px-3 py-3 text-center"><ScoreMeter score={o.score} /></td>
+            <td className="px-3 py-3 text-center font-mono font-bold text-emerald-600">{Math.round(o.estimatedWinRate)}%</td>
+            <td className="px-3 py-3 text-center font-mono text-[10px] text-slate-500">{o.expiry || o.expiryDate}</td>
+          </>)}
+        />
+      </TableShell>
+    </div>
+  );
+}
+
+/* ──────── ADAPTIVE AI ──────── */
+const ADAPTIVE_TYPE_META = {
+  IRON_BUTTERFLY: { label: 'Iron Butterfly', icon: '🦋', color: 'text-purple-600', bg: 'bg-purple-50 border-purple-200', tag: 'bg-purple-100 text-purple-700' },
+  RATIO_SPREAD: { label: 'Ratio Spread', icon: '📐', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', tag: 'bg-amber-100 text-amber-700' },
+  DYNAMIC_CONDOR: { label: 'Dynamic Condor', icon: '🦅', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', tag: 'bg-blue-100 text-blue-700' },
+  SKEW_EXPLOITER: { label: 'Skew Exploiter', icon: '⚡', color: 'text-cyan-600', bg: 'bg-cyan-50 border-cyan-200', tag: 'bg-cyan-100 text-cyan-700' },
+  MOMENTUM_LADDER: { label: 'Momentum Ladder', icon: '🚀', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', tag: 'bg-emerald-100 text-emerald-700' },
+  VOL_CRUSH: { label: 'Vol Crush', icon: '💥', color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200', tag: 'bg-rose-100 text-rose-700' },
+};
+const REGIME_DISPLAY = {
+  TRENDING_UP: { label: 'Trending Up', icon: '📈', color: 'text-emerald-600', bg: 'bg-emerald-100' },
+  TRENDING_DOWN: { label: 'Trending Down', icon: '📉', color: 'text-red-500', bg: 'bg-red-100' },
+  SIDEWAYS: { label: 'Sideways', icon: '➡️', color: 'text-amber-600', bg: 'bg-amber-100' },
+  HIGH_VOLATILE: { label: 'High Volatile', icon: '🌊', color: 'text-purple-600', bg: 'bg-purple-100' },
+};
+
+function AdaptiveContent({ opps, onEnter }) {
+  const sort = useSort('adaptiveScore');
+  const b = opps[0];
+  const sorted = sort.sorted(opps);
+  const topKeys = useMemo(() => getTopKeys(opps, 'adaptiveScore'), [opps]);
+
+  const regimeInfo = REGIME_DISPLAY[b.regime] || REGIME_DISPLAY.SIDEWAYS;
+  const typeCounts = useMemo(() => {
+    const counts = {};
+    opps.forEach(o => { counts[o.adaptiveType] = (counts[o.adaptiveType] || 0) + 1; });
+    return counts;
+  }, [opps]);
+
+  return (
+    <div className="space-y-5">
+      <TopPickCards opps={opps} topKeys={topKeys} onEnter={onEnter} accentColor="#d946ef"
+        renderCardContent={(o) => {
+          const meta = ADAPTIVE_TYPE_META[o.adaptiveType] || ADAPTIVE_TYPE_META.DYNAMIC_CONDOR;
+          return (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border ${meta.tag} border-current/20`}>{meta.icon} {meta.label}</span>
+                <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold ${regimeInfo.bg} ${regimeInfo.color}`}>{regimeInfo.icon} {o.regime}</span>
+                <span className="text-[9px] text-slate-400">IV Rank: {Math.round(o.ivRank)}%</span>
+              </div>
+              <div className="text-[10px] text-slate-500 italic leading-relaxed">{o.adaptiveReason}</div>
+              <div className="grid grid-cols-5 gap-3 text-center mt-1">
+                <div><div className="text-[9px] text-slate-400 font-semibold">Max Profit</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</div></div>
+                <div><div className="text-[9px] text-slate-400 font-semibold">Max Loss</div><div className="text-sm font-black text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</div></div>
+                <div><div className="text-[9px] text-slate-400 font-semibold">R:R</div><div className="text-sm font-black text-blue-600">{(o.riskRewardRatio || 0).toFixed(2)}</div></div>
+                <div><div className="text-[9px] text-slate-400 font-semibold">Win Rate</div><div className="text-sm font-black text-emerald-600">{Math.round(o.estimatedWinRate)}%</div></div>
+                <div><div className="text-[9px] text-slate-400 font-semibold">Score</div><div className="text-sm font-black text-fuchsia-600">{o.adaptiveScore}</div></div>
+              </div>
+            </div>
+          );
+        }} />
+
+      {/* Regime + Strategy Mix Banner */}
+      <div className="bg-gradient-to-r from-fuchsia-50 via-pink-50 to-rose-50 rounded-2xl border border-fuchsia-200/60 p-5">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-fuchsia-500 to-pink-500 flex items-center justify-center shrink-0 shadow-lg shadow-fuchsia-400/20">
+              <span className="text-xl">🧠</span>
+            </div>
+            <div>
+              <div className="text-sm font-black text-fuchsia-800">Adaptive Engine — {regimeInfo.icon} {regimeInfo.label} Regime</div>
+              <div className="text-xs text-fuchsia-600/80 mt-0.5">IV Rank: {Math.round(b.ivRank)}% • ATM IV: {b.atmIV || '--'}% • {opps.length} strategies constructed</div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {Object.entries(typeCounts).map(([type, count]) => {
+              const meta = ADAPTIVE_TYPE_META[type] || {};
+              return <span key={type} className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${meta.tag || 'bg-slate-100 text-slate-600'} border-current/20`}>{meta.icon} {meta.label} ({count})</span>;
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Stat label="Best Score" value={b.adaptiveScore} color="text-fuchsia-600" icon="⭐" />
+        <Stat label="Regime" value={regimeInfo.label} color={regimeInfo.color} icon={regimeInfo.icon} />
+        <Stat label="IV Rank" value={`${Math.round(b.ivRank)}%`} color={b.ivRank > 60 ? 'text-red-500' : b.ivRank > 40 ? 'text-amber-600' : 'text-emerald-600'} icon="📊" />
+        <Stat label="Best R:R" value={`${Math.max(...opps.map(o => o.riskRewardRatio || 0)).toFixed(2)}`} color="text-blue-600" icon="🎯" />
+        <Stat label="Strategies" value={opps.length} sub={`${Object.keys(typeCounts).length} types`} color="text-fuchsia-600" icon="🧠" />
+      </div>
+
+      <TableShell tab="adaptive" count={opps.length} headerContent={
+        <tr>
+          <SortTh field="adaptiveScore" label="Score" sort={sort} className="text-center" />
+          <SortTh field="underlying" label="Index" sort={sort} className="text-left" />
+          <th className="px-4 py-3 text-left">Strategy</th>
+          <th className="px-4 py-3 text-left">Regime</th>
+          <th className="px-4 py-3 text-left">Why</th>
+          <SortTh field="maxProfit" label="Max Profit" sort={sort} className="text-right" />
+          <SortTh field="maxLoss" label="Max Loss" sort={sort} className="text-right" />
+          <SortTh field="riskRewardRatio" label="R:R" sort={sort} className="text-right" />
+          <SortTh field="estimatedWinRate" label="Win %" sort={sort} className="text-right" />
+          <th className="px-2 py-3 text-center w-8"></th>
+          <th className="px-2 py-3 text-center w-8"></th>
+        </tr>
+      }>
+        <ExpandableRows opps={sorted} colSpan={9} accentColor="#d946ef" onEnter={onEnter} topKeys={topKeys}
+          getLegs={o => o.legList} getLotSize={o => o.lotSize} getSpot={o => o.spotPrice}
+          renderRow={(o, i, isTop) => {
+            const meta = ADAPTIVE_TYPE_META[o.adaptiveType] || ADAPTIVE_TYPE_META.DYNAMIC_CONDOR;
+            const reg = REGIME_DISPLAY[o.regime] || REGIME_DISPLAY.SIDEWAYS;
+            return (<>
+              <td className="px-3 py-3 text-center">
+                <span className={`inline-flex items-center justify-center w-9 h-9 rounded-xl font-black text-sm ${
+                  o.adaptiveScore >= 70 ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-md shadow-emerald-200/50'
+                  : o.adaptiveScore >= 50 ? 'bg-gradient-to-br from-amber-400 to-orange-400 text-white shadow-md shadow-amber-200/50'
+                  : 'bg-slate-100 text-slate-600'
+                }`}>{Math.round(o.adaptiveScore)}</span>
+              </td>
+              <td className="px-4 py-3 font-bold text-slate-800">{o.underlying}</td>
+              <td className="px-4 py-3">
+                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black border ${meta.tag} border-current/20`}>
+                  {meta.icon} {meta.label}
+                </span>
+              </td>
+              <td className="px-4 py-3">
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-bold ${reg.bg} ${reg.color}`}>
+                  {reg.icon} {reg.label}
+                </span>
+              </td>
+              <td className="px-4 py-3 text-[10px] text-slate-500 max-w-[200px] truncate" title={o.adaptiveReason}>{o.adaptiveReason}</td>
+              <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</td>
+              <td className="px-4 py-3 text-right font-mono text-red-500">₹{Math.round(o.maxLoss).toLocaleString()}</td>
+              <td className="px-4 py-3 text-right font-mono font-bold text-blue-600">{(o.riskRewardRatio || 0).toFixed(2)}</td>
+              <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">{Math.round(o.estimatedWinRate)}%</td>
+            </>);
+          }}
+        />
+      </TableShell>
+    </div>
+  );
+}
+
+/* ──────── AUTO-ENTRY PANEL ──────── */
+// ──── MARKET REGIME PANEL ────
+function MarketRegimePanel() {
+  const { data } = useQuery({ queryKey: ['regime'], queryFn: () => client.get('/smart-strategies/regime').then(r => r.data), refetchInterval: 300000 });
+  if (!data || Object.keys(data).length === 0) return null;
+
+  const regimeColors = { TRENDING_UP: 'text-emerald-600', TRENDING_DOWN: 'text-red-500', SIDEWAYS: 'text-amber-600', HIGH_VOLATILE: 'text-purple-600' };
+  const regimeBgs = { TRENDING_UP: 'bg-emerald-50 border-emerald-200', TRENDING_DOWN: 'bg-red-50 border-red-200', SIDEWAYS: 'bg-amber-50 border-amber-200', HIGH_VOLATILE: 'bg-purple-50 border-purple-200' };
+  const regimeIcons = { TRENDING_UP: '📈', TRENDING_DOWN: '📉', SIDEWAYS: '➡️', HIGH_VOLATILE: '🌊' };
+  const regimeLabels = { TRENDING_UP: 'Trending Up', TRENDING_DOWN: 'Trending Down', SIDEWAYS: 'Sideways', HIGH_VOLATILE: 'High Volatile' };
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+      <div className="px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-purple-50 to-indigo-50 flex items-center gap-2.5">
+        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-sm shadow-sm">🌡️</div>
+        <span className="text-xs font-black text-slate-700">Market Regime</span>
+      </div>
+      <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+        {Object.entries(data).map(([und, info]) => (
+          <div key={und} className={`rounded-xl p-3.5 border ${regimeBgs[info.regime] || 'bg-slate-50 border-slate-200'}`}>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">{und}</span>
+              <span className="text-lg">{regimeIcons[info.regime] || '❓'}</span>
+            </div>
+            <div className={`text-sm font-black mt-1 ${regimeColors[info.regime] || 'text-slate-600'}`}>
+              {regimeLabels[info.regime] || info.regime}
+            </div>
+            <div className="flex items-center gap-2 mt-2.5">
+              <span className="text-[10px] text-slate-400 font-semibold">IV Rank</span>
+              <div className="flex-1 bg-slate-200 rounded-full h-1.5">
+                <div className={`h-1.5 rounded-full transition-all ${info.ivRank > 60 ? 'bg-red-400' : info.ivRank > 30 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${Math.min(100, info.ivRank)}%` }} />
+              </div>
+              <span className="text-[10px] text-slate-500 font-mono font-bold">{info.ivRank?.toFixed?.(0) || 0}%</span>
+            </div>
+            <div className="flex items-center justify-between mt-1.5">
+              <span className="text-[10px] text-slate-400">ATM IV: <span className="font-mono font-bold text-slate-600">{info.atmIV?.toFixed?.(1) || '-'}%</span></span>
+              <span className="text-[10px] text-slate-400">Spot: <span className="font-mono font-bold text-slate-600">{info.spotPrice ? Math.round(info.spotPrice).toLocaleString() : '-'}</span></span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ──── PERFORMANCE REPORT CARD ────
+function PerformanceReportCard() {
+  const [expanded, setExpanded] = useState(false);
+  const { data } = useQuery({ queryKey: ['performance'], queryFn: () => client.get('/smart-strategies/performance').then(r => r.data), refetchInterval: 60000 });
+  if (!data || data.totalTrades === 0) return null;
+
+  const pnlColor = data.totalPnl >= 0 ? 'text-emerald-600' : 'text-red-500';
+  const winRateColor = data.winRate >= 60 ? 'text-emerald-600' : data.winRate >= 40 ? 'text-amber-600' : 'text-red-500';
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+      <div className="px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-sky-50 to-blue-50 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-500 to-blue-500 flex items-center justify-center text-sm shadow-sm">📊</div>
+          <span className="text-xs font-black text-slate-700">Performance Report</span>
+          <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px] font-bold">{data.totalTrades} trades</span>
+        </div>
+        <button onClick={() => setExpanded(!expanded)} className="text-[11px] font-bold text-sky-600 hover:text-sky-800 transition-colors">
+          {expanded ? 'Collapse' : 'Details ▼'}
+        </button>
+      </div>
+      <div className="p-4 grid grid-cols-2 md:grid-cols-6 gap-3">
+        <Stat label="Total Trades" value={data.totalTrades} icon="📈" />
+        <Stat label="Win % (model)" value={`${data.winRate}%`} color={winRateColor} icon="🎯" />
+        <Stat label="Total P&L" value={`₹${data.totalPnl?.toLocaleString?.() || 0}`} color={pnlColor} icon="💰" />
+        <Stat label="Avg Win" value={`₹${data.avgWin?.toLocaleString?.() || 0}`} color="text-emerald-600" icon="✅" />
+        <Stat label="Avg Loss" value={`₹${data.avgLoss?.toLocaleString?.() || 0}`} color="text-red-500" icon="❌" />
+        <Stat label="Profit Factor" value={data.profitFactor} color={data.profitFactor >= 1.5 ? 'text-emerald-600' : 'text-amber-600'} icon="⚖️" />
+      </div>
+
+      {expanded && (
+        <div className="px-4 pb-4 space-y-4">
+          {data.byStrategy && Object.keys(data.byStrategy).length > 0 && (
+            <div>
+              <h4 className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Per Strategy</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {Object.entries(data.byStrategy).map(([strat, stats]) => (
+                  <div key={strat} className="rounded-xl p-3 bg-slate-50 border border-slate-100">
+                    <div className="text-[10px] text-slate-400 font-semibold">{STRAT_LABELS[strat] || strat}</div>
+                    <div className="text-sm font-black text-slate-700 mt-0.5">{stats.winRate}% win</div>
+                    <div className={`text-xs font-bold ${stats.totalPnl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>₹{stats.totalPnl?.toLocaleString?.()}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">{stats.trades} trades</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {data.recentTrades?.length > 0 && (
+            <div>
+              <h4 className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Recent Trades</h4>
+              <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-100 divide-y divide-slate-50">
+                {data.recentTrades.slice(0, 10).map((t, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs px-3 py-2 hover:bg-slate-50 transition-colors">
+                    <span className="px-2 py-0.5 rounded-md bg-violet-50 text-violet-700 text-[9px] font-black border border-violet-200">{STRAT_LABELS[t.strategyType] || t.strategyType}</span>
+                    <span className="text-slate-500 font-bold">{t.underlying}</span>
+                    <span className="text-slate-400 text-[10px]">{t.exitReason || '-'}</span>
+                    <span className={`font-mono font-bold ${t.pnl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {t.pnl >= 0 ? '+' : ''}₹{Math.round(t.pnl)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {data.streaks && (
+            <div className="flex gap-6 text-xs text-slate-500 px-1">
+              <span>Win Streak: <b className="text-emerald-600">{data.streaks.currentWin}</b> <span className="text-slate-300">(max {data.streaks.maxWin})</span></span>
+              <span>Loss Streak: <b className="text-red-500">{data.streaks.currentLoss}</b> <span className="text-slate-300">(max {data.streaks.maxLoss})</span></span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function AutoEntryPanel() {
+  const queryClient = useQueryClient();
+  const { data: status } = useQuery({
+    queryKey: ['auto-entry-status'],
+    queryFn: async () => { const r = await client.get('/smart-strategies/auto-entry/status'); return r.data; },
+    refetchInterval: 15000,
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: (enabled) => client.post('/smart-strategies/auto-entry/toggle', { enabled }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['auto-entry-status'] }),
+  });
+
+  if (!status) return null;
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden mb-1">
+      <div className="px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-cyan-50 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center text-sm shadow-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+          <span className="text-xs font-black text-slate-700">Smart Auto-Entry</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            status.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+          }`}>{status.enabled ? 'ACTIVE' : 'OFF'}</span>
+        </div>
+        <button
+          onClick={() => toggleMutation.mutate(!status.enabled)}
+          className={`px-4 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+            status.enabled
+              ? 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100'
+              : 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-sm hover:shadow-md'
+          }`}>
+          {status.enabled ? 'Stop Auto-Entry' : 'Start Auto-Entry'}
+        </button>
+      </div>
+      <div className="px-5 py-3 grid grid-cols-2 sm:grid-cols-6 gap-3 text-xs">
+        <div>
+          <span className="text-[10px] text-slate-400 font-semibold uppercase">Open</span>
+          <div className="font-black text-slate-800">{status.openPositions}/{status.maxPositions}</div>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-400 font-semibold uppercase">Today P&L</span>
+          <div className={`font-black ${status.todayRealizedPnl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+            ₹{Math.round(status.todayRealizedPnl || 0).toLocaleString()}
+          </div>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-400 font-semibold uppercase">Daily Limit</span>
+          <div className="font-black text-slate-600">₹{Math.round(status.dailyLossLimit || 0).toLocaleString()}</div>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-400 font-semibold uppercase">Min Score</span>
+          <div className="font-black text-indigo-600">{status.minScore}</div>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-400 font-semibold uppercase">Timing</span>
+          <div className={`font-bold text-[10px] leading-tight mt-0.5 ${
+            status.timingActive ? 'text-emerald-600' : 'text-amber-500'
+          }`}>{status.timingPhase || '-'}</div>
+          <div className="text-[9px] text-slate-400 mt-0.5">{status.timingNote || ''}</div>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-400 font-semibold uppercase">Status</span>
+          <div className="font-bold text-slate-500 text-[10px] leading-tight mt-0.5">{status.lastScanResult}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ──────── TOP PICKS ACROSS ALL STRATEGIES ──────── */
+function TopPicksPanel({ underlying, onEnter }) {
+  const { data } = useQuery({
+    queryKey: ['top-picks', underlying],
+    queryFn: async () => { const r = await client.get('/smart-strategies/top-picks', { params: { underlying } }); return r.data; },
+    refetchInterval: 30000,
+    staleTime: 20000,
+  });
+
+  if (!data || !data.picks || data.picks.length === 0) return null;
+
+  const STRAT_ICONS = {
+    IRON_CONDOR: '🦅', JADE_LIZARD: '🦎', BROKEN_WING_BUTTERFLY: '🔥', RATIO_BUTTERFLY: '🦋',
+    SKEW_HARVEST: '📊', BOX_SPREAD_ARB: '📦', EXPIRY_THETA_CRUSH: '⏰', CALENDAR_SPREAD_EDGE: '📅',
+  };
+  const STRAT_SHORT = {
+    IRON_CONDOR: 'Condor', JADE_LIZARD: 'Jade', BROKEN_WING_BUTTERFLY: 'BWB', RATIO_BUTTERFLY: 'Ratio',
+    SKEW_HARVEST: 'Skew', BOX_SPREAD_ARB: 'Box', EXPIRY_THETA_CRUSH: 'Theta', CALENDAR_SPREAD_EDGE: 'Calendar',
+  };
+  const STRAT_COLORS = {
+    IRON_CONDOR: 'from-indigo-500 to-purple-500', JADE_LIZARD: 'from-lime-500 to-green-500',
+    BROKEN_WING_BUTTERFLY: 'from-amber-500 to-orange-500', RATIO_BUTTERFLY: 'from-violet-500 to-fuchsia-500',
+    SKEW_HARVEST: 'from-cyan-500 to-blue-500', BOX_SPREAD_ARB: 'from-rose-500 to-pink-500',
+    EXPIRY_THETA_CRUSH: 'from-emerald-500 to-teal-500', CALENDAR_SPREAD_EDGE: 'from-sky-500 to-blue-500',
+  };
+
+  const top5 = data.picks.slice(0, 5);
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+      <div className="px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-amber-50 via-yellow-50 to-orange-50 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center text-sm shadow-sm">⭐</div>
+          <span className="text-xs font-black text-slate-700">Top Picks — Best Trades Right Now</span>
+          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">{data.totalScanned} scanned</span>
+        </div>
+      </div>
+      <div className="p-4 grid grid-cols-1 sm:grid-cols-5 gap-3">
+        {top5.map((p, i) => {
+          const st = p.strategyType;
+          const credit = p.creditRs || p.edgeAfterCosts || 0;
+          const maxLoss = p.maxLoss || p.maxLossDown || 0;
+          const score = p.compositeScore || 0;
+          return (
+            <div key={i} onClick={() => onEnter?.(p)}
+              className={`relative cursor-pointer rounded-xl p-3.5 border transition-all hover:shadow-lg hover:-translate-y-0.5 ${
+                i === 0 ? 'bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-amber-200 shadow-md ring-1 ring-amber-200/50'
+                : 'bg-white border-slate-200/60 shadow-sm hover:border-slate-300'
+              }`}>
+              {i === 0 && <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center text-white text-[10px] font-black shadow-lg">#1</div>}
+              {i > 0 && <div className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 text-[9px] font-bold">#{i+1}</div>}
+              <div className="flex items-center gap-2 mb-2">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black text-white bg-gradient-to-r ${STRAT_COLORS[st] || 'from-slate-400 to-slate-500'}`}>
+                  {STRAT_ICONS[st]} {STRAT_SHORT[st] || st}
+                </span>
+                <span className="text-[10px] font-bold text-slate-500">{p.underlying}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] mt-1">
+                <div><span className="text-slate-400">Credit</span> <span className="font-bold text-emerald-600">₹{Math.round(credit).toLocaleString()}</span></div>
+                <div><span className="text-slate-400">Risk</span> <span className="font-bold text-red-500">₹{Math.round(maxLoss).toLocaleString()}</span></div>
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <ScoreMeter score={score} />
+                <button onClick={e => { e.stopPropagation(); onEnter?.(p); }}
+                  className="px-2 py-1 rounded-md bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-[9px] font-bold shadow-sm hover:shadow-md">
+                  Enter
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ──────── ACTIVE POSITIONS PANEL ──────── */
+function ActivePositionsPanel() {
+  const queryClient = useQueryClient();
+  const { data: positions } = useQuery({
+    queryKey: ['smart-positions'],
+    queryFn: async () => { const r = await client.get('/smart-strategies/positions'); return r.data; },
+    refetchInterval: 10000,
+    staleTime: 5000,
+  });
+
+  const exitMutation = useMutation({
+    mutationFn: (id) => client.post(`/smart-strategies/exit/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['smart-positions'] }),
+  });
+
+  if (!positions || positions.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden mb-1">
+      <div className="px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-violet-50 to-indigo-50 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center text-sm shadow-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M12 2v20M2 12h20"/></svg>
+          </div>
+          <span className="text-xs font-black text-slate-700">Active Positions</span>
+          <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold">{positions.length}</span>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50/60 text-[10px] text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-100">
+            <tr>
+              <th className="px-4 py-2.5 text-left">Strategy</th>
+              <th className="px-4 py-2.5 text-left">Index</th>
+              <th className="px-4 py-2.5 text-left">Broker</th>
+              <th className="px-4 py-2.5 text-center">Lots</th>
+              <th className="px-4 py-2.5 text-right">P&L</th>
+              <th className="px-4 py-2.5 text-center">SL%</th>
+              <th className="px-4 py-2.5 text-center">Target%</th>
+              <th className="px-4 py-2.5 text-center">Time Exit</th>
+              <th className="px-4 py-2.5 text-left">Entered</th>
+              <th className="px-4 py-2.5 text-center">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50/80">
+            {positions.map(p => {
+              const pnl = p.currentPnl ?? 0;
+              const isPaper = !p.broker || p.broker === 'PAPER';
+              return (
+                <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-4 py-3">
+                    <span className="px-2 py-1 rounded-md bg-violet-50 text-violet-700 text-[10px] font-black border border-violet-200">
+                      {STRAT_LABELS[p.strategyType] || p.strategyType}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 font-bold text-slate-800">{p.underlying}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${isPaper ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-emerald-50 text-emerald-600 border border-emerald-200'}`}>
+                      {isPaper ? 'PAPER' : p.broker}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center font-mono font-bold text-slate-600">{p.lots || 1}</td>
+                  <td className={`px-4 py-3 text-right font-mono font-bold ${pnl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {pnl >= 0 ? '+' : ''}₹{Math.round(pnl).toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3 text-center font-mono text-slate-500">{p.slPct ? `${p.slPct}%` : '--'}</td>
+                  <td className="px-4 py-3 text-center font-mono text-slate-500">{p.targetPct ? `${p.targetPct}%` : '--'}</td>
+                  <td className="px-4 py-3 text-center font-mono text-slate-500">{p.timeExitMinutes ? `${p.timeExitMinutes}m` : '--'}</td>
+                  <td className="px-4 py-3 text-slate-400 text-[10px]">{p.enteredAt ? new Date(p.enteredAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '--'}</td>
+                  <td className="px-4 py-3 text-center">
+                    <button onClick={() => { if (confirm('Exit this position?')) exitMutation.mutate(p.id); }}
+                      disabled={exitMutation.isPending}
+                      className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-red-500 to-rose-500 text-white text-[10px] font-bold shadow-sm hover:shadow-md hover:scale-105 transition-all disabled:opacity-50">
+                      {exitMutation.isPending ? '...' : 'Exit'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ──────── ENTER TRADE MODAL ──────── */
+function EnterTradeModal({ opp, onClose }) {
+  const queryClient = useQueryClient();
+  const [lots, setLots] = useState(1);
+  const [slPct, setSlPct] = useState(50);
+  const [targetPct, setTargetPct] = useState(80);
+  const [timeExit, setTimeExit] = useState(5);
+  const [slEnabled, setSlEnabled] = useState(true);
+  const [targetEnabled, setTargetEnabled] = useState(true);
+  const [timeEnabled, setTimeEnabled] = useState(true);
+  const [broker, setBroker] = useState('PAPER');
+  const [result, setResult] = useState(null);
+
+  const enterMutation = useMutation({
+    mutationFn: (payload) => client.post('/smart-strategies/enter', payload),
+    onSuccess: (res) => {
+      setResult(res.data);
+      queryClient.invalidateQueries({ queryKey: ['smart-positions'] });
+    },
+    onError: (err) => setResult({ status: 'ERROR', message: err?.response?.data?.message || err.message }),
+  });
+
+  const stratType = opp.strategyType || opp.strategy || 'UNKNOWN';
+  const perLotLoss = opp.maxLoss || opp.maxLossDown || 0;
+  const perLotProfit = opp.maxProfit || opp.creditRs || opp.netEdgeRs || opp.edgeAfterCosts || 0;
+  const maxLoss = perLotLoss * lots;
+  const maxProfit = perLotProfit * lots;
+  const tabData = TABS.find(t => (t.id === 'condor' && stratType === 'IRON_CONDOR') || (t.id === 'jade' && stratType === 'JADE_LIZARD') || (t.id === 'ratio' && stratType === 'RATIO_BUTTERFLY') || (t.id === 'bwb' && stratType === 'BROKEN_WING_BUTTERFLY') || (t.id === 'skew' && stratType === 'SKEW_HARVEST') || (t.id === 'box' && stratType === 'BOX_SPREAD_ARB') || (t.id === 'theta' && stratType === 'EXPIRY_THETA_CRUSH') || (t.id === 'calendar' && stratType === 'CALENDAR_SPREAD_EDGE') || (t.id === 'adaptive' && stratType === 'ADAPTIVE')) || TABS[0];
+
+  const handleSubmit = () => {
+    enterMutation.mutate({
+      strategyType: stratType,
+      underlying: opp.underlying,
+      expiry: opp.expiry,
+      action: opp.action || stratType,
+      lots,
+      broker,
+      slPct: slEnabled ? slPct : null,
+      targetPct: targetEnabled ? targetPct : null,
+      timeExitMinutes: timeEnabled ? timeExit : null,
+      maxLoss: perLotLoss,
+      maxProfit: perLotProfit,
+      legList: opp.legList,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-[900px] max-w-[95vw] max-h-[88vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="shrink-0 px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-violet-900 to-indigo-900 rounded-t-2xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center ring-1 ring-white/20">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M12 2v20M2 12h20"/></svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white tracking-tight">Enter Trade</h3>
+                <p className="text-[10px] text-white/50 font-medium">{stratType.replace(/_/g, ' ')} — {opp.underlying} — {opp.expiry || opp.expiryDate || ''}</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/60 hover:text-white transition-colors">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+
+        {result ? (
+          <div className="p-8 flex flex-col items-center">
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 ${result.status === 'SUCCESS' ? 'bg-emerald-100' : 'bg-red-100'}`}>
+              <span className="text-3xl">{result.status === 'SUCCESS' ? '✓' : '✗'}</span>
+            </div>
+            <div className={`text-lg font-black ${result.status === 'SUCCESS' ? 'text-emerald-700' : 'text-red-700'}`}>
+              {result.status === 'SUCCESS' ? 'Trade Entered Successfully!' : 'Entry Failed'}
+            </div>
+            <div className={`text-xs mt-2 ${result.status === 'SUCCESS' ? 'text-emerald-600' : 'text-red-600'}`}>{result.message}</div>
+            {result.positionId && <div className="text-[10px] text-slate-400 mt-2">Position #{result.positionId}</div>}
+            <button onClick={onClose} className="mt-6 px-8 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-sm font-bold text-slate-700 transition-colors">Close</button>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-0">
+              {/* LEFT: Strategy Analysis (3/5) */}
+              <div className="lg:col-span-3 p-5 space-y-4 border-r border-slate-100">
+                {/* Payoff + Legs */}
+                {opp.legList && opp.legList.length > 0 && (
+                  <AdvancedPayoff
+                    opp={opp}
+                    legs={opp.legList}
+                    lotSize={opp.lotSize || 75}
+                    spot={opp.spotPrice || opp.legList[0]?.strike || 24000}
+                    accentColor={tabData?.accent || '#6366f1'}
+                  />
+                )}
+              </div>
+
+              {/* RIGHT: Trade Controls (2/5) */}
+              <div className="lg:col-span-2 p-5 space-y-4 bg-slate-50/50">
+                {/* Broker + Lots */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] text-slate-400 font-black uppercase tracking-wider">Broker</label>
+                    <select value={broker} onChange={e => setBroker(e.target.value)}
+                      className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white focus:ring-2 focus:ring-violet-200 focus:border-violet-400 outline-none shadow-sm">
+                      <option value="PAPER">PAPER</option>
+                      <option value="ZERODHA">ZERODHA</option>
+                      <option value="NAVIA">NAVIA</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-slate-400 font-black uppercase tracking-wider">Lots</label>
+                    <input type="number" min="1" max="50" value={lots} onChange={e => setLots(Math.max(1, +e.target.value))}
+                      className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white focus:ring-2 focus:ring-violet-200 focus:border-violet-400 outline-none shadow-sm" />
+                  </div>
+                </div>
+
+                {/* Stop Loss */}
+                <div className={`p-3 rounded-xl border transition-colors ${slEnabled ? 'bg-red-50/50 border-red-200/60' : 'bg-white border-slate-100'}`}>
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={slEnabled} onChange={e => setSlEnabled(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-red-500 focus:ring-red-200" />
+                      <span className="text-[10px] font-bold text-slate-700">Stop Loss</span>
+                    </label>
+                    {slEnabled && <span className="text-[9px] font-mono font-bold text-red-500">₹{Math.round(maxLoss * slPct / 100).toLocaleString()}</span>}
+                  </div>
+                  {slEnabled && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <input type="range" min="10" max="100" step="5" value={slPct} onChange={e => setSlPct(+e.target.value)}
+                        className="flex-1 h-1 bg-red-200 rounded-full accent-red-500" />
+                      <span className="text-[10px] font-black text-red-600 w-10 text-right">{slPct}%</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Target */}
+                <div className={`p-3 rounded-xl border transition-colors ${targetEnabled ? 'bg-emerald-50/50 border-emerald-200/60' : 'bg-white border-slate-100'}`}>
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={targetEnabled} onChange={e => setTargetEnabled(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-emerald-500 focus:ring-emerald-200" />
+                      <span className="text-[10px] font-bold text-slate-700">Auto Profit</span>
+                    </label>
+                    {targetEnabled && <span className="text-[9px] font-mono font-bold text-emerald-600">₹{Math.round(maxProfit * targetPct / 100).toLocaleString()}</span>}
+                  </div>
+                  {targetEnabled && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <input type="range" min="10" max="100" step="5" value={targetPct} onChange={e => setTargetPct(+e.target.value)}
+                        className="flex-1 h-1 bg-emerald-200 rounded-full accent-emerald-500" />
+                      <span className="text-[10px] font-black text-emerald-600 w-10 text-right">{targetPct}%</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Time Exit */}
+                <div className={`p-3 rounded-xl border transition-colors ${timeEnabled ? 'bg-blue-50/50 border-blue-200/60' : 'bg-white border-slate-100'}`}>
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={timeEnabled} onChange={e => setTimeEnabled(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-blue-500 focus:ring-blue-200" />
+                      <span className="text-[10px] font-bold text-slate-700">Time Exit</span>
+                    </label>
+                    {timeEnabled && <span className="text-[9px] font-mono font-bold text-blue-600">{timeExit}m before close</span>}
+                  </div>
+                  {timeEnabled && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <input type="range" min="1" max="30" step="1" value={timeExit} onChange={e => setTimeExit(+e.target.value)}
+                        className="flex-1 h-1 bg-blue-200 rounded-full accent-blue-500" />
+                      <span className="text-[10px] font-black text-blue-600 w-10 text-right">{timeExit}m</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Total risk summary */}
+                <div className="p-4 rounded-xl bg-slate-900 text-white space-y-2">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Risk ({lots} lot{lots > 1 ? 's' : ''})</span>
+                    <span className="font-mono font-black text-red-400">-₹{Math.round(maxLoss).toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Reward ({lots} lot{lots > 1 ? 's' : ''})</span>
+                    <span className="font-mono font-black text-emerald-400">{maxProfit >= 0 ? "+₹" : "-₹"}{Math.abs(Math.round(maxProfit)).toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-2 border-t border-white/10">
+                    <span className="text-slate-400">R:R</span>
+                    <span className="font-mono font-black text-violet-400">{perLotLoss > 0 ? formatRR(perLotProfit / perLotLoss) : '∞'}</span>
+                  </div>
+                </div>
+
+                {/* Submit */}
+                <button onClick={handleSubmit} disabled={enterMutation.isPending}
+                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-sm font-black shadow-lg shadow-violet-500/25 hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50 disabled:scale-100">
+                  {enterMutation.isPending ? 'Placing Orders...' : broker === 'PAPER' ? `Enter PAPER Trade` : `Enter LIVE — ${broker}`}
+                </button>
+
+                {broker !== 'PAPER' && (
+                  <div className="text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-center font-medium">
+                    LIVE orders placed with broker. Market hours only.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

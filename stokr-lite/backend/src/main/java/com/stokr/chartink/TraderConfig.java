@@ -54,25 +54,25 @@ public class TraderConfig {
     @Builder.Default
     private BigDecimal maxSharePrice = new BigDecimal("3000");
 
-    /** Stop loss percentage per trade (default 0.2%) */
+    /** Stop loss percentage per trade (default 1.5%) */
     @Column(name = "stop_loss_pct", precision = 5, scale = 2)
     @Builder.Default
-    private BigDecimal stopLossPct = new BigDecimal("0.2");
+    private BigDecimal stopLossPct = new BigDecimal("1.5");
 
-    /** Target percentage per trade (default 0.6% = 3:1 R:R) */
+    /** Target percentage per trade (default 3.0% = 2:1 R:R) */
     @Column(name = "target_pct", precision = 5, scale = 2)
     @Builder.Default
-    private BigDecimal targetPct = new BigDecimal("0.6");
+    private BigDecimal targetPct = new BigDecimal("3.0");
 
     /** Max daily loss limit (default ₹225 = 1.5% of ₹15K) */
     @Column(name = "max_daily_loss", precision = 15, scale = 2)
     @Builder.Default
     private BigDecimal maxDailyLoss = new BigDecimal("225");
 
-    /** Minimum gap between trades in minutes (default 2) */
+    /** Minimum gap between trades in minutes (default 15) */
     @Column(name = "min_trade_gap_minutes")
     @Builder.Default
-    private int minTradeGapMinutes = 2;
+    private int minTradeGapMinutes = 15;
 
     /** Max consecutive losses before strategy pause (default 3) */
     @Column(name = "max_consecutive_losses")

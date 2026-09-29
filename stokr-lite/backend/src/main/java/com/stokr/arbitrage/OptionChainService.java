@@ -24,6 +24,8 @@ public class OptionChainService {
     private final ConcurrentHashMap<String, CachedQuote> globalQuoteCache = new ConcurrentHashMap<>();
     private final java.util.Map<String, String> resolvedSymbolCache = new java.util.concurrent.ConcurrentHashMap<>();
 
+    public void clearSymbolCache() { resolvedSymbolCache.clear(); }
+
     private static final Logger log = LoggerFactory.getLogger(OptionChainService.class);
 
     private final ZerodhaTokenManager tokenManager;
@@ -204,12 +206,23 @@ public class OptionChainService {
                             }
 
                             quotes.put(cleanKey, q);
+                            globalQuoteCache.put(rawKey, new CachedQuote(now, q));
+                            globalQuoteCache.put(cleanKey, new CachedQuote(now, q));
                         }
                     }
                 }
             }
         } catch (Exception e) {
             log.error("Failed to fetch quotes from Zerodha: {}", e.getMessage());
+        }
+
+        for (String inst : toFetch) {
+            String key = addExchangePrefix(inst);
+            CachedQuote cq = globalQuoteCache.get(key);
+            if (cq == null) cq = globalQuoteCache.get(stripExchangePrefix(key));
+            if (cq != null && !quotes.containsKey(stripExchangePrefix(key))) {
+                quotes.put(stripExchangePrefix(key), cq.quote);
+            }
         }
 
         return quotes;
@@ -251,12 +264,12 @@ public class OptionChainService {
         Integer dynamic = DYNAMIC_LOT_SIZES.get(key);
         if (dynamic != null && dynamic > 0) return dynamic;
         return switch (key) {
-            case "NIFTY" -> 75;
-            case "BANKNIFTY" -> 30;
+            case "NIFTY" -> 25;
+            case "BANKNIFTY" -> 15;
             case "MIDCPNIFTY" -> 50;
-            case "FINNIFTY" -> 40;
-            case "SENSEX" -> 20;
-            case "BANKEX" -> 30;
+            case "FINNIFTY" -> 25;
+            case "SENSEX" -> 10;
+            case "BANKEX" -> 15;
             default -> 25;
         };
     }
@@ -271,14 +284,15 @@ public class OptionChainService {
         return strikes;
     }
 
-    private DayOfWeek getExpiryDayForUnderlying(String underlying) {
+    public DayOfWeek getExpiryDayForUnderlying(String underlying) {
         return switch (underlying.toUpperCase()) {
+            case "NIFTY" -> DayOfWeek.TUESDAY;
             case "BANKNIFTY" -> DayOfWeek.WEDNESDAY;
             case "FINNIFTY" -> DayOfWeek.TUESDAY;
             case "MIDCPNIFTY" -> DayOfWeek.MONDAY;
             case "SENSEX" -> DayOfWeek.FRIDAY;
             case "BANKEX" -> DayOfWeek.MONDAY;
-            default -> DayOfWeek.THURSDAY; // NIFTY weekly expiry
+            default -> DayOfWeek.TUESDAY;
         };
     }
 
@@ -300,6 +314,11 @@ public class OptionChainService {
         }
         return expiryDay;
     }
+    public LocalDate getNearestExpiry(String underlying) {
+        LocalDate weekly = getWeeklyExpiryDate(underlying);
+        return weekly != null ? weekly : getMonthlyExpiryDate(underlying);
+    }
+
     public LocalDate getWeeklyExpiryDate(String underlying) {
         // SEBI 2025 rule: Only NIFTY has weekly expiries on NSE.
         if (!underlying.toUpperCase().equals("NIFTY")) return null;
@@ -352,13 +371,18 @@ public class OptionChainService {
 
         String mCode = (month == 10) ? "O" : (month == 11) ? "N" : (month == 12) ? "D" : String.valueOf(month);
 
+        boolean isMonthly = (expiryDate.plusDays(7).getMonthValue() != expiryDate.getMonthValue());
+
         List<String> list = new ArrayList<>();
-        // 1. Monthly format: NIFTY26JUL23950CE
-        list.add(String.format("%s%02d%s%d%s", cleanUnderlying, yy, mon, strike, type));
-        // 2. Weekly format: NSE standard (1-9, O, N, D)
-        list.add(String.format("%s%02d%s%02d%d%s", cleanUnderlying, yy, mCode, day, strike, type));
-        // 3. Fallback math format
-        list.add(String.format("%s%02d%d%02d%d%s", cleanUnderlying, yy, month, day, strike, type));
+        if (isMonthly) {
+            // Monthly: NIFTY26SEP23950CE (3-letter month code, no day)
+            list.add(String.format("%s%02d%s%d%s", cleanUnderlying, yy, mon, strike, type));
+        } else {
+            // Weekly: NIFTY2691523500CE (month-code + day)
+            list.add(String.format("%s%02d%s%02d%d%s", cleanUnderlying, yy, mCode, day, strike, type));
+            // Fallback: numeric month + day
+            list.add(String.format("%s%02d%d%02d%d%s", cleanUnderlying, yy, month, day, strike, type));
+        }
         return list;
     }
 
@@ -463,6 +487,9 @@ public class OptionChainService {
         public int askQty;
         public int volume;
         public int openInterest;
+
+        public double effectiveBid() { return bid > 0 ? bid : lastPrice; }
+        public double effectiveAsk() { return ask > 0 ? ask : lastPrice; }
     }
 }
 

@@ -93,6 +93,22 @@ public class BlackScholesCalculator {
         return new Greeks(delta, gamma, theta / 365, vega / 100);
     }
 
+    public static Greeks putGreeks(double S, double K, double T, double r, double sigma) {
+        if (T <= 0 || sigma <= 0) {
+            return new Greeks(0, 0, 0, 0);
+        }
+        double d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+        double d2 = d1 - sigma * Math.sqrt(T);
+
+        double delta = normCDF(d1) - 1;
+        double gamma = normPDF(d1) / (S * sigma * Math.sqrt(T));
+        double theta = -(S * normPDF(d1) * sigma) / (2 * Math.sqrt(T))
+                       + r * K * Math.exp(-r * T) * normCDF(-d2);
+        double vega = S * normPDF(d1) * Math.sqrt(T);
+
+        return new Greeks(delta, gamma, theta / 365, vega / 100);
+    }
+
     /**
      * Calculate implied volatility using Newton-Raphson method
      */

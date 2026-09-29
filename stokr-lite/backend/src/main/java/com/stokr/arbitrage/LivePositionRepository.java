@@ -53,4 +53,7 @@ public interface LivePositionRepository extends JpaRepository<LivePosition, Long
      *  still reach the broker per product decision). */
     @Query("SELECT p FROM LivePosition p WHERE p.status = 'OPEN' AND p.opportunityId IN :opportunityIds")
     List<LivePosition> findOpenByOpportunityIdIn(@Param("opportunityIds") List<Long> opportunityIds);
+
+    @Query("SELECT p FROM LivePosition p WHERE p.status = 'OPEN' AND p.expiryDate IS NOT NULL AND p.expiryDate < :today")
+    List<LivePosition> findOpenExpiredBefore(@Param("today") java.time.LocalDate today);
 }

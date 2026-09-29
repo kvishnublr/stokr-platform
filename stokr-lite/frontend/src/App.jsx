@@ -34,6 +34,8 @@ const AdminOrders = lazy(() => import('./pages/admin/AdminOrders'));
 const AdminAuditLog = lazy(() => import('./pages/admin/AdminAuditLog'));
 const StrategyBuilder = lazy(() => import('./pages/StrategyBuilder'));
 const OptionArbitrage = lazy(() => import('./pages/OptionArbitrage'));
+const SmartStrategies = lazy(() => import('./pages/SmartStrategies'));
+const MorningTheta = lazy(() => import('./pages/MorningTheta'));
 
 const routeImports = [
   () => import('./pages/Dashboard'),
@@ -59,6 +61,7 @@ const routeImports = [
   () => import('./pages/admin/AdminAuditLog'),
   () => import('./pages/StrategyBuilder'),
   () => import('./pages/OptionArbitrage'),
+  () => import('./pages/MorningTheta'),
 ];
 
 function preloadRoutes() {
@@ -101,6 +104,8 @@ export default function App() {
             <Route path="/positions" element={<Positions />} />
             <Route path="/strategy-builder" element={<StrategyBuilder />} />
             <Route path="/option-arbitrage" element={<OptionArbitrage />} />
+            <Route path="/smart-strategies" element={<SmartStrategies />} />
+            <Route path="/morning-theta" element={<MorningTheta />} />
             <Route path="/settings" element={<Settings />} />
             <Route element={<AdminRoute />}>
               <Route path="/admin" element={<AdminDashboard />} />

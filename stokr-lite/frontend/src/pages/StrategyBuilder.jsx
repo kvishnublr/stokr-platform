@@ -17,34 +17,16 @@ export default function StrategyBuilder() {
   const [lots, setLots] = useState(1);
   const chainContainerRef = useRef(null);
 
-  // Generate expiry dates: NIFTY = weekly (Thu), others = monthly only
-  const generatedExpiries = useMemo(() => {
-      const expiryDayMap = { NIFTY: 4, BANKNIFTY: 3, FINNIFTY: 2, MIDCPNIFTY: 1, SENSEX: 5, BANKEX: 1 };
-      const targetDay = expiryDayMap[underlying] ?? 4;
-      const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      const expiries = [];
-
-      if (underlying === 'NIFTY') {
-          let current = new Date();
-          while (current.getDay() !== targetDay) current.setDate(current.getDate() + 1);
-          for (let i = 0; i < 6; i++) {
-              expiries.push(fmtDate(current));
-              current = new Date(current);
-              current.setDate(current.getDate() + 7);
-          }
-      } else {
-          // Monthly expiries — last occurrence of target weekday in month
-          let d = new Date();
-          for (let m = 0; m < 4; m++) {
-              const year = d.getFullYear();
-              const month = d.getMonth() + m;
-              const lastDay = new Date(year, month + 1, 0);
-              while (lastDay.getDay() !== targetDay) lastDay.setDate(lastDay.getDate() - 1);
-              if (lastDay >= new Date(new Date().toDateString())) expiries.push(fmtDate(lastDay));
-          }
-      }
-      return expiries;
-  }, [underlying]);
+  // Fetch available expiry dates from backend
+  const { data: availableExpiries } = useQuery({
+    queryKey: ['availableExpiries', underlying],
+    queryFn: async () => {
+      const res = await client.get(`/option-arbitrage/available-expiries?underlying=${underlying}`);
+      return res.data;
+    },
+    staleTime: 60000,
+  });
+  const generatedExpiries = availableExpiries || [];
 
   const { data: chainData, isLoading: chainLoading } = useQuery({
     queryKey: ['optionChain', underlying, expiry],
@@ -322,51 +304,45 @@ export default function StrategyBuilder() {
           </div>
         </div>
         
-        <div className="flex items-center gap-4 mt-4 md:mt-0">
-          
-          <div className="relative group">
-            <select 
-              value={expiry} 
-              onChange={e => { setExpiry(e.target.value); setLegs([]); }}
-              className="appearance-none bg-slate-50 hover:bg-white border border-slate-200 text-slate-600 font-bold text-xs px-5 py-3 pr-10 rounded-2xl outline-none cursor-pointer transition-all shadow-[0_4px_15px_rgba(0,0,0,0.03)]"
-            >
-              <option value="">Next Expiry</option>
-              {generatedExpiries.map(exp => (
-                  <option key={exp} value={exp}>{exp}</option>
-              ))}
-            </select>
-            <svg className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7"></path></svg>
+        <div className="flex flex-wrap items-center gap-3 mt-4 md:mt-0">
+          {/* Index Tabs */}
+          <div className="flex items-center gap-1 bg-slate-100/80 rounded-2xl p-1">
+            {[
+              {key:'NIFTY', label:'NIFTY'},
+              {key:'BANKNIFTY', label:'BNIFTY'},
+              {key:'FINNIFTY', label:'FINNIFTY'},
+              {key:'MIDCPNIFTY', label:'MIDCAP'},
+              {key:'SENSEX', label:'SENSEX'},
+              {key:'BANKEX', label:'BANKEX'},
+            ].map(idx => (
+              <button key={idx.key} onClick={() => { setUnderlying(idx.key); setExpiry(''); setLegs([]); }}
+                className={`px-3 py-2 rounded-xl text-[11px] font-black tracking-wide transition-all ${
+                  underlying === idx.key
+                    ? 'bg-white text-slate-800 shadow-md'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                }`}
+              >{idx.label}</button>
+            ))}
           </div>
 
-          <div className="relative group">
-            <select 
-              value={underlying} 
-              onChange={e => { setUnderlying(e.target.value); setExpiry(''); setLegs([]); }}
-              className="appearance-none bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-black text-sm px-6 py-3 pr-12 rounded-2xl outline-none cursor-pointer transition-all shadow-[0_4px_15px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_25px_rgba(0,0,0,0.06)]"
-            >
-              <option value="NIFTY">NIFTY 50</option>
-              <option value="BANKNIFTY">BANK NIFTY</option>
-              <option value="FINNIFTY">FIN NIFTY</option>
-              <option value="MIDCPNIFTY">MIDCAP NIFTY</option>
-              <option value="SENSEX">SENSEX</option>
-              <option value="BANKEX">BANKEX</option>
-            </select>
-            <svg className="w-5 h-5 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7"></path></svg>
-          </div>
-
+          {/* Live Stats */}
           {chainData && (
-            <div className="flex items-center gap-3">
-              <div className="bg-indigo-50 border border-indigo-100/50 px-6 py-3 rounded-2xl shadow-[0_4px_15px_rgba(99,102,241,0.1)] flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                   <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_12px_rgba(99,102,241,0.8)]"></div>
-                   <span className="text-[11px] text-indigo-400 uppercase tracking-widest font-black">Spot</span>
+            <div className="flex items-center gap-2">
+              <div className="bg-indigo-50 border border-indigo-100/50 px-4 py-2.5 rounded-2xl shadow-[0_4px_15px_rgba(99,102,241,0.1)] flex items-center gap-2">
+                <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(99,102,241,0.8)]"></div>
+                <span className="text-[10px] text-indigo-400 uppercase tracking-widest font-black">Spot</span>
+                <span className="text-sm font-black text-indigo-700">{chainData.spotPrice.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
+              </div>
+              <div className="bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-2xl flex items-center gap-1.5">
+                <span className="text-[9px] text-slate-400 uppercase tracking-widest font-black">Lot</span>
+                <span className="text-xs font-black text-slate-700">{chainData.lotSize || '—'}</span>
+              </div>
+              {chainData.daysToExpiry != null && (
+                <div className="bg-amber-50 border border-amber-200 px-3 py-2.5 rounded-2xl flex items-center gap-1.5">
+                  <span className="text-[9px] text-amber-500 uppercase tracking-widest font-black">DTE</span>
+                  <span className="text-xs font-black text-amber-700">{chainData.daysToExpiry}d</span>
                 </div>
-                <span className="text-[15px] md:text-lg font-black text-indigo-700">{chainData.spotPrice.toLocaleString()}</span>
-              </div>
-              <div className="bg-slate-50 border border-slate-200 px-4 py-3 rounded-2xl flex items-center gap-2">
-                <span className="text-[10px] text-slate-400 uppercase tracking-widest font-black">Lot</span>
-                <span className="text-sm font-black text-slate-700">{chainData.lotSize || '—'}</span>
-              </div>
+              )}
             </div>
           )}
         </div>
@@ -374,96 +350,154 @@ export default function StrategyBuilder() {
 
       {/* TWO COLUMNS: Option Chain (Left), Payoff & Basket (Right) */}
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0 relative z-10 items-stretch">
-        
+
         {/* LEFT: Option Chain */}
-        <div className="w-full lg:w-[55%] flex flex-col bg-white/60 backdrop-blur-xl rounded-3xl border border-white shadow-[0_12px_40px_rgba(0,0,0,0.03)] overflow-hidden h-[600px] lg:h-auto">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100/60 bg-white/40">
-            <h3 className="text-xs md:text-sm font-black text-slate-800 uppercase tracking-[0.2em]">Real-Time Chain</h3>
-            
-            <div className="flex items-center gap-3">
-                <button onClick={scrollToATM} className="text-[10px] font-black tracking-widest text-indigo-500 hover:text-white border border-indigo-200 hover:bg-indigo-500 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm uppercase">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
-                    Go To ATM
-                </button>
-                <div className="text-[10px] text-indigo-600 font-black tracking-widest bg-indigo-50/50 px-3 py-1.5 rounded-lg border border-indigo-100 shadow-sm uppercase">
-                    EXP: {chainData?.expiry || '...'}
-                </div>
+        <div className="w-full lg:w-[60%] flex flex-col bg-white/60 backdrop-blur-xl rounded-3xl border border-white shadow-[0_12px_40px_rgba(0,0,0,0.03)] overflow-hidden h-[600px] lg:h-auto">
+          {/* Expiry Tabs Strip */}
+          <div className="px-5 pt-4 pb-0 bg-white/40">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <h3 className="text-xs md:text-sm font-black text-slate-800 uppercase tracking-[0.2em]">Option Chain</h3>
+                {chainData && (
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <span className="text-slate-400 font-bold">FUT</span>
+                    <span className="font-black text-slate-700">{chainData.futuresPrice?.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) || '—'}</span>
+                  </div>
+                )}
+              </div>
+              <button onClick={scrollToATM} className="text-[10px] font-black tracking-widest text-indigo-500 hover:text-white border border-indigo-200 hover:bg-indigo-500 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow-sm uppercase">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                  ATM
+              </button>
+            </div>
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-3 -mx-1 px-1" style={{scrollbarWidth:'none'}}>
+              {generatedExpiries.map((exp, idx) => {
+                const isActive = expiry ? expiry === exp : chainData?.expiry === exp;
+                const d = new Date(exp + 'T00:00:00');
+                const dayLabel = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }).toUpperCase();
+                const now = new Date(); now.setHours(0,0,0,0);
+                const dte = Math.round((d - now) / 86400000);
+                const lastOfMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+                const isMonthly = d.getDate() > lastOfMonth.getDate() - 7;
+                return (
+                  <button
+                    key={exp}
+                    onClick={() => { setExpiry(exp); setLegs([]); }}
+                    className={`shrink-0 flex flex-col items-center px-3 py-1.5 rounded-xl text-center transition-all cursor-pointer min-w-[70px] ${
+                      isActive
+                        ? 'bg-gradient-to-b from-indigo-500 to-indigo-600 text-white shadow-[0_4px_16px_rgba(99,102,241,0.4)] scale-[1.02] -translate-y-0.5'
+                        : 'bg-slate-50/80 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-slate-200/60 hover:border-indigo-300'
+                    }`}
+                  >
+                    <span className="text-[11px] font-black leading-tight">{dayLabel}</span>
+                    <span className={`text-[9px] font-bold leading-tight ${isActive ? 'text-indigo-200' : 'text-slate-400'}`}>
+                      {dte}d{isMonthly ? ' · M' : ''}
+                    </span>
+                  </button>
+                );
+              })}
+              {generatedExpiries.length === 0 && chainData && (
+                <span className="text-[10px] text-slate-400 italic px-2">Loading expiries...</span>
+              )}
             </div>
           </div>
-          
-          <div className="flex-1 overflow-auto light-scrollbar relative" ref={chainContainerRef}>
-            <table className="w-full text-left border-collapse">
+
+          {/* Chain Table */}
+          <div className="flex-1 overflow-auto relative" ref={chainContainerRef} style={{scrollbarWidth:'thin'}}>
+            <table className="w-full text-left border-collapse text-[11px]">
               <thead className="bg-white/95 backdrop-blur-md sticky top-0 z-20">
                 <tr>
-                  <th colSpan="5" className="py-3 text-center text-[10px] font-black text-emerald-600 tracking-[0.25em] border-b border-slate-100 bg-emerald-50/30">CALLS</th>
-                  <th className="py-3 text-center text-[10px] font-black text-slate-400 tracking-[0.25em] border-b border-slate-100 bg-white">STRIKE</th>
-                  <th colSpan="5" className="py-3 text-center text-[10px] font-black text-rose-600 tracking-[0.25em] border-b border-slate-100 bg-rose-50/30">PUTS</th>
+                  <th colSpan="6" className="py-2 text-center text-[9px] font-black text-emerald-600 tracking-[0.3em] border-b border-slate-100 bg-emerald-50/40">CALLS</th>
+                  <th className="py-2 text-center text-[9px] font-black text-slate-400 tracking-[0.3em] border-b border-slate-200 bg-slate-50">STRIKE</th>
+                  <th colSpan="6" className="py-2 text-center text-[9px] font-black text-rose-600 tracking-[0.3em] border-b border-slate-100 bg-rose-50/40">PUTS</th>
                 </tr>
-                <tr>
-                  <th className="p-2.5 text-center text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 w-12 bg-white/50">OI</th>
-                  <th className="p-1.5 text-right text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">BID</th>
-                  <th className="p-2.5 text-right text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">LTP</th>
-                  <th className="p-1.5 text-right text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">ASK</th>
-                  <th className="p-2.5 text-center text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 w-20 bg-white/50">ACTION</th>
-
-                  <th className="p-2.5 border-b border-slate-100 bg-slate-50/30"></th>
-
-                  <th className="p-2.5 text-center text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 w-20 bg-white/50">ACTION</th>
-                  <th className="p-1.5 text-left text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">BID</th>
-                  <th className="p-2.5 text-left text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">LTP</th>
-                  <th className="p-1.5 text-left text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 bg-white/50">ASK</th>
-                  <th className="p-2.5 text-center text-[9px] font-black tracking-widest text-slate-400 border-b border-slate-100 w-12 bg-white/50">OI</th>
+                <tr className="text-[8px] font-black tracking-wider text-slate-400 uppercase">
+                  <th className="px-1.5 py-2 text-center border-b border-slate-100 bg-white/50">OI</th>
+                  <th className="px-1 py-2 text-center border-b border-slate-100 bg-white/50">Vol</th>
+                  <th className="px-1 py-2 text-center border-b border-slate-100 bg-white/50">IV</th>
+                  <th className="px-1.5 py-2 text-right border-b border-slate-100 bg-white/50">LTP</th>
+                  <th className="px-1 py-2 text-right border-b border-slate-100 bg-white/50 text-emerald-500">Bid</th>
+                  <th className="px-1 py-2 text-right border-b border-slate-100 bg-white/50 text-rose-500">Ask</th>
+                  <th className="px-2 py-2 border-b border-slate-200 bg-slate-50"></th>
+                  <th className="px-1 py-2 text-left border-b border-slate-100 bg-white/50 text-emerald-500">Bid</th>
+                  <th className="px-1 py-2 text-left border-b border-slate-100 bg-white/50 text-rose-500">Ask</th>
+                  <th className="px-1.5 py-2 text-left border-b border-slate-100 bg-white/50">LTP</th>
+                  <th className="px-1 py-2 text-center border-b border-slate-100 bg-white/50">IV</th>
+                  <th className="px-1 py-2 text-center border-b border-slate-100 bg-white/50">Vol</th>
+                  <th className="px-1.5 py-2 text-center border-b border-slate-100 bg-white/50">OI</th>
                 </tr>
               </thead>
               <tbody>
                 {chainLoading ? (
-                  <tr><td colSpan="11" className="text-center p-20 text-slate-400 text-xs font-black tracking-widest animate-pulse uppercase">Connecting to Feed...</td></tr>
+                  <tr><td colSpan="13" className="text-center p-20 text-slate-400 text-xs font-black tracking-widest animate-pulse uppercase">Connecting to Feed...</td></tr>
                 ) : (
                   chainData?.chain?.map(row => {
                     const spot = chainData.spotPrice;
-                    const isAtm = Math.abs(row.strike - spot) < 25;
+                    const step = chainData.chain.length > 1 ? Math.abs(chainData.chain[1].strike - chainData.chain[0].strike) : 50;
+                    const isAtm = Math.abs(row.strike - spot) < step * 0.6;
                     const callItm = row.strike < spot;
                     const putItm = row.strike > spot;
+                    const fmtOi = (v) => { if (!v) return <span className="text-slate-300">-</span>; if (v >= 10000000) return (v/10000000).toFixed(1)+'Cr'; if (v >= 100000) return (v/100000).toFixed(1)+'L'; if (v >= 1000) return (v/1000).toFixed(1)+'K'; return v.toLocaleString(); };
+
+                    // ITM gradient: deeper ITM = stronger tint
+                    const itmDepth = Math.min(Math.abs(row.strike - spot) / (step * 8), 1);
+                    const callItmStyle = callItm ? { background: `linear-gradient(90deg, rgba(16,185,129,${0.04 + itmDepth * 0.08}) 0%, rgba(16,185,129,0.02) 100%)` } : {};
+                    const putItmStyle = putItm ? { background: `linear-gradient(270deg, rgba(239,68,68,${0.04 + itmDepth * 0.08}) 0%, rgba(239,68,68,0.02) 100%)` } : {};
 
                     return (
-                      <tr key={row.strike} className={`group hover:bg-white transition-all duration-300 ${isAtm ? 'atm-row' : ''}`}>
+                      <tr key={row.strike} className={`group transition-all duration-150 ${isAtm ? '' : 'hover:bg-slate-50/80'}`}
+                          style={isAtm ? { background: 'linear-gradient(90deg, rgba(99,102,241,0.06) 0%, rgba(99,102,241,0.12) 48%, rgba(99,102,241,0.12) 52%, rgba(99,102,241,0.06) 100%)' } : {}}>
                         {/* CALLS */}
-                        <td className={`p-2.5 text-center text-[11px] font-bold text-slate-400 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceOi ? row.ceOi.toLocaleString() : '-'}</td>
-                        <td className={`p-1.5 text-right text-[11px] font-bold text-emerald-600 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceBid > 0 ? row.ceBid.toFixed(2) : '-'}</td>
-                        <td className={`p-2.5 text-right border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>
-                          <span className="text-[13px] font-black text-slate-700">{row.ceLtp?.toFixed(2) || '-'}</span>
+                        <td className="px-1.5 py-[7px] text-center font-semibold text-slate-400 border-b border-slate-50/80" style={callItmStyle}>{fmtOi(row.ceOi)}</td>
+                        <td className="px-1 py-[7px] text-center font-semibold text-slate-400 border-b border-slate-50/80" style={callItmStyle}>{fmtOi(row.ceVol)}</td>
+                        <td className="px-1 py-[7px] text-center font-bold border-b border-slate-50/80" style={callItmStyle}>
+                          {row.ceIv ? <span className="text-violet-500 bg-violet-50 px-1.5 py-0.5 rounded text-[10px]">{row.ceIv.toFixed(1)}</span> : <span className="text-slate-300">-</span>}
                         </td>
-                        <td className={`p-1.5 text-right text-[11px] font-bold text-rose-500 border-b border-slate-100/40 ${callItm ? 'bg-amber-50/30' : ''}`}>{row.ceAsk > 0 ? row.ceAsk.toFixed(2) : '-'}</td>
-                        <td className={`p-1.5 text-center border-b border-slate-100/40 overflow-hidden ${callItm ? 'bg-amber-50/30' : ''}`}>
-                           <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 translate-x-4 group-hover:translate-x-0 transition-all duration-300">
-                              <button onClick={() => addLeg(row.strike, 'CE', 'BUY', row.ceAsk || row.ceLtp)} title="Buy at Ask" className="w-8 h-6 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] font-black hover:bg-emerald-500 hover:text-white hover:border-emerald-500 transition-all shadow-sm">B</button>
-                              <button onClick={() => addLeg(row.strike, 'CE', 'SELL', row.ceBid || row.ceLtp)} title="Sell at Bid" className="w-8 h-6 rounded-md bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-all shadow-sm">S</button>
-                           </div>
+                        <td className="px-1.5 py-[7px] text-right border-b border-slate-50/80" style={callItmStyle}>
+                          <span className="font-black text-slate-800 text-[12px]">{row.ceLtp?.toFixed(2) || '-'}</span>
+                        </td>
+                        <td className="px-1 py-[7px] text-right font-semibold text-emerald-600 border-b border-slate-50/80" style={callItmStyle}>{row.ceBid > 0 ? row.ceBid.toFixed(2) : '-'}</td>
+                        <td className="px-1 py-[7px] text-right border-b border-slate-50/80" style={callItmStyle}>
+                          <div className="flex items-center justify-end gap-0.5">
+                            <span className="font-semibold text-rose-500">{row.ceAsk > 0 ? row.ceAsk.toFixed(2) : '-'}</span>
+                            <div className="flex gap-px opacity-0 group-hover:opacity-100 transition-all duration-200 scale-90 group-hover:scale-100 ml-0.5">
+                              <button onClick={() => addLeg(row.strike, 'CE', 'BUY', row.ceAsk || row.ceLtp)} title="Buy CE" className="w-[22px] h-[22px] rounded-md bg-emerald-500 text-white text-[9px] font-black hover:bg-emerald-600 hover:shadow-lg transition-all flex items-center justify-center shadow-sm">B</button>
+                              <button onClick={() => addLeg(row.strike, 'CE', 'SELL', row.ceBid || row.ceLtp)} title="Sell CE" className="w-[22px] h-[22px] rounded-md bg-rose-500 text-white text-[9px] font-black hover:bg-rose-600 hover:shadow-lg transition-all flex items-center justify-center shadow-sm">S</button>
+                            </div>
+                          </div>
                         </td>
 
                         {/* STRIKE */}
-                        <td className={`p-2.5 text-center relative border-b border-slate-100/40 ${isAtm ? 'bg-indigo-50/30' : 'bg-slate-50/20'}`}>
-                          {isAtm && (
-                            <div className="absolute inset-0 border-y-2 border-indigo-400 bg-indigo-500/5 pointer-events-none z-0 shadow-[inset_0_0_12px_rgba(99,102,241,0.1)]"></div>
+                        <td className="px-2 py-[7px] text-center relative border-b border-slate-100">
+                          {isAtm ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></div>
+                              <span className="text-[12px] font-black text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-md">{row.strike}</span>
+                            </div>
+                          ) : (
+                            <span className={`text-[12px] font-bold ${callItm ? 'text-emerald-700' : putItm ? 'text-rose-700' : 'text-slate-700'}`}>{row.strike}</span>
                           )}
-                          <span className={`relative z-10 text-[13px] font-black ${isAtm ? 'text-indigo-700' : 'text-slate-800'}`}>
-                            {row.strike}
-                          </span>
                         </td>
 
                         {/* PUTS */}
-                        <td className={`p-1.5 text-center border-b border-slate-100/40 overflow-hidden ${putItm ? 'bg-amber-50/30' : ''}`}>
-                           <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 -translate-x-4 group-hover:translate-x-0 transition-all duration-300">
-                              <button onClick={() => addLeg(row.strike, 'PE', 'BUY', row.peAsk || row.peLtp)} title="Buy at Ask" className="w-8 h-6 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] font-black hover:bg-emerald-500 hover:text-white hover:border-emerald-500 transition-all shadow-sm">B</button>
-                              <button onClick={() => addLeg(row.strike, 'PE', 'SELL', row.peBid || row.peLtp)} title="Sell at Bid" className="w-8 h-6 rounded-md bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-all shadow-sm">S</button>
-                           </div>
+                        <td className="px-1 py-[7px] text-left border-b border-slate-50/80" style={putItmStyle}>
+                          <div className="flex items-center gap-0.5">
+                            <div className="flex gap-px opacity-0 group-hover:opacity-100 transition-all duration-200 scale-90 group-hover:scale-100 mr-0.5">
+                              <button onClick={() => addLeg(row.strike, 'PE', 'BUY', row.peAsk || row.peLtp)} title="Buy PE" className="w-[22px] h-[22px] rounded-md bg-emerald-500 text-white text-[9px] font-black hover:bg-emerald-600 hover:shadow-lg transition-all flex items-center justify-center shadow-sm">B</button>
+                              <button onClick={() => addLeg(row.strike, 'PE', 'SELL', row.peBid || row.peLtp)} title="Sell PE" className="w-[22px] h-[22px] rounded-md bg-rose-500 text-white text-[9px] font-black hover:bg-rose-600 hover:shadow-lg transition-all flex items-center justify-center shadow-sm">S</button>
+                            </div>
+                            <span className="font-semibold text-emerald-600">{row.peBid > 0 ? row.peBid.toFixed(2) : '-'}</span>
+                          </div>
                         </td>
-                        <td className={`p-1.5 text-left text-[11px] font-bold text-emerald-600 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peBid > 0 ? row.peBid.toFixed(2) : '-'}</td>
-                        <td className={`p-2.5 text-left border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>
-                          <span className="text-[13px] font-black text-slate-700">{row.peLtp?.toFixed(2) || '-'}</span>
+                        <td className="px-1 py-[7px] text-left font-semibold text-rose-500 border-b border-slate-50/80" style={putItmStyle}>{row.peAsk > 0 ? row.peAsk.toFixed(2) : '-'}</td>
+                        <td className="px-1.5 py-[7px] text-left border-b border-slate-50/80" style={putItmStyle}>
+                          <span className="font-black text-slate-800 text-[12px]">{row.peLtp?.toFixed(2) || '-'}</span>
                         </td>
-                        <td className={`p-1.5 text-left text-[11px] font-bold text-rose-500 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peAsk > 0 ? row.peAsk.toFixed(2) : '-'}</td>
-                        <td className={`p-2.5 text-center text-[11px] font-bold text-slate-400 border-b border-slate-100/40 ${putItm ? 'bg-amber-50/30' : ''}`}>{row.peOi ? row.peOi.toLocaleString() : '-'}</td>
+                        <td className="px-1 py-[7px] text-center font-bold border-b border-slate-50/80" style={putItmStyle}>
+                          {row.peIv ? <span className="text-violet-500 bg-violet-50 px-1.5 py-0.5 rounded text-[10px]">{row.peIv.toFixed(1)}</span> : <span className="text-slate-300">-</span>}
+                        </td>
+                        <td className="px-1 py-[7px] text-center font-semibold text-slate-400 border-b border-slate-50/80" style={putItmStyle}>{fmtOi(row.peVol)}</td>
+                        <td className="px-1.5 py-[7px] text-center font-semibold text-slate-400 border-b border-slate-50/80" style={putItmStyle}>{fmtOi(row.peOi)}</td>
                       </tr>
                     );
                   })
