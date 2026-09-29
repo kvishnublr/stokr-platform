@@ -23,7 +23,7 @@ else
   SRC="journalctl -u stokr-lite --since -6h --no-pager -o short-iso"
 fi
 $SRC 2>/dev/null | grep -o "MOFSL: startup found.*" | tail -2 >&2
-$SRC 2>/dev/null | grep -E "MOFSL" | grep -E "login successful|login failed|startup login|margin fetch failed|available margin=" | tail -20'
+$SRC 2>/dev/null | grep -E "MOFSL" | grep -E "login successful|login failed|startup login|margin fetch failed|available margin=|positions ok|getPositions failed|order book (ok|failed)|symbol check|scrip master (download failed|empty)|matches no account" | tail -40'
 
 LINES=$(ssh $SSH_OPTS "${DEPLOY_USER}@${DEPLOY_HOST}" "$REMOTE" 2> >(sed -E 's/[0-9]{4,}/####/g' >&2) || true)
 
@@ -45,6 +45,9 @@ echo "$LINES" | while IFS= read -r line; do
     fi
   elif echo "$line" | grep -qE 'login successful'; then
     echo "$ts  LOGIN OK"
+  elif echo "$line" | grep -qE 'positions ok|order book ok|symbol check ok'; then
+    # Counts only (open positions, orders, scrip-master entries) — no amounts or codes.
+    echo "$ts  OK: $(echo "$line" | sed -E 's/.*MOFSL: //' | cut -c1-120)"
   else
     # Error text can quote MO's response; mask any long numbers (amounts, codes) before printing.
     echo "$ts  PROBLEM: $(echo "$line" | sed -E 's/.*(MOFSL[^:]*: ?)//; s/[0-9]{4,}/####/g' | cut -c1-160)"
