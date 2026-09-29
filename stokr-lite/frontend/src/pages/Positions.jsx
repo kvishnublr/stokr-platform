@@ -807,31 +807,100 @@ export default function Positions() {
             </div>
           )}
 
-          {/* Broker Positions Ground Truth */}
-          <BrokerPositionsPanel executionBroker={executionBroker} defaultExpanded={false} />
-          
-          {/* F&O Arbitrage Active Positions */}
-          {(assetFilter === 'ALL' || assetFilter === 'FNO') && (
-            <div className="bg-white p-1 rounded-2xl border border-indigo-100 shadow-sm relative overflow-hidden">
-               <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
-               <div className="p-3">
-                 <h3 className="text-xs font-bold text-indigo-900 uppercase tracking-wider ml-2 mb-2">
-                   F&amp;O Arbitrage Positions
-                 </h3>
-                 <LivePositionsSection executionBroker={executionBroker} modeFilter={modeFilter} assetFilter={assetFilter} defaultExpanded={true} />
-               </div>
+          {/* Direct Active Positions Table */}
+          {openPositions.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 bg-slate-900 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🔥</span>
+                  <h3 className="text-xs font-black uppercase tracking-wider">Live &amp; Active Positions ({openPositions.length})</h3>
+                </div>
+                <span className="text-[10px] font-mono text-slate-400">Auto-refreshing every 2s</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-bold text-[10px]">
+                    <tr>
+                      <th className="px-4 py-2.5">Symbol / Asset</th>
+                      <th className="px-4 py-2.5">Strategy</th>
+                      <th className="px-3 py-2.5 text-center">Class</th>
+                      <th className="px-4 py-2.5 text-right">Qty / Lots</th>
+                      <th className="px-4 py-2.5 text-right">Entry Price</th>
+                      <th className="px-4 py-2.5 text-right">Current Price</th>
+                      <th className="px-4 py-2.5 text-right">P&amp;L</th>
+                      <th className="px-4 py-2.5 text-center">Mode</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-mono">
+                    {openPositions.map(p => {
+                      const pnl = p.currentPnl != null ? Number(p.currentPnl) : (p.unrealizedPnl != null ? Number(p.unrealizedPnl) : 0);
+                      const isCash = p.assetClass === 'CASH' || p.strategyType?.startsWith('CASH');
+                      const qtyStr = isCash ? `${p.quantity || p.qty} Qty` : (p.qtyDisplay || `${p.lots || 1} Lot`);
+                      const entryStr = p.entryPrice != null ? `₹${Number(p.entryPrice).toFixed(2)}` : '—';
+                      const currStr = p.currentPrice != null ? `₹${Number(p.currentPrice).toFixed(2)}` : (p.ltp != null ? `₹${Number(p.ltp).toFixed(2)}` : entryStr);
+                      const modeStr = p.mode || p.broker || 'PAPER';
+
+                      return (
+                        <tr key={p.id || p.symbol} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="px-4 py-3 font-bold text-slate-800">
+                            <div>{p.symbol || p.displaySymbol}</div>
+                            {p.name && <div className="text-[10px] font-normal text-slate-400">{p.name}</div>}
+                          </td>
+                          <td className="px-4 py-3 font-bold text-slate-700 font-sans">
+                            {p.strategyType || p.strategy || 'Arbitrage'}
+                          </td>
+                          <td className="px-3 py-3 text-center font-sans">
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${isCash ? 'bg-orange-100 text-orange-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                              {isCash ? 'CASH' : 'FNO'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right font-medium text-slate-600 whitespace-nowrap">
+                            {qtyStr}
+                          </td>
+                          <td className="px-4 py-3 text-right text-slate-600">{entryStr}</td>
+                          <td className="px-4 py-3 text-right text-slate-800 font-bold">{currStr}</td>
+                          <td className={`px-4 py-3 text-right font-bold ${pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {pnl >= 0 ? '+' : ''}₹{Math.round(pnl).toLocaleString('en-IN')}
+                          </td>
+                          <td className="px-4 py-3 text-center font-sans">
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${modeStr === 'PAPER' ? 'bg-slate-100 text-slate-600 border-slate-200' : 'bg-emerald-100 text-emerald-800 border-emerald-300'}`}>
+                              {modeStr}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
+          {/* Broker Positions Ground Truth */}
+          <BrokerPositionsPanel executionBroker={executionBroker} defaultExpanded={false} />
+          
           {/* Cash Equity Positions */}
           {(assetFilter === 'ALL' || assetFilter === 'CASH') && (
             <div className="bg-white p-1 rounded-2xl border border-orange-100 shadow-sm relative overflow-hidden">
                <div className="absolute top-0 left-0 w-1.5 h-full bg-orange-500"></div>
                <div className="p-3">
                  <h3 className="text-xs font-bold text-orange-900 uppercase tracking-wider ml-2 mb-2">
-                   Cash Equity Positions
+                   Cash Equity Positions ({cashActivePositions.length})
                  </h3>
                  <CashPositionsSection />
+               </div>
+            </div>
+          )}
+
+          {/* F&O Arbitrage Active Positions */}
+          {(assetFilter === 'ALL' || assetFilter === 'FNO') && (
+            <div className="bg-white p-1 rounded-2xl border border-indigo-100 shadow-sm relative overflow-hidden">
+               <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
+               <div className="p-3">
+                 <h3 className="text-xs font-bold text-indigo-900 uppercase tracking-wider ml-2 mb-2">
+                   F&amp;O Arbitrage Positions ({fnoActivePositions.length})
+                 </h3>
+                 <LivePositionsSection executionBroker={executionBroker} modeFilter={modeFilter} assetFilter={assetFilter} defaultExpanded={fnoActivePositions.length > 0} />
                </div>
             </div>
           )}
