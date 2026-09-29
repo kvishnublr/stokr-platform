@@ -77,7 +77,7 @@ public class BidParityService {
     @Scheduled(cron = "0/15 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledScan() {
         java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 25)) || nowIST.isAfter(java.time.LocalTime.of(15, 25))) {
             return;
         }
         try {
@@ -210,6 +210,9 @@ public class BidParityService {
             if (ceQuote.lastPrice <= 0 || peQuote.lastPrice <= 0) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} zero price CE={} PE={}", underlying, strike, ceQuote.lastPrice, peQuote.lastPrice); continue; }
             if (ceQuote.bid <= 0 || peQuote.bid <= 0) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} zero bid CE_bid={} PE_bid={}", underlying, strike, ceQuote.bid, peQuote.bid); continue; }
             if (ceQuote.ask <= 0 || peQuote.ask <= 0) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} zero ask CE_ask={} PE_ask={}", underlying, strike, ceQuote.ask, peQuote.ask); continue; }
+            double ceSpread = (ceQuote.ask - ceQuote.bid) / ceQuote.ask;
+            double peSpread = (peQuote.ask - peQuote.bid) / peQuote.ask;
+            if (ceSpread > 0.10 || peSpread > 0.10) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} wide option bid-ask spread CE_spread={}% PE_spread={}%", underlying, strike, String.format("%.1f", ceSpread*100), String.format("%.1f", peSpread*100)); continue; }
             if (ceQuote.volume < MIN_VOLUME || peQuote.volume < MIN_VOLUME) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} low volume CE={} PE={} min={}", underlying, strike, ceQuote.volume, peQuote.volume, MIN_VOLUME); continue; }
             if (ceQuote.openInterest < MIN_OI || peQuote.openInterest < MIN_OI) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} low OI CE={} PE={} min={}", underlying, strike, ceQuote.openInterest, peQuote.openInterest, MIN_OI); continue; }
 

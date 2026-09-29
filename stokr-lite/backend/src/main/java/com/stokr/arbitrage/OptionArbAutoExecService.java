@@ -777,7 +777,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
     @Scheduled(fixedDelayString = "5000", initialDelay = 5000)
     public synchronized void checkRollover() {
         java.time.LocalTime nowTimeIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-        boolean isMarketOpenNow = !nowTimeIST.isBefore(java.time.LocalTime.of(9, 15)) && !nowTimeIST.isAfter(java.time.LocalTime.of(15, 30));
+        boolean isMarketOpenNow = !nowTimeIST.isBefore(java.time.LocalTime.of(9, 25)) && !nowTimeIST.isAfter(java.time.LocalTime.of(15, 25));
         if (!isMarketOpenNow) return;
 
         LocalDate todayIST = LocalDate.now(ZoneId.of("Asia/Kolkata"));
@@ -980,8 +980,12 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         + " — " + String.format("%.0f", pctAchieved) + "% of target reached (₹" + String.format("%.0f", pnl) + ")");
             }
 
-            // Per-position SL (Smart Strategies)
-            if (!shouldExit && pos.getSlPct() != null && pos.getSlPct() > 0 && pos.getMaxLossAmount() != null && pos.getMaxLossAmount() > 0) {
+            // Per-position SL (Smart Strategies) — with 2-min entry grace period
+            java.time.LocalDateTime entryTime = pos.getEnteredAt() != null ? pos.getEnteredAt() : pos.getCreatedAt();
+            boolean inGracePeriod = entryTime != null &&
+                java.time.Duration.between(entryTime, java.time.LocalDateTime.now()).getSeconds() < 120;
+
+            if (!inGracePeriod && !shouldExit && pos.getSlPct() != null && pos.getSlPct() > 0 && pos.getMaxLossAmount() != null && pos.getMaxLossAmount() > 0) {
                 double slThreshold = pos.getMaxLossAmount() * pos.getSlPct() / 100.0;
                 if (pnl < 0 && Math.abs(pnl) >= slThreshold) {
                     shouldExit = true;
@@ -1763,9 +1767,11 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             }
             int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
             String side = (String) leg.get("side");
-            // To close a BUY leg, we must SELL at the BID
-            // To close a SELL leg, we must BUY at the ASK
-            double legPnl = "BUY".equals(side) ? (bid - entry) : (entry - ask);
+            boolean isPaper = pos.getBroker() == null || "PAPER".equalsIgnoreCase(pos.getBroker());
+            double currentMark = isPaper 
+                ? (q.lastPrice > 0 ? q.lastPrice : (bid > 0 && ask > 0 ? (bid + ask) / 2.0 : (bid > 0 ? bid : ask)))
+                : ("BUY".equals(side) ? bid : ask);
+            double legPnl = "BUY".equals(side) ? (currentMark - entry) : (entry - currentMark);
             pnl += legPnl * qtyMult;
         }
         return pnl * lotSize * lots;
@@ -2138,6 +2144,84 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
     }
 
     @Scheduled(cron = "0 35 15 * * MON-FRI", zone = "Asia/Kolkata")
+    
+    /**
+     * Mandatory 3:20 PM IST intraday auto-squareoff sweep (MIS Mode).
+     * Automatically closes ALL open positions across all strategies (Paper and Real) at 3:20 PM IST.
+     */
+    @Scheduled(cron = "0 20 15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void closeAllEodPositions320PM() {
+        log.info("Starting mandatory 3:20 PM IST intraday auto-squareoff sweep...");
+        try {
+            List<LivePosition> openPositions = positionRepo.findAllOpen().stream()
+                    .filter(p -> "OPEN".equals(p.getStatus()))
+                    .toList();
+            if (openPositions.isEmpty()) {
+                log.info("No open positions to square off at 3:20 PM IST.");
+                return;
+            }
+
+            List<String> symbols = new ArrayList<>();
+            for (LivePosition p : openPositions) {
+                if (p.getCeSymbol() != null) symbols.add(p.getCeSymbol());
+                if (p.getPeSymbol() != null) symbols.add(p.getPeSymbol());
+                if (p.getFutSymbol() != null) symbols.add(p.getFutSymbol());
+                if (p.getLegs() != null) {
+                    for (Map<String, Object> leg : p.getLegs()) {
+                        Object sym = leg.get("symbol");
+                        if (sym instanceof String s) symbols.add(s);
+                    }
+                }
+            }
+            Map<String, OptionChainService.OptionQuote> quotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
+
+            int closedCount = 0;
+            for (LivePosition pos : openPositions) {
+                boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
+                double pnl = isMultiLeg ? computeMultiLegPnl(pos, quotes) : computePnl(pos, quotes);
+
+                boolean isPaper = pos.getBroker() == null || "PAPER".equalsIgnoreCase(pos.getBroker());
+                if (!isPaper) {
+                    try {
+                        List<BrokerAccount> accounts = pos.getUserId() != null
+                                ? brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(pos.getUserId(), pos.getBroker(), "ACTIVE")
+                                : List.of();
+                        if (!accounts.isEmpty()) {
+                            BrokerAccount account = accounts.get(0);
+                            BrokerAdapter adapter = brokerService.getAdapter(pos.getBroker());
+                            if (isMultiLeg) {
+                                squareOffMultiLegPosition(account, adapter, pos);
+                            } else {
+                                squareOffPosition(account, adapter, pos);
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.error("Failed real broker 3:20 PM squareoff for pos {}: {}", pos.getId(), e.getMessage());
+                    }
+                }
+
+                pos.setStatus("EXITED");
+                pos.setExitReason("EOD_320_SQUAREOFF");
+                pos.setExitedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+                pos.setCurrentPnl(java.math.BigDecimal.valueOf(pnl));
+                positionRepo.save(pos);
+
+                if (pos.getOpportunityId() != null) {
+                    oppRepo.findById(pos.getOpportunityId()).ifPresent(opp -> {
+                        opp.setStatus("EXITED");
+                        opp.setExitTime(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+                        oppRepo.save(opp);
+                    });
+                }
+                closedCount++;
+                addLog("EOD_320_SQUAREOFF", "SUCCESS", pos.getStrategyType() + " " + pos.getUnderlying() + " ID#" + pos.getId() + " squared off at 3:20 PM IST | P&L ₹" + String.format("%.2f", pnl));
+            }
+            log.info("Successfully squared off {} open positions at 3:20 PM IST.", closedCount);
+        } catch (Exception e) {
+            log.error("EOD 3:20 PM squareoff sweep failed: {}", e.getMessage(), e);
+        }
+    }
+
     public void closeExpiredPositions() {
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
         try {
