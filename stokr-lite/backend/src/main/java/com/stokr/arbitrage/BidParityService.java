@@ -96,7 +96,7 @@ public class BidParityService {
 
     public List<Map<String, Object>> scanBidParity(String underlying) {
         List<String> targets = "ALL".equalsIgnoreCase(underlying)
-            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            ? List.of("NIFTY", "BANKNIFTY")
             : List.of(underlying);
 
         List<Map<String, Object>> results = new ArrayList<>();

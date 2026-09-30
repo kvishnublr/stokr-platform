@@ -230,6 +230,7 @@ public class SmartStrategiesController {
     public ResponseEntity<Map<String, Object>> topPicks(@RequestParam(defaultValue = "ALL") String underlying) {
         List<Map<String, Object>> all = new ArrayList<>();
         try { all.addAll(ironCondorScanner.scan(underlying)); } catch (Exception e) {}
+        try { all.addAll(adaptiveScanner.scan(underlying)); } catch (Exception e) {}
         try { all.addAll(jadeLizardScanner.scan(underlying)); } catch (Exception e) {}
         try { all.addAll(bwbScanner.scan(underlying)); } catch (Exception e) {}
         try { all.addAll(ratioButterflyScanner.scan(underlying)); } catch (Exception e) {}

@@ -45,7 +45,7 @@ public class VerticalSpreadService {
 
     public List<Map<String, Object>> scanVerticalSpread(String underlying) {
         List<String> targets = "ALL".equalsIgnoreCase(underlying)
-            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            ? List.of("NIFTY", "BANKNIFTY")
             : List.of(underlying);
 
         List<Map<String, Object>> results = new ArrayList<>();
@@ -98,7 +98,7 @@ public class VerticalSpreadService {
      */
     public List<Map<String, Object>> scanCandidates(String underlying, double maxCostRatio) {
         List<String> targets = "ALL".equalsIgnoreCase(underlying)
-            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            ? List.of("NIFTY", "BANKNIFTY")
             : List.of(underlying);
 
         Map<String, String> spotKeys = Map.of(

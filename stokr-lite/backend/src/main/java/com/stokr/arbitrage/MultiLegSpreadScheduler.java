@@ -66,7 +66,7 @@ public class MultiLegSpreadScheduler {
     public void scanIronCondor() {
         scanAndExec("iron-condor", () -> {
             List<Map<String, Object>> all = new ArrayList<>();
-            for (String u : List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")) {
+            for (String u : List.of("NIFTY", "BANKNIFTY")) {
                 try {
                     all.addAll(arbController.scanIronCondorForUnderlying(u));
                 } catch (Exception e) {

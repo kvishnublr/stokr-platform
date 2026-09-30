@@ -31,7 +31,7 @@ public class SyntheticFuturesArbService {
 
     public List<Map<String, Object>> scanSyntheticArb(String underlying) {
         List<String> targets = "ALL".equalsIgnoreCase(underlying)
-            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            ? List.of("NIFTY", "BANKNIFTY")
             : List.of(underlying);
 
         List<Map<String, Object>> results = new ArrayList<>();

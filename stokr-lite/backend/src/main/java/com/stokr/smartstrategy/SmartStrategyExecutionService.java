@@ -31,6 +31,20 @@ public class SmartStrategyExecutionService {
         String expiry = (String) request.get("expiry");
         int lots = request.get("lots") instanceof Number n ? n.intValue() : 1;
         String broker = (String) request.getOrDefault("broker", "PAPER");
+
+        // DB Deduplication check
+        boolean duplicateInDb = positionRepo.findAllOpen().stream().anyMatch(p ->
+            "OPEN".equals(p.getStatus()) &&
+            Objects.equals(p.getStrategyType(), strategyType) &&
+            Objects.equals(p.getUnderlying(), underlying) &&
+            (expiry == null || p.getExpiryDate() == null || p.getExpiryDate().toString().equals(expiry))
+        );
+        if (duplicateInDb) {
+            log.warn("SMART_ENTRY blocked duplicate: {} {} {}", strategyType, underlying, expiry);
+            result.put("status", "SKIPPED");
+            result.put("message", "Duplicate active trade already exists for " + strategyType + " " + underlying);
+            return result;
+        }
         Double slPct = request.get("slPct") instanceof Number n ? n.doubleValue() : null;
         Double targetPct = request.get("targetPct") instanceof Number n ? n.doubleValue() : null;
         Integer timeExitMinutes = request.get("timeExitMinutes") instanceof Number n ? n.intValue() : null;
@@ -221,6 +235,7 @@ public class SmartStrategyExecutionService {
 
     public List<Map<String, Object>> getActivePositions() {
         List<String> smartTypes = List.of(
+            "ADAPTIVE",
             "BROKEN_WING_BUTTERFLY", "RATIO_BUTTERFLY", "SKEW_HARVEST",
             "EXPIRY_THETA_CRUSH", "BOX_SPREAD_ARB", "JADE_LIZARD", "CALENDAR_SPREAD_EDGE",
             "IRON_CONDOR", "MORNING_RANGE_THETA"
@@ -338,11 +353,16 @@ public class SmartStrategyExecutionService {
                 }
             }
 
+            boolean isPaper = pos.getBroker() == null || "PAPER".equalsIgnoreCase(pos.getBroker());
+            double evalPrice = currentPrice;
+            if (isPaper && q != null && q.lastPrice > 0) {
+                evalPrice = q.lastPrice;
+            }
             double legPnl;
             if ("BUY".equals(side)) {
-                legPnl = (currentPrice - entryPrice) * qty * lotSize * lots;
+                legPnl = (evalPrice - entryPrice) * qty * lotSize * lots;
             } else {
-                legPnl = (entryPrice - currentPrice) * qty * lotSize * lots;
+                legPnl = (entryPrice - evalPrice) * qty * lotSize * lots;
             }
             pnl += legPnl;
         }

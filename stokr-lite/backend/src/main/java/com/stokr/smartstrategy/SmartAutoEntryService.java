@@ -1,5 +1,8 @@
 package com.stokr.smartstrategy;
 
+import com.stokr.arbitrage.LivePosition;
+import com.stokr.arbitrage.LivePositionRepository;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -24,9 +27,11 @@ public class SmartAutoEntryService {
     private final JadeLizardScanner jadeLizardScanner;
     private final CalendarSpreadEdgeScanner calendarSpreadScanner;
     private final IronCondorScanner ironCondorScanner;
+    private final AdaptiveStrategyScanner adaptiveStrategyScanner;
     private final StrategyScoreEngine scoreEngine;
     private final PortfolioRiskManager riskManager;
     private final SmartStrategyExecutionService executionService;
+    private final LivePositionRepository positionRepo;
 
     private final AtomicBoolean enabled;
     private final ConcurrentHashMap<String, Long> recentEntries;
@@ -43,9 +48,11 @@ public class SmartAutoEntryService {
                                   JadeLizardScanner jadeLizardScanner,
                                   CalendarSpreadEdgeScanner calendarSpreadScanner,
                                   IronCondorScanner ironCondorScanner,
+                                  AdaptiveStrategyScanner adaptiveStrategyScanner,
                                   StrategyScoreEngine scoreEngine,
                                   PortfolioRiskManager riskManager,
-                                  SmartStrategyExecutionService executionService) {
+                                  SmartStrategyExecutionService executionService,
+                                  LivePositionRepository positionRepo) {
         this.ratioButterflyScanner = ratioButterflyScanner;
         this.bwbScanner = bwbScanner;
         this.skewHarvestScanner = skewHarvestScanner;
@@ -54,10 +61,12 @@ public class SmartAutoEntryService {
         this.jadeLizardScanner = jadeLizardScanner;
         this.calendarSpreadScanner = calendarSpreadScanner;
         this.ironCondorScanner = ironCondorScanner;
+        this.adaptiveStrategyScanner = adaptiveStrategyScanner;
         this.scoreEngine = scoreEngine;
         this.riskManager = riskManager;
         this.executionService = executionService;
-        this.enabled = new AtomicBoolean(false);
+        this.positionRepo = positionRepo;
+        this.enabled = new AtomicBoolean(true);
         this.recentEntries = new ConcurrentHashMap<>();
     }
 
@@ -127,6 +136,16 @@ public class SmartAutoEntryService {
             List<Map<String, Object>> allOpportunities = new ArrayList<>();
 
             // Scan all 8 strategy types
+            List<Map<String, Object>> adaptiveOpps = new ArrayList<>();
+            safeScan("ADAPTIVE", () -> adaptiveStrategyScanner.scan("ALL"), adaptiveOpps);
+            if (adaptiveOpps.size() > 3) {
+                adaptiveOpps.sort((a, b) -> Double.compare(
+                    ((Number) b.getOrDefault("compositeScore", b.getOrDefault("adaptiveScore", 0))).doubleValue(),
+                    ((Number) a.getOrDefault("compositeScore", a.getOrDefault("adaptiveScore", 0))).doubleValue()
+                ));
+                adaptiveOpps = new ArrayList<>(adaptiveOpps.subList(0, 3));
+            }
+            allOpportunities.addAll(adaptiveOpps);
             safeScan("IRON_CONDOR", () -> ironCondorScanner.scan("ALL"), allOpportunities);
             safeScan("JADE_LIZARD", () -> jadeLizardScanner.scan("ALL"), allOpportunities);
             safeScan("BROKEN_WING_BUTTERFLY", () -> bwbScanner.scan("ALL"), allOpportunities);
@@ -161,8 +180,24 @@ public class SmartAutoEntryService {
                 ranked.size(), MIN_SCORE, timing.phase, timing.scoreMultiplier, ranked.get(0).get("compositeScore"));
 
             // Try to enter the best one that passes risk checks
+            List<LivePosition> openPositions = positionRepo.findAllOpen();
             int entered = 0;
             for (Map<String, Object> opp : ranked) {
+                String stratType = String.valueOf(opp.get("strategyType"));
+                String und = String.valueOf(opp.get("underlying"));
+                String expStr = String.valueOf(opp.getOrDefault("expiry", opp.getOrDefault("expiryDate", "")));
+
+                // Check DB for active open position duplicate
+                boolean existsInDb = openPositions.stream().anyMatch(pos ->
+                    "OPEN".equals(pos.getStatus()) &&
+                    Objects.equals(pos.getStrategyType(), stratType) &&
+                    Objects.equals(pos.getUnderlying(), und) &&
+                    (expStr.isEmpty() || pos.getExpiryDate() == null || pos.getExpiryDate().toString().equals(expStr))
+                );
+                if (existsInDb) {
+                    log.info("SMART_AUTO: Skipped duplicate active position in DB: {} {}", stratType, und);
+                    continue;
+                }
                 if (entered >= 1) break; // Max 1 entry per cycle
 
                 String key = opp.get("strategyType") + ":" + opp.get("underlying") + ":"
@@ -254,7 +289,7 @@ public class SmartAutoEntryService {
                 req.put("targetPct", 95.0);
                 req.put("timeExitMinutes", 0);
             }
-            case "IRON_CONDOR", "JADE_LIZARD" -> {
+            case "ADAPTIVE", "IRON_CONDOR", "JADE_LIZARD" -> {
                 // Premium sellers — book profit at 50-60% of credit, tight SL
                 req.put("slPct", "THETA_BOOST".equals(timing.phase) ? 35.0 : 45.0);
                 req.put("targetPct", "THETA_BOOST".equals(timing.phase) ? 50.0 : 60.0);
@@ -290,7 +325,7 @@ public class SmartAutoEntryService {
 
     private boolean isMarketHours() {
         LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        return !now.isBefore(LocalTime.of(9, 20)) && now.isBefore(LocalTime.of(15, 15));
+        return !now.isBefore(LocalTime.of(9, 25)) && now.isBefore(LocalTime.of(15, 15));
     }
 
     private String now() {

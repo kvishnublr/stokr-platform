@@ -44,7 +44,7 @@ public class ButterflySpreadService {
 
     public List<Map<String, Object>> scanButterflySpread(String underlying) {
         List<String> targets = "ALL".equalsIgnoreCase(underlying)
-            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            ? List.of("NIFTY", "BANKNIFTY")
             : List.of(underlying);
 
         List<Map<String, Object>> results = new ArrayList<>();
@@ -98,7 +98,7 @@ public class ButterflySpreadService {
      */
     public List<Map<String, Object>> scanCandidates(String underlying, double maxCostRatio) {
         List<String> targets = "ALL".equalsIgnoreCase(underlying)
-            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            ? List.of("NIFTY", "BANKNIFTY")
             : List.of(underlying);
 
         Map<String, String> spotKeys = Map.of(
@@ -221,7 +221,7 @@ public class ButterflySpreadService {
                             m.put("riskFreeRate", ArbitrageCosts.RISK_FREE_RATE);
                             // Used as the auto-exit/stop-loss target-edge if this candidate is
                             // ever traded (not a real arbitrage edge -- this is max profit potential).
-                            m.put("edgeAfterCosts", Math.round(maxProfit * 100.0) / 100.0);
+                            m.put("edgeAfterCosts", Math.min(Math.round(maxProfit * 100.0) / 100.0, 500.0));
                             m.put("riskReward", maxLoss > 0 ? Math.round((maxProfit / maxLoss) * 100.0) / 100.0 : 0);
                             m.put("pinStrike", k2);
                             m.put("breakevenLower", Math.round(breakevenLower * 100.0) / 100.0);

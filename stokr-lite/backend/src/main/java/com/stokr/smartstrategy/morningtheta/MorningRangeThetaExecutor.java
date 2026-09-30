@@ -89,7 +89,7 @@ public class MorningRangeThetaExecutor {
         }
 
         // Only active 10:15 - 15:00
-        if (now.isBefore(LocalTime.of(10, 15)) || now.isAfter(LocalTime.of(15, 0))) {
+        if (now.isBefore(LocalTime.of(9, 35)) || now.isAfter(LocalTime.of(15, 0))) {
             return;
         }
 

@@ -35,7 +35,7 @@ public class BoxSpreadService {
 
     public List<Map<String, Object>> scanBoxSpread(String underlying) {
         List<String> targets = "ALL".equalsIgnoreCase(underlying) 
-            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            ? List.of("NIFTY", "BANKNIFTY")
             : List.of(underlying);
 
         List<Map<String, Object>> results = new ArrayList<>();
@@ -296,7 +296,7 @@ public class BoxSpreadService {
      */
     public List<Map<String, Object>> scanNearMiss(String underlying, double maxGapPct) {
         List<String> targets = "ALL".equalsIgnoreCase(underlying)
-            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            ? List.of("NIFTY", "BANKNIFTY")
             : List.of(underlying);
 
         Map<String, String> spotKeys = Map.of(

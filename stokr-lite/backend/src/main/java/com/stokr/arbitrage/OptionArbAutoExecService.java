@@ -491,6 +491,10 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
         long currentOpen = positionRepo.countOpenLive(); 
         for (OptionArbOpportunity opp : newOpps) {
             if (opp.getUnderlying() == null || opp.getEdgeAfterCosts() == null) continue;
+            if (!"NIFTY".equalsIgnoreCase(opp.getUnderlying()) && !"BANKNIFTY".equalsIgnoreCase(opp.getUnderlying())) {
+                log.info("Auto-exec rejected non-allowed symbol {}: Only NIFTY and BANKNIFTY are allowed", opp.getUnderlying());
+                continue;
+            }
             if (opp.getEdgePoints() == null) continue;
 
             String prefix = strategyPrefix(opp.getStrategyType());
@@ -680,6 +684,10 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
         for (OptionArbOpportunity opp : newOpps) {
             if (currentOpen >= maxPositions) break;
             if (opp.getUnderlying() == null || opp.getEdgeAfterCosts() == null) continue;
+            if (!"NIFTY".equalsIgnoreCase(opp.getUnderlying()) && !"BANKNIFTY".equalsIgnoreCase(opp.getUnderlying())) {
+                log.info("Auto-exec rejected non-allowed symbol {}: Only NIFTY and BANKNIFTY are allowed", opp.getUnderlying());
+                continue;
+            }
 
             // Per-strategy, per-underlying key -- e.g. BOX_SPREAD on NIFTY reads
             // "boxNiftyEnabled"/"boxNiftyMinEdge"/"boxNiftyLots", independent of Bid Parity's

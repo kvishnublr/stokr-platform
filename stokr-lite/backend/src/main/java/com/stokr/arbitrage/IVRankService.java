@@ -44,7 +44,7 @@ public class IVRankService {
         LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
         if (now.isBefore(LocalTime.of(9, 15)) || now.isAfter(LocalTime.of(15, 30))) return;
 
-        for (String underlying : List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")) {
+        for (String underlying : List.of("NIFTY", "BANKNIFTY")) {
             try {
                 Map<String, Object> snapshot = computeIVSnapshot(underlying);
                 if (snapshot != null && !snapshot.isEmpty()) {
@@ -195,7 +195,7 @@ public class IVRankService {
 
     public Map<String, Object> getAllIVData() {
         Map<String, Object> result = new LinkedHashMap<>();
-        for (String underlying : List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")) {
+        for (String underlying : List.of("NIFTY", "BANKNIFTY")) {
             Map<String, Object> data = getCurrentIVData(underlying);
             if (data != null) result.put(underlying, data);
         }

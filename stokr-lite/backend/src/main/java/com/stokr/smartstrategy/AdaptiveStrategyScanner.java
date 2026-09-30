@@ -307,7 +307,8 @@ public class AdaptiveStrategyScanner {
 
         // Sell strikes at expected move boundary, buy wings 2-3 steps beyond
         // Dynamic: wing distance expands in high IV, contracts in low IV
-        for (int sellDist = expectedMoveSteps - 1; sellDist <= expectedMoveSteps + 2; sellDist++) {
+        int minSellDist = Math.max(2, (int) Math.ceil(expectedMoveSteps * 1.25));
+        for (int sellDist = minSellDist; sellDist <= minSellDist + 3; sellDist++) {
             if (sellDist < 2) continue;
             for (int wingWidth = 2; wingWidth <= 4; wingWidth++) {
                 int putSellStrike = atmStrike - sellDist * step;
@@ -643,6 +644,10 @@ public class AdaptiveStrategyScanner {
         if (netPnl > 500) score += 5;
         else if (netPnl > 200) score += 3;
 
+        java.time.LocalTime nowKolkata = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowKolkata.isBefore(java.time.LocalTime.of(10, 15)) || nowKolkata.isAfter(java.time.LocalTime.of(14, 15))) {
+            score *= 0.85; // Penalize entries outside 10:15 AM - 2:15 PM optimal window
+        }
         return r2(Math.min(100, Math.max(0, score)));
     }
 
@@ -660,6 +665,9 @@ public class AdaptiveStrategyScanner {
         opp.put("ivRank", r2(ivRank));
         opp.put("regime", regime);
         opp.put("adaptiveScore", score);
+        opp.put("slPct", 35.0);
+        opp.put("targetPct", 50.0);
+        opp.put("timeExitMinutes", 5);
         return opp;
     }
 

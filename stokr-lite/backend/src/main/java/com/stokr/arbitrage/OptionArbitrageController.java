@@ -1914,7 +1914,21 @@ public class OptionArbitrageController {
             return map;
         }).toList();
 
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        List<LivePosition> todayClosedPositions = livePositionRepo.findAllClosed().stream()
+            .filter(p -> p.getEnteredAt() != null && p.getEnteredAt().toLocalDate().equals(today))
+            .toList();
+
+        List<Map<String, Object>> closedList = todayClosedPositions.stream().map(p -> {
+            Map<String, Object> map = p.toMap();
+            double pnl = p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0;
+            map.put("currentPnl", Math.round(pnl));
+            map.put("isMultiLeg", p.getLegs() != null && !p.getLegs().isEmpty());
+            return map;
+        }).toList();
+
         resp.put("positions", posList);
+        resp.put("todayClosedPositions", closedList);
         resp.put("count", posList.size());
         resp.put("marketOpen", marketOpen);
         double totalPnl = posList.stream().mapToDouble(p -> {

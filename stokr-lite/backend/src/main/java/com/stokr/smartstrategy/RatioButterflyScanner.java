@@ -133,7 +133,7 @@ public class RatioButterflyScanner {
                         "symbol", getSymbol(quotes, underlying, expiry, farBuyStrike, optType))
                 ));
                 double distPct = Math.abs(sellStrike - spot) / spot * 100;
-                double estimatedWinRate = Math.min(35, 15 + distPct * 3);
+                double estimatedWinRate = Math.min(80, 50 + riskReward * 12);
                 opp.put("estimatedWinRate", round2(estimatedWinRate));
                 opp.put("edgePoints", round2(Math.abs(cost)));
                 opp.put("edgeAfterCosts", round2(maxProfit - txnCost));
