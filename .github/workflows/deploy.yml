@@ -50,3 +50,11 @@ jobs:
         run: |
           sleep 90  # startup login + self-test run in the background after the service comes up
           bash scripts/ci_mofsl_check.sh
+
+      - name: Trade diagnostics (today)
+        if: contains(github.event.head_commit.message, '[diag]')
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: bash scripts/ci_trade_diag.sh
