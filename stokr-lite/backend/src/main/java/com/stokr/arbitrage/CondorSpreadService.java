@@ -155,6 +155,7 @@ public class CondorSpreadService {
                             OptionChainService.OptionQuote q3 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k3, optionType));
                             OptionChainService.OptionQuote q4 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k4, optionType));
                             if (!isLiquid(q1, lotSize) || !isLiquid(q2, lotSize) || !isLiquid(q3, lotSize) || !isLiquid(q4, lotSize)) continue;
+                            if (!OptionChainService.strikeOrdered(optionType, q1, q2, q3, q4)) continue;
                             if (q1.ask <= 0 || q2.bid <= 0 || q3.bid <= 0 || q4.ask <= 0) continue;
 
                             double cost = q1.ask - q2.bid - q3.bid + q4.ask;
@@ -280,8 +281,11 @@ public class CondorSpreadService {
                     OptionChainService.OptionQuote pe3 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k3, "PE"));
                     OptionChainService.OptionQuote pe4 = quotes.get(optionChainService.buildNfoSymbol(underlying, monthlyExpiry, k4, "PE"));
 
-                    checkCondor(opps, underlying, monthlyExpiry, k1, k2, k3, k4, w, "CE", ce1, ce2, ce3, ce4, lotSize, spotPrice, futuresPrice, step);
-                    checkCondor(opps, underlying, monthlyExpiry, k1, k2, k3, k4, w, "PE", pe1, pe2, pe3, pe4, lotSize, spotPrice, futuresPrice, step);
+                    // Stale/bad quotes (prices out of strike order) produce fake arbitrage; skip them.
+                    if (OptionChainService.strikeOrdered("CE", ce1, ce2, ce3, ce4))
+                        checkCondor(opps, underlying, monthlyExpiry, k1, k2, k3, k4, w, "CE", ce1, ce2, ce3, ce4, lotSize, spotPrice, futuresPrice, step);
+                    if (OptionChainService.strikeOrdered("PE", pe1, pe2, pe3, pe4))
+                        checkCondor(opps, underlying, monthlyExpiry, k1, k2, k3, k4, w, "PE", pe1, pe2, pe3, pe4, lotSize, spotPrice, futuresPrice, step);
                 }
             }
 

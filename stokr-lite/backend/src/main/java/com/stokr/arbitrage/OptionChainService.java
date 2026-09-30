@@ -293,34 +293,66 @@ public class OptionChainService {
         return strikes;
     }
 
+    /**
+     * Since 1 Sep 2025 (SEBI) every NSE index derivative expires on Tuesday and every BSE one on
+     * Thursday. BANKNIFTY used to be Wednesday here: on 30 Sep 2026 that made the scanners trade the
+     * September contracts, which had expired on 29 Sep, off their frozen last quotes.
+     */
     public DayOfWeek getExpiryDayForUnderlying(String underlying) {
         return switch (underlying.toUpperCase()) {
-            case "NIFTY" -> DayOfWeek.TUESDAY;
-            case "BANKNIFTY" -> DayOfWeek.WEDNESDAY;
-            case "FINNIFTY" -> DayOfWeek.TUESDAY;
-            case "MIDCPNIFTY" -> DayOfWeek.MONDAY;
-            case "SENSEX" -> DayOfWeek.FRIDAY;
-            case "BANKEX" -> DayOfWeek.MONDAY;
+            case "SENSEX", "BANKEX" -> DayOfWeek.THURSDAY;
             default -> DayOfWeek.TUESDAY;
         };
     }
 
+    /** Expiry on a holiday moves to the previous trading day. */
+    static LocalDate onOrBeforeTradingDay(LocalDate d) {
+        for (int i = 0; i < 10 && !com.stokr.marketdata.MarketCalendar.isTradingDay(d); i++) d = d.minusDays(1);
+        return d;
+    }
+
+    /** Last {@code day} of the month containing {@code anyDay}, holiday-adjusted. */
+    private static LocalDate lastWeekdayOfMonth(LocalDate anyDay, DayOfWeek day) {
+        LocalDate d = anyDay.withDayOfMonth(anyDay.lengthOfMonth());
+        while (d.getDayOfWeek() != day) d = d.minusDays(1);
+        return onOrBeforeTradingDay(d);
+    }
+
+    /** True once the contract expiring on {@code expiry} can no longer be traded. */
+    private static boolean isPast(LocalDate expiry, LocalDate today) {
+        return expiry.isBefore(today)
+                || (expiry.equals(today) && LocalTime.now(ZoneId.of("Asia/Kolkata")).isAfter(LocalTime.of(15, 30)));
+    }
+
+    /**
+     * Sanity check on a set of same-expiry, same-type quotes given in ascending strike order: call
+     * prices must not rise with strike and put prices must not fall. A set that breaks this is stale
+     * or bad data (e.g. an expired contract's frozen quotes), and any "edge" computed from it is fake.
+     */
+    public static boolean strikeOrdered(String optionType, OptionQuote... ascending) {
+        double prev = Double.NaN;
+        for (OptionQuote q : ascending) {
+            if (q == null) return false;
+            double px = q.bid > 0 && q.ask > 0 ? (q.bid + q.ask) / 2.0 : q.lastPrice;
+            if (!(px > 0)) return false;
+            if (!Double.isNaN(prev)) {
+                // 0.5% tolerance for bid/ask noise between adjacent strikes
+                if ("CE".equals(optionType) && px > prev * 1.005) return false;
+                if ("PE".equals(optionType) && px < prev * 0.995) return false;
+            }
+            prev = px;
+        }
+        return true;
+    }
+
 
     public LocalDate getMonthlyExpiryDate(String underlying) {
-        LocalDate today = LocalDate.now();
-        DayOfWeek targetDay = getExpiryDayForUnderlying(underlying);
-        LocalDate lastDayOfMonth = today.withDayOfMonth(today.lengthOfMonth());
-        LocalDate expiryDay = lastDayOfMonth;
-        while (expiryDay.getDayOfWeek() != targetDay) {
-            expiryDay = expiryDay.minusDays(1);
-        }
-        if (expiryDay.isBefore(today) || (expiryDay.equals(today) && LocalTime.now(ZoneId.of("Asia/Kolkata")).isAfter(LocalTime.of(15, 30)))) {
-            lastDayOfMonth = today.plusMonths(1).withDayOfMonth(today.plusMonths(1).lengthOfMonth());
-            expiryDay = lastDayOfMonth;
-            while (expiryDay.getDayOfWeek() != targetDay) {
-                expiryDay = expiryDay.minusDays(1);
-            }
-        }
+        return monthlyExpiry(LocalDate.now(ZoneId.of("Asia/Kolkata")), getExpiryDayForUnderlying(underlying));
+    }
+
+    static LocalDate monthlyExpiry(LocalDate today, DayOfWeek targetDay) {
+        LocalDate expiryDay = lastWeekdayOfMonth(today, targetDay);
+        if (isPast(expiryDay, today)) expiryDay = lastWeekdayOfMonth(today.plusMonths(1), targetDay);
         return expiryDay;
     }
     public LocalDate getNearestExpiry(String underlying) {
@@ -332,43 +364,20 @@ public class OptionChainService {
         // SEBI 2025 rule: Only NIFTY has weekly expiries on NSE.
         if (!underlying.toUpperCase().equals("NIFTY")) return null;
 
-        LocalDate today = LocalDate.now();
-        LocalDate nextExpiry = today;
-        DayOfWeek targetDay = getExpiryDayForUnderlying(underlying);
-
-        while (nextExpiry.getDayOfWeek() != targetDay) {
-            nextExpiry = nextExpiry.plusDays(1);
-        }
-
-        if (nextExpiry.equals(today)) {
-            LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-            if (nowIST.isAfter(LocalTime.of(15, 30))) {
-                nextExpiry = nextExpiry.plusWeeks(1);
-            }
-        }
-
-        return nextExpiry;
+        return weeklyExpiry(LocalDate.now(ZoneId.of("Asia/Kolkata")), getExpiryDayForUnderlying(underlying));
     }
 
+    static LocalDate weeklyExpiry(LocalDate today, DayOfWeek targetDay) {
+        LocalDate d = today;
+        while (d.getDayOfWeek() != targetDay) d = d.plusDays(1);
+        LocalDate expiry = onOrBeforeTradingDay(d);
+        if (isPast(expiry, today)) expiry = onOrBeforeTradingDay(d.plusWeeks(1));
+        return expiry;
+    }
+
+    /** NIFTY monthly expiry. (Used to return an already-expired date on the days after it.) */
     public LocalDate getMonthlyExpiry() {
-        LocalDate today = LocalDate.now();
-        LocalDate lastDayOfMonth = today.withDayOfMonth(today.lengthOfMonth());
-        LocalDate expiryDay = lastDayOfMonth;
-        while (expiryDay.getDayOfWeek() != DayOfWeek.TUESDAY) {
-            expiryDay = expiryDay.minusDays(1);
-        }
-        if (expiryDay.equals(today)) {
-            LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-            if (nowIST.isAfter(LocalTime.of(15, 30))) {
-                expiryDay = expiryDay.plusMonths(1);
-                lastDayOfMonth = expiryDay.withDayOfMonth(expiryDay.lengthOfMonth());
-                expiryDay = lastDayOfMonth;
-                while (expiryDay.getDayOfWeek() != DayOfWeek.TUESDAY) {
-                    expiryDay = expiryDay.minusDays(1);
-                }
-            }
-        }
-        return expiryDay;
+        return getMonthlyExpiryDate("NIFTY");
     }
 
     public List<String> buildNfoSymbolCandidates(String underlying, LocalDate expiryDate, int strike, String type) {

@@ -152,6 +152,7 @@ public class ButterflySpreadService {
                             OptionChainService.OptionQuote q2 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k2, optionType));
                             OptionChainService.OptionQuote q3 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k3, optionType));
                             if (!isLiquid(q1, lotSize) || !isLiquid(q2, lotSize) || !isLiquid(q3, lotSize)) continue;
+                            if (!OptionChainService.strikeOrdered(optionType, q1, q2, q3)) continue;
                             if (q1.ask <= 0 || q2.bid <= 0 || q3.ask <= 0) continue;
 
                             double cost = q1.ask - 2 * q2.bid + q3.ask;
@@ -309,6 +310,8 @@ public class ButterflySpreadService {
                                  int lotSize, double spot, double fut) {
         if (q1 == null || q2 == null || q3 == null) return;
         if (q1.bid <= 0 || q1.ask <= 0 || q2.bid <= 0 || q2.ask <= 0 || q3.bid <= 0 || q3.ask <= 0) return;
+        // Stale/bad quotes (prices out of strike order) produce fake arbitrage; skip them.
+        if (!OptionChainService.strikeOrdered(optionType, q1, q2, q3)) return;
 
         // Direction A: buy the fly (buy K1, sell 2xK2, buy K3) for a net credit (cost < 0) --
         // paid to enter a position that pays >= 0 at expiry.

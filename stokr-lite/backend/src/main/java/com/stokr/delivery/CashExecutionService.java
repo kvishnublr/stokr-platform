@@ -33,6 +33,18 @@ public class CashExecutionService {
     private final BrokerAccountRepository brokerAccountRepo;
     @org.springframework.context.annotation.Lazy @org.springframework.beans.factory.annotation.Autowired private CashScannerService cashScannerService;
 
+    /** Minimum room between entry and stop; a tighter stop is hit by normal intraday noise. */
+    static final double MIN_STOP_DISTANCE = 0.015;
+
+    /** Why a long entry at {@code ltp} with these levels makes no sense, or null when it does. */
+    static String entryLevelsProblem(double ltp, double targetPrice, double stopLossPrice) {
+        if (stopLossPrice > 0 && ltp <= stopLossPrice) return "price already at/below stop " + stopLossPrice;
+        if (stopLossPrice > 0 && (ltp - stopLossPrice) / ltp < MIN_STOP_DISTANCE)
+            return String.format("stop %.2f is only %.1f%% below price", stopLossPrice, (ltp - stopLossPrice) / ltp * 100);
+        if (targetPrice > 0 && ltp >= targetPrice) return "price already at/above target " + targetPrice;
+        return null;
+    }
+
     public Map<String, Object> execute(String symbol, String strategyType, double targetPrice, double stopLossPrice, String broker, double capital) {
         Map<String, Object> result = new LinkedHashMap<>();
         if (symbol == null || symbol.isBlank()) {
@@ -52,6 +64,17 @@ public class CashExecutionService {
         if (ltp <= 0) {
             result.put("status", "ERROR");
             result.put("message", "No live price available for " + symbol + " (market closed or illiquid)");
+            return result;
+        }
+
+        // Target/stop come from the scan's close (yesterday); skip the entry when today's price has
+        // already moved past them. On 30 Sep 2026 every cash trade was a stop-out, e.g. ESDS bought
+        // at 1509.50 with its stop at 1533.29 (above entry), others with stops 0.5% under entry.
+        String levelsProblem = entryLevelsProblem(ltp, targetPrice, stopLossPrice);
+        if (levelsProblem != null) {
+            result.put("status", "SKIPPED");
+            result.put("message", symbol + ": " + levelsProblem);
+            log.info("Cash entry skipped for {} @ {}: {}", symbol, ltp, levelsProblem);
             return result;
         }
 
