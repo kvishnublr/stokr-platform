@@ -2200,8 +2200,6 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         return result;
     }
 
-    @Scheduled(cron = "0 35 15 * * MON-FRI", zone = "Asia/Kolkata")
-    
     /**
      * Mandatory 3:20 PM IST intraday auto-squareoff sweep (MIS Mode).
      * Automatically closes ALL open positions across all strategies (Paper and Real) at 3:20 PM IST.
@@ -2279,6 +2277,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         }
     }
 
+    @Scheduled(cron = "0 35 15 * * MON-FRI", zone = "Asia/Kolkata")
     public void closeExpiredPositions() {
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
         try {

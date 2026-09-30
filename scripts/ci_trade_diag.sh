@@ -13,16 +13,35 @@ SSH_OPTS="-i $SSH_KEY -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChe
 
 ssh $SSH_OPTS "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
 set -u
-# Use the app's own datasource settings when set on the unit, else the application.yml defaults.
-ENV=$(systemctl show stokr-lite -p Environment 2>/dev/null | sed 's/^Environment=//')
-get() { echo "$ENV" | tr ' ' '\n' | sed -n "s/^$1=//p" | tail -1; }
-URL=$(get SPRING_DATASOURCE_URL); USER_=$(get SPRING_DATASOURCE_USERNAME); PASS=$(get SPRING_DATASOURCE_PASSWORD)
+# Use the running app's own datasource settings (its process environment, then the unit's
+# Environment=), else the application.yml defaults. Nothing here is printed.
+PID=$(systemctl show stokr-lite -p MainPID --value 2>/dev/null)
+ENV=""
+[ -n "$PID" ] && [ "$PID" != "0" ] && [ -r /proc/$PID/environ ] && ENV=$(tr '\0' '\n' < /proc/$PID/environ)
+ENV="$ENV
+$(systemctl show stokr-lite -p Environment --value 2>/dev/null | tr ' ' '\n')"
+CMD=$([ -n "$PID" ] && tr '\0' '\n' < /proc/$PID/cmdline 2>/dev/null)
+get() { { echo "$ENV" | sed -n "s/^$1=//p"; echo "$CMD" | sed -n "s/^--spring\.datasource\.$2=//p"; } | head -1; }
+URL=$(get SPRING_DATASOURCE_URL url); USER_=$(get SPRING_DATASOURCE_USERNAME username); PASS=$(get SPRING_DATASOURCE_PASSWORD password)
 URL=${URL:-jdbc:postgresql://localhost:5432/stokr_lite}
 HOSTPORT=$(echo "$URL" | sed -E 's#jdbc:postgresql://([^/]+)/.*#\1#'); DB=$(echo "$URL" | sed -E 's#.*/([^/?]+).*#\1#')
 export PGHOST=${HOSTPORT%%:*} PGPORT=${HOSTPORT##*:} PGDATABASE=$DB PGUSER=${USER_:-stokr} PGPASSWORD=${PASS:-stokr_pass}
 q() { psql -X -q -P pager=off -c "$1" 2>&1; }
 
-echo "server time: $(date)   db now(): $(psql -X -tA -c 'select now()' 2>&1)"
+echo "server time: $(date)   db now(): $(psql -X -tA -c 'select now()' 2>&1 | head -1)"
+echo "datasource from: $([ -n "$URL$USER_$PASS" ] && echo 'running app' || echo 'defaults')"
+
+# Exit reasons straight from today's service log (works even without DB access).
+LOGFILE=$(systemctl cat stokr-lite 2>/dev/null | sed -n "s/^StandardOutput=append://p" | tail -1)
+if [ -n "$LOGFILE" ] && [ -f "$LOGFILE" ]; then
+  TODAY=$(date +%F)
+  echo
+  echo "=== Service log $TODAY: exit events by type ==="
+  grep "^$TODAY" "$LOGFILE" | grep -oE "(STOP_LOSS|AUTO_EXIT|PER_POS_SL|PER_POS_TARGET|TRAILING_SL_HIT|TIME_EXIT|EOD_320_SQUAREOFF|AUTO_LOSS_REENTRY|AUTO_PROFIT_EXIT|TARGET_HIT|MAX_HOLD_[0-9]+D|EXPIRED)[: ]" | sort | uniq -c | sort -rn
+  echo
+  echo "=== Service log $TODAY: first 40 exit lines ==="
+  grep "^$TODAY" "$LOGFILE" | grep -E "STOP_LOSS:|AUTO_EXIT:|PER_POS_SL:|PER_POS_TARGET:|TRAILING_SL_HIT:|TIME_EXIT:|squared off|AUTO_LOSS_REENTRY" | sed -E 's/^([0-9T:.-]+)[^ ]* .*(STOP_LOSS|AUTO_EXIT|PER_POS|TRAILING|TIME_EXIT|squared off|AUTO_LOSS)/\1 \2/' | cut -c1-220 | head -40
+fi
 echo
 echo "=== F&O positions closed today: by strategy / exit reason ==="
 q "select strategy_type, exit_reason, count(*) n,

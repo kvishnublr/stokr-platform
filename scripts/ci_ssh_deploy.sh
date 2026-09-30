@@ -27,7 +27,7 @@ echo ""
 
 # Step 2: Build backend
 echo ">>> Step 2: Building backend (mvn package)..."
-$SSH_CMD "cd $DEPLOY_PATH/stokr-lite/backend && mvn package -q -DskipTests 2>&1 | tail -20"
+$SSH_CMD "set -o pipefail; cd $DEPLOY_PATH/stokr-lite/backend && mvn package -q -DskipTests 2>&1 | tail -20"
 echo ""
 
 # Step 3: Deploy JAR (sanity-check size first -- a truncated/empty jar must never overwrite

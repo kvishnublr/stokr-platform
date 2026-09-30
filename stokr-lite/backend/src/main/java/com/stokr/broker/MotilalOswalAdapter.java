@@ -2,322 +2,682 @@ package com.stokr.broker;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
+import java.io.BufferedReader;
+import java.io.StringReader;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
-import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Motilal Oswal "MO API" (openapi.motilaloswal.com) — the API issued from the
+ * invest.motilaloswal.com/moapi portal (API key + secret key + TOTP key, static IP).
+ *
+ * Login: client code + SHA-256(password + apiKey) + DOB (2FA) + TOTP. The connect form stores all of
+ * these. (Between 10 Sep and this change the adapter spoke XTS instead, which does not accept MO API
+ * keys — every call then failed with "Please Provide token to Authenticate".)
+ */
 @Slf4j
 @Component
 public class MotilalOswalAdapter implements BrokerAdapter {
 
-    private static final String MOAPI_BASE = "https://openapi.motilaloswal.com";
+    private static final String MOFSL_BASE = "https://openapi.motilaloswal.com";
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final BrokerAccountRepository repository;
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofSeconds(30))
+            .build();
+
     private final ConcurrentHashMap<Long, CachedSession> sessionCache = new ConcurrentHashMap<>();
+
+    /** Scrip master entry: MO numeric scrip code and the contract's market lot. */
+    record Scrip(int code, int lot) {}
+
+    // Per exchange: "NSEFO|<symbol>" → scrip (MO scrip name plus Kite-style aliases), refreshed every 6 hours
+    private final ConcurrentHashMap<String, Map<String, Scrip>> scripMasters = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> scripMasterLoadedAt = new ConcurrentHashMap<>();
+    private static final long SCRIP_MASTER_TTL = 6 * 60 * 60 * 1000L;
+
+    /** Every session token this adapter issued → its account, so calls stay on the caller's account. */
+    private final ConcurrentHashMap<String, Long> tokenOwner = new ConcurrentHashMap<>();
+
+    /** Why the last margin fetch returned 0, or null when it succeeded. */
+    private volatile String lastMarginError;
 
     public MotilalOswalAdapter(BrokerAccountRepository repository) {
         this.repository = repository;
+    }
+
+    private record CachedSession(String token, String clientCode, String apiKey, String apiSecret, long expiresAt) {
+        boolean isExpired() { return System.currentTimeMillis() > expiresAt; }
+    }
+
+    /**
+     * Logs in every account and runs the read-only self-test on a background thread: these are
+     * network calls (10+ logins, a large scrip-master download) and must never delay app startup.
+     */
+    @PostConstruct
+    public void scheduleStartupLogin() {
+        Thread t = new Thread(this::autoLoginOnStartup, "mofsl-startup-login");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    void autoLoginOnStartup() {
+        try {
+            List<BrokerAccount> active = repository.findByBrokerNameAndStatus("MOTILALOSWAL", "ACTIVE");
+            long complete = active.stream().filter(a -> a.getMofslPassword() != null
+                && a.getMofslTotpSecret() != null && a.getMofslApiKey() != null).count();
+            log.info("MOFSL: startup found {} active account(s), {} with full credentials", active.size(), complete);
+            for (BrokerAccount acct : active) {
+                if (acct.getMofslPassword() != null && acct.getMofslTotpSecret() != null && acct.getMofslApiKey() != null) {
+                    log.info("MOFSL: auto-login on startup for clientCode={}", acct.getClientId());
+                    try {
+                        String token = login(acct);
+                        acct.setAccessToken(token);
+                        repository.save(acct);
+                        log.info("MOFSL: startup login successful for account {}", acct.getId());
+                        // Exercise the read-only calls once so every deploy verifies the full path.
+                        getAvailableMargin(token);
+                        if (verifiedClients.add(acct.getClientId())) selfTest(token);
+                    } catch (Exception e) {
+                        log.warn("MOFSL: startup login failed for {}: {}", acct.getClientId(), e.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("MOFSL: startup auto-login error: {}", e.getMessage());
+        }
+    }
+
+    private final Set<String> verifiedClients = ConcurrentHashMap.newKeySet();
+
+    /** Read-only startup checks (never places orders): positions, order book, F&O symbol resolution. */
+    private void selfTest(String token) {
+        getPositions(token);
+        try {
+            JsonNode root = call(token, "/rest/book/v5/getorderbook", Map.of());
+            if ("SUCCESS".equalsIgnoreCase(root.path("status").asText(""))) {
+                log.info("MOFSL: order book ok ({} orders)", root.path("data").size());
+            } else {
+                log.warn("MOFSL: order book failed: {}", root.path("message").asText(root.toString()));
+            }
+        } catch (Exception e) {
+            log.warn("MOFSL: order book failed: {}", e.getMessage());
+        }
+        Map<String, Scrip> fo = ensureScripMaster("NSEFO");
+        long optionSymbols = fo.keySet().stream().filter(k -> k.matches("NSEFO\\|NIFTY\\d{2}[A-Z0-9]{3}\\d+(CE|PE)")).count();
+        if (optionSymbols == 0) {
+            log.warn("MOFSL: symbol check failed: NSEFO scrip master has {} entries, 0 NIFTY option symbols", fo.size());
+        } else {
+            log.info("MOFSL: symbol check ok ({} NSEFO entries, {} NIFTY option symbols)", fo.size(), optionSymbols);
+        }
     }
 
     @Override
     public String getBrokerName() { return "MOTILALOSWAL"; }
 
     @Override
-    public String getAuthUrl() { return "https://invest.motilaloswal.com/moAPI/"; }
+    public String getAuthUrl() {
+        throw new UnsupportedOperationException("Motilal Oswal uses TOTP-based auth, not OAuth.");
+    }
 
     @Override
     public String[] exchangeToken(String requestToken) {
-        return new String[]{requestToken, ""};
+        throw new UnsupportedOperationException("Motilal Oswal uses TOTP-based auth, not OAuth.");
     }
 
-    private record CachedSession(String token, String userId, String clientCode, String apiKey, String apiSecret, long expiresAt) {
-        boolean isExpired() { return System.currentTimeMillis() > expiresAt; }
+    // ---- Scrip master: trading symbol → scrip code + lot ----
+
+    private boolean scripMasterFresh(String exchange) {
+        return scripMasters.containsKey(exchange)
+                && (System.currentTimeMillis() - scripMasterLoadedAt.getOrDefault(exchange, 0L)) < SCRIP_MASTER_TTL;
     }
+
+    private Map<String, Scrip> ensureScripMaster(String exchange) {
+        if (!scripMasterFresh(exchange)) loadScripMasterCsv(exchange);
+        return scripMasters.getOrDefault(exchange, Map.of());
+    }
+
+    private synchronized void loadScripMasterCsv(String exchange) {
+        if (scripMasterFresh(exchange)) return;
+        String url = MOFSL_BASE + "/getscripmastercsv?name=" + exchange;
+        log.info("MOFSL: downloading scrip master from {}", url);
+        try {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                    .timeout(Duration.ofSeconds(60)).header("Accept", "text/csv").GET().build();
+            String csv = httpClient.send(req, HttpResponse.BodyHandlers.ofString()).body();
+            Map<String, Scrip> parsed = parseScripMaster(csv, exchange);
+            if (parsed.isEmpty()) {
+                log.warn("MOFSL: scrip master empty/unparseable for {}", exchange);
+                return;
+            }
+            scripMasters.put(exchange, parsed);
+            scripMasterLoadedAt.put(exchange, System.currentTimeMillis());
+            log.info("MOFSL: scrip master loaded {} entries for {}", parsed.size(), exchange);
+        } catch (Exception e) {
+            log.error("MOFSL: scrip master download failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Parses MO's scrip master CSV (exchange, exchangename, scripcode, scripname, marketlot, ...).
+     * The file is downloaded per exchange, so every row is keyed under {@code exchange}.
+     * Option rows ("NIFTY 29-Sep-2026 CE 24200") are also indexed under the Kite-style symbols the
+     * rest of the platform uses: NIFTY26SEP24200CE (monthly) and NIFTY2692924200CE (weekly).
+     */
+    static Map<String, Scrip> parseScripMaster(String csv, String exchange) throws Exception {
+        Map<String, Scrip> map = new HashMap<>();
+        if (csv == null || csv.isBlank()) return map;
+        String exch = exchange.toUpperCase();
+        try (BufferedReader reader = new BufferedReader(new StringReader(csv))) {
+            String headerLine = reader.readLine();
+            if (headerLine == null) return map;
+            String[] headers = headerLine.split(",", -1);
+            int codeIdx = -1, nameIdx = -1, lotIdx = -1;
+            for (int i = 0; i < headers.length; i++) {
+                String h = headers[i].trim().toLowerCase();
+                if ("scripcode".equals(h)) codeIdx = i;
+                else if ("scripname".equals(h)) nameIdx = i;
+                else if ("marketlot".equals(h)) lotIdx = i;
+            }
+            if (codeIdx < 0 || nameIdx < 0) return map;
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] cols = line.split(",", -1);
+                if (cols.length <= Math.max(codeIdx, nameIdx)) continue;
+                int code;
+                try { code = Integer.parseInt(cols[codeIdx].trim()); } catch (NumberFormatException e) { continue; }
+                int lot = 0;
+                if (lotIdx >= 0 && cols.length > lotIdx) {
+                    try { lot = (int) Double.parseDouble(cols[lotIdx].trim()); } catch (NumberFormatException ignored) {}
+                }
+                String name = cols[nameIdx].trim().toUpperCase();
+                Scrip scrip = new Scrip(code, lot);
+                map.put(exch + "|" + name, scrip);
+                for (String alias : kiteAliases(name)) map.putIfAbsent(exch + "|" + alias, scrip);
+            }
+        }
+        return map;
+    }
+
+    /** Kite-style symbols for an MO option name like "NIFTY 29-SEP-2026 CE 24200". */
+    static List<String> kiteAliases(String moName) {
+        String[] parts = moName.split(" ");
+        if (parts.length < 4) return List.of();
+        String[] d = parts[1].split("-");
+        if (d.length != 3) return List.of();
+        try {
+            int day = Integer.parseInt(d[0]);
+            String mon = d[1].toUpperCase();
+            int yy = Integer.parseInt(d[2]) % 100;
+            int month = List.of("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
+                    .indexOf(mon) + 1;
+            if (month == 0) return List.of();
+            String type = parts[2];
+            String strike = new BigDecimal(parts[3]).stripTrailingZeros().toPlainString();
+            String mCode = month == 10 ? "O" : month == 11 ? "N" : month == 12 ? "D" : String.valueOf(month);
+            return List.of(
+                    String.format("%s%02d%s%s%s", parts[0], yy, mon, strike, type),          // monthly
+                    String.format("%s%02d%s%02d%s%s", parts[0], yy, mCode, day, strike, type)); // weekly
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    /** Exact lookup only — never scans for a partial match, which could pick another contract. */
+    private Scrip resolveScrip(String exchange, String tradingSymbol) {
+        Scrip s = ensureScripMaster(exchange).get(exchange.toUpperCase() + "|" + tradingSymbol.toUpperCase());
+        if (s == null) log.warn("MOFSL: no scrip found for {} on {}", tradingSymbol, exchange);
+        return s;
+    }
+
+    // ---- Auth ----
 
     public BrokerAccount connectWithTotp(Long userId, String clientCode, String password,
-                                         String totpSecret, String apiKey, String apiSecret, String dob) {
-        BrokerAccount account = repository.findByUserIdAndBrokerName(userId, "MOTILALOSWAL")
-                .stream().findFirst().orElse(null);
-
-        if (account == null) {
-            account = BrokerAccount.builder()
-                    .userId(userId)
-                    .brokerName("MOTILALOSWAL")
-                    .status("ACTIVE")
-                    .build();
+                                          String totpSecret, String apiKey, String apiSecret,
+                                          String dob) {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException("MOFSL API key is required. Get it from the Motilal Oswal MO API portal.");
         }
-        account.setClientId(clientCode.trim());
-        account.setMofslPassword(password.trim());
-        account.setMofslTotpSecret(totpSecret.trim());
-        account.setMofslApiKey(apiKey.trim());
-        account.setMofslApiSecret(apiSecret.trim());
+        BrokerAccount account = repository.findByUserIdAndBrokerNameAndStatus(userId, "MOTILALOSWAL", "ACTIVE")
+                .stream().findFirst().orElse(null);
+        if (account == null) {
+            account = repository.findByUserIdAndBrokerName(userId, "MOTILALOSWAL").stream().findFirst().orElse(null);
+            if (account != null) account.setStatus("ACTIVE");
+        }
+        if (account == null) {
+            account = BrokerAccount.builder().userId(userId).brokerName("MOTILALOSWAL").status("ACTIVE").build();
+        }
+        account.setClientId(clientCode);
+        account.setMofslPassword(password);
+        account.setMofslTotpSecret(totpSecret);
+        account.setMofslApiKey(apiKey);
+        account.setMofslApiSecret(apiSecret);
         if (dob != null && !dob.isBlank()) account.setMofslDob(dob.trim());
-        account.setTokenExpiry(Instant.now().plusSeconds(23L * 3600));
-
+        account.setTokenExpiry(java.time.Instant.now().plusSeconds(365L * 24 * 3600));
         BrokerAccount saved = repository.save(account);
-        String token = login(saved);
-        saved.setAccessToken(token);
-        return repository.save(saved);
+        sessionCache.remove(saved.getId()); // new credentials ⇒ new session
+        try {
+            saved.setAccessToken(login(saved));
+            repository.save(saved);
+            log.info("MOFSL connected for user {}, clientCode={}", userId, clientCode);
+        } catch (Exception e) {
+            log.warn("MOFSL initial login failed (credentials saved anyway): {}", e.getMessage());
+        }
+        return saved;
     }
 
-    public String login(BrokerAccount account) {
-        String apiKey = account.getMofslApiKey();
-        String apiSecret = account.getMofslApiSecret();
+    private String login(BrokerAccount account) {
+        String clientCode = account.getClientId();
         String password = account.getMofslPassword();
         String totpSecret = account.getMofslTotpSecret();
-        String dob = account.getMofslDob();
-        String clientCode = account.getClientId();
-
-        if (apiKey == null || apiKey.isBlank() || password == null || password.isBlank() || clientCode == null || clientCode.isBlank()) {
-            throw new IllegalStateException("Motilal Oswal credentials (clientCode, password, apiKey) are required.");
+        String apiKey = account.getMofslApiKey();
+        if (clientCode == null || clientCode.isBlank() || password == null || password.isBlank()) {
+            throw new IllegalStateException("MOFSL client code and password are required.");
         }
+        if (totpSecret == null || totpSecret.isBlank()) throw new IllegalStateException("MOFSL TOTP secret is required.");
+        if (apiKey == null || apiKey.isBlank()) throw new IllegalStateException("MOFSL API key is required.");
 
         CachedSession cached = sessionCache.get(account.getId());
-        if (cached != null && !cached.isExpired()) {
-            return cached.token;
-        }
+        if (cached != null && !cached.isExpired()) return cached.token;
 
-        log.info("Motilal Oswal: logging in for clientCode={}", clientCode);
+        String otp = TotpUtils.generate(totpSecret);
+        String dob = account.getMofslDob();
+        log.info("MOFSL: logging in for clientCode={}, hasDob={}", clientCode, dob != null && !dob.isBlank());
 
-        String totpCode = generateTotp(totpSecret);
-        String passwordHash = sha256(password + apiKey);
-
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("userid", clientCode);
-        body.put("password", passwordHash);
-        body.put("2FA", dob != null && !dob.isBlank() ? dob : "03/04/1989");
-        body.put("totp", totpCode);
+        Map<String, Object> loginBody = new LinkedHashMap<>();
+        loginBody.put("userid", clientCode);
+        loginBody.put("password", sha256(password + apiKey));
+        loginBody.put("2FA", dob != null && !dob.isBlank() ? dob : otp);
+        loginBody.put("totp", otp);
 
         try {
-            String vendorTag = clientCode.toUpperCase();
-            String respJson = moapiPost("/rest/login/v7/authdirectapi", body, apiKey, apiSecret, vendorTag, null);
+            String respJson = mofslPost("/rest/login/v7/authdirectapi", loginBody, null, apiKey,
+                    account.getMofslApiSecret(), clientCode);
             JsonNode root = MAPPER.readTree(respJson);
-
-            String status = root.path("status").asText("");
-            if ("ERROR".equalsIgnoreCase(status)) {
-                String errMsg = root.path("message").asText(respJson);
-                throw new RuntimeException("Motilal Oswal login failed: " + errMsg);
+            if (!"SUCCESS".equalsIgnoreCase(root.path("status").asText(""))) {
+                throw new RuntimeException("MOFSL login failed: " + root.path("message").asText(respJson));
             }
-
-            JsonNode dataNode = root.path("data");
-            String authToken = root.path("AuthToken").asText(dataNode.path("AuthToken").asText(null));
-
-            if (authToken == null || authToken.isBlank()) {
-                throw new RuntimeException("Motilal Oswal login returned no AuthToken");
-            }
-
-            sessionCache.put(account.getId(), new CachedSession(authToken, clientCode, clientCode, apiKey, apiSecret, System.currentTimeMillis() + 23 * 3600 * 1000));
-            log.info("Motilal Oswal: login successful for clientCode={}, token={}", clientCode, authToken);
-            return authToken;
-
+            String token = root.path("AuthToken").asText(null);
+            if (token == null || token.isBlank()) throw new RuntimeException("MOFSL login returned no AuthToken");
+            sessionCache.put(account.getId(), new CachedSession(token, clientCode, apiKey,
+                    account.getMofslApiSecret(), sessionExpiry(ZonedDateTime.now(IST))));
+            if (account.getId() != null) tokenOwner.put(token, account.getId());
+            log.info("MOFSL: login successful for clientCode={}", clientCode);
+            return token;
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("Motilal Oswal moAPI login error: {}", e.getMessage());
-            throw new RuntimeException("Motilal Oswal login failed: " + e.getMessage(), e);
+            throw new RuntimeException("MOFSL login error: " + e.getMessage(), e);
         }
     }
 
+    /**
+     * When a cached session must be discarded: the next 08:30 IST (so each trading day starts with a
+     * fresh login), and never more than 8h after login.
+     */
+    static long sessionExpiry(ZonedDateTime loginAt) {
+        ZonedDateTime ist = loginAt.withZoneSameInstant(IST);
+        ZonedDateTime cutoff = ist.toLocalDate().atTime(8, 30).atZone(IST);
+        if (!cutoff.isAfter(ist)) cutoff = cutoff.plusDays(1);
+        long cap = ist.toInstant().toEpochMilli() + 8L * 60 * 60 * 1000;
+        return Math.min(cutoff.toInstant().toEpochMilli(), cap);
+    }
+
+    private record ResolvedAccount(Long accountId, String token, String clientCode, String apiKey, String apiSecret) {}
+
+    /**
+     * Live session for the account that owns {@code accessToken}. A stale token (expired session, or
+     * one stored in the DB before a restart) re-logs in that same account and stores the new token.
+     * Only when the token belongs to no known account does it fall back to the first active account.
+     */
     private ResolvedAccount ensureToken(String accessToken) {
-        for (var entry : sessionCache.entrySet()) {
-            CachedSession c = entry.getValue();
-            if (c.token.equals(accessToken) && !c.isExpired()) {
-                return new ResolvedAccount(accessToken, c.userId, c.clientCode, c.apiKey, c.apiSecret);
-            }
-        }
-        List<BrokerAccount> accounts = repository.findByBrokerNameAndStatus("MOTILALOSWAL", "ACTIVE");
-        if (!accounts.isEmpty()) {
-            BrokerAccount acct = accounts.get(0);
-            try {
-                String token = login(acct);
-                CachedSession c = sessionCache.get(acct.getId());
-                String uid = (c != null && c.userId != null && !c.userId.isBlank()) ? c.userId : acct.getClientId();
-                return new ResolvedAccount(token, uid, acct.getClientId(), acct.getMofslApiKey(), acct.getMofslApiSecret());
-            } catch (Exception e) {
-                log.warn("Motilal Oswal re-login failed: {}", e.getMessage());
-                return new ResolvedAccount(accessToken, acct.getClientId(), acct.getClientId(), acct.getMofslApiKey(), acct.getMofslApiSecret());
-            }
-        }
-        return new ResolvedAccount(accessToken, "", "", "", "");
-    }
-
-    private record ResolvedAccount(String token, String userId, String clientCode, String apiKey, String apiSecret) {}
-
-    @Override
-    public BigDecimal getAvailableMargin(String accessToken) {
-        log.info("Motilal Oswal: fetching available margin");
-        ResolvedAccount resolved = ensureToken(accessToken);
-        try {
-            Map<String, Object> reqBody = Map.of("clientcode", resolved.clientCode, "userid", resolved.clientCode, "AuthToken", resolved.token);
-            String respJson = moapiPost("/rest/report/v1/getmargin", reqBody, resolved.apiKey, resolved.apiSecret, resolved.clientCode.toUpperCase(), resolved.token);
-            JsonNode root = MAPPER.readTree(respJson);
-            if ("SUCCESS".equalsIgnoreCase(root.path("status").asText(""))) {
-                JsonNode data = root.path("data");
-                double marginVal = data.path("availableMargin").asDouble(
-                        data.path("cashAvailable").asDouble(data.path("netMarginAvailable").asDouble(0)));
-                if (marginVal > 0) {
-                    log.info("Motilal Oswal moAPI margin={}", marginVal);
-                    return BigDecimal.valueOf(marginVal);
+        Long ownerId = null;
+        if (accessToken != null && !accessToken.isBlank()) {
+            for (Map.Entry<Long, CachedSession> e : sessionCache.entrySet()) {
+                CachedSession c = e.getValue();
+                if (c.token.equals(accessToken) && !c.isExpired()) {
+                    return new ResolvedAccount(e.getKey(), accessToken, c.clientCode, c.apiKey, c.apiSecret);
                 }
             }
-        } catch (Exception e) {
-            log.warn("Motilal Oswal margin fetch exception: {}", e.getMessage());
+            ownerId = tokenOwner.get(accessToken);
+            if (ownerId == null) ownerId = repository.findByAccessToken(accessToken).map(BrokerAccount::getId).orElse(null);
         }
-        return BigDecimal.ZERO;
+        BrokerAccount acct = ownerId != null ? repository.findById(ownerId).orElse(null) : null;
+        if (acct == null) {
+            List<BrokerAccount> accounts = repository.findByBrokerNameAndStatus("MOTILALOSWAL", "ACTIVE");
+            if (accounts.isEmpty()) throw new IllegalStateException("No active Motilal Oswal account");
+            acct = accounts.get(0);
+            log.warn("MOFSL: token matches no account; using first active account {}", acct.getId());
+        }
+        return relogin(acct);
     }
+
+    /** Session for {@code acct} (cached while still valid), persisting a newly issued token. */
+    private ResolvedAccount relogin(BrokerAccount acct) {
+        String token = login(acct);
+        if (!token.equals(acct.getAccessToken())) {
+            acct.setAccessToken(token);
+            repository.save(acct);
+        }
+        return new ResolvedAccount(acct.getId(), token, acct.getClientId(), acct.getMofslApiKey(), acct.getMofslApiSecret());
+    }
+
+    /** MO API rejects stale/missing sessions with an auth message instead of data. */
+    static boolean isSessionError(JsonNode root) {
+        String msg = (root.path("message").asText("") + " " + root.path("errorcode").asText("")).toLowerCase();
+        return msg.contains("token") || msg.contains("session") || msg.contains("authori") || msg.contains("login");
+    }
+
+    /**
+     * POST with one automatic re-login: when MO rejects the session, the cached token is dropped and
+     * the call retried once with a fresh one.
+     */
+    private JsonNode call(String accessToken, String path, Map<String, Object> body) throws Exception {
+        ResolvedAccount r = ensureToken(accessToken);
+        JsonNode root = MAPPER.readTree(mofslPost(path, body, r.token, r.apiKey, r.apiSecret, r.clientCode));
+        if (!"SUCCESS".equalsIgnoreCase(root.path("status").asText("")) && isSessionError(root)) {
+            log.info("MOFSL: session rejected on {} ({}), re-logging in", path, root.path("message").asText());
+            final String stale = r.token;
+            sessionCache.values().removeIf(c -> c.token.equals(stale));
+            BrokerAccount acct = r.accountId() != null ? repository.findById(r.accountId()).orElse(null) : null;
+            r = acct != null ? relogin(acct) : ensureToken(null);
+            root = MAPPER.readTree(mofslPost(path, body, r.token, r.apiKey, r.apiSecret, r.clientCode));
+        }
+        return root;
+    }
+
+    private static String mapExchange(String exchange) {
+        if (exchange == null) return "NSEFO";
+        return switch (exchange.toUpperCase()) {
+            case "NFO", "NSEFO" -> "NSEFO";
+            case "NSE" -> "NSE";
+            case "BSE" -> "BSE";
+            case "MCX" -> "MCX";
+            case "NSECD", "CDS" -> "NSECD";
+            case "BSEFO", "BFO" -> "BSEFO";
+            default -> exchange;
+        };
+    }
+
+    /** MO takes F&O quantity in lots. Returns null when the quantity is not a whole number of lots. */
+    static Integer lotsFor(int quantity, int lotSize) {
+        if (lotSize <= 0) return null;
+        if (quantity <= 0 || quantity % lotSize != 0) return null;
+        return quantity / lotSize;
+    }
+
+    // ---- Orders ----
 
     @Override
     public BrokerOrderResponse placeOrder(String accessToken, BrokerOrderRequest request) {
-        log.info("Motilal Oswal placeOrder: symbol={}, side={}, qty={}, price={}", request.symbol(), request.side(), request.quantity(), request.price());
-        ResolvedAccount resolved = ensureToken(accessToken);
-        String orderId = "MO_" + System.currentTimeMillis();
-        
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("clientcode", resolved.clientCode);
-        body.put("exchange", request.exchange() != null ? request.exchange() : "NSE");
-        body.put("symbol", request.symbol());
-        body.put("buyor-sell", request.side() != null ? request.side().name() : "BUY");
-        body.put("order-type", request.orderType() != null ? request.orderType().name() : "LIMIT");
-        body.put("product-type", request.productType() != null ? request.productType() : "CNC");
-        body.put("quantity", String.valueOf(request.quantity()));
-        body.put("price", request.price() != null ? String.valueOf(request.price()) : "0.00");
-        body.put("validity", "DAY");
-        body.put("amo-flag", "YES");
-        body.put("AuthToken", resolved.token);
-
-        try {
-            String resp = moapiPost("/rest/trade/v1/placeorder", body, resolved.apiKey, resolved.apiSecret, resolved.clientCode.toUpperCase(), resolved.token);
-            log.info("Motilal Oswal placeOrder API response: {}", resp);
-        } catch (Exception e) {
-            log.warn("Motilal Oswal placeOrder API call exception: {}", e.getMessage());
+        log.info("MOFSL: placing order {} {} {} qty={}", request.side(), request.symbol(), request.orderType(), request.quantity());
+        String exchange = mapExchange(request.exchange());
+        Scrip scrip = resolveScrip(exchange, request.symbol());
+        if (scrip == null) {
+            return new BrokerOrderResponse(null, "REJECTED",
+                    "Symbol not found in MOFSL scrip master: " + request.symbol() + " on " + exchange);
+        }
+        int quantityInLot;
+        if ("NSEFO".equals(exchange) || "BSEFO".equals(exchange) || "MCX".equals(exchange) || "NSECD".equals(exchange)) {
+            Integer lots = lotsFor(request.quantity(), scrip.lot());
+            if (lots == null) {
+                return new BrokerOrderResponse(null, "REJECTED", "Quantity " + request.quantity()
+                        + " is not a whole number of lots (lot size " + scrip.lot() + ") for " + request.symbol());
+            }
+            quantityInLot = lots;
+        } else {
+            quantityInLot = request.quantity(); // cash segment: shares
         }
 
-        return new BrokerOrderResponse(orderId, "SUBMITTED", "Motilal Oswal AMO order submitted successfully. Order ID: " + orderId);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("exchange", exchange);
+        body.put("symboltoken", scrip.code());
+        body.put("buyorsell", request.side().name());
+        body.put("ordertype", request.price() != null && request.price() > 0 ? "LIMIT" : "MARKET");
+        // MO product types: NORMAL (carry-forward margin), DELIVERY, VALUEPLUS (intraday). NRML and MIS
+        // both go as NORMAL so positions are never auto-squared-off by the broker.
+        String prod = request.productType() != null ? request.productType().toUpperCase() : "NORMAL";
+        if ("NRML".equals(prod) || "MIS".equals(prod)) prod = "NORMAL";
+        body.put("producttype", prod);
+        body.put("orderduration", "DAY");
+        body.put("price", request.price() != null ? request.price() : 0.0);
+        body.put("triggerprice", 0.0);
+        body.put("quantityinlot", quantityInLot);
+        body.put("disclosedquantity", 0);
+        body.put("amoorder", "N");
+        body.put("algoid", "");
+        body.put("goodtilldate", "");
+        body.put("tag", "STOKR");
+
+        try {
+            JsonNode root = call(accessToken, "/rest/trans/v2/placeorder", body);
+            String message = root.path("message").asText("");
+            if ("SUCCESS".equalsIgnoreCase(root.path("status").asText(""))) {
+                String orderId = root.path("uniqueorderid").asText(root.path("orderid").asText(null));
+                log.info("MOFSL order placed: {} (scrip={}, lots={}) -> {}", request.symbol(), scrip.code(), quantityInLot, orderId);
+                return new BrokerOrderResponse(orderId, "OPEN", message);
+            }
+            log.warn("MOFSL order REJECTED: symbol={} scrip={} side={} lots={} message={}",
+                    request.symbol(), scrip.code(), request.side(), quantityInLot, message);
+            return new BrokerOrderResponse(null, "REJECTED", message);
+        } catch (Exception e) {
+            log.error("MOFSL placeOrder failed for {}: {}", request.symbol(), e.getMessage());
+            return new BrokerOrderResponse(null, "REJECTED", e.getMessage());
+        }
     }
 
     @Override
-    public void cancelOrder(String accessToken, String orderId) {}
+    public void cancelOrder(String accessToken, String orderId) {
+        log.info("MOFSL: cancelling order {}", orderId);
+        try {
+            JsonNode root = call(accessToken, "/rest/trans/v1/cancelorder", Map.of("uniqueorderid", orderId));
+            if (!"SUCCESS".equalsIgnoreCase(root.path("status").asText(""))) {
+                log.warn("MOFSL cancel order {} rejected: {}", orderId, root.path("message").asText());
+            }
+        } catch (Exception e) {
+            log.warn("MOFSL cancel order {} failed: {}", orderId, e.getMessage());
+        }
+    }
 
     @Override
-    public List<BrokerPosition> getPositions(String accessToken) { return Collections.emptyList(); }
+    public List<BrokerPosition> getPositions(String accessToken) {
+        log.info("MOFSL: fetching positions");
+        try {
+            JsonNode root = call(accessToken, "/rest/book/v4/getposition", Map.of());
+            if (!"SUCCESS".equalsIgnoreCase(root.path("status").asText(""))) {
+                log.warn("MOFSL getPositions failed: {}", root.path("message").asText());
+                return Collections.emptyList();
+            }
+            List<BrokerPosition> positions = parsePositions(root.path("data"));
+            log.info("MOFSL: positions ok ({} open)", positions.size());
+            return positions;
+        } catch (Exception e) {
+            log.warn("MOFSL getPositions failed: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    static List<BrokerPosition> parsePositions(JsonNode positions) {
+        List<BrokerPosition> result = new ArrayList<>();
+        if (positions == null || !positions.isArray()) return result;
+        for (JsonNode p : positions) {
+            int buyQty = p.path("buyquantity").asInt(0);
+            int sellQty = p.path("sellquantity").asInt(0);
+            int qty = buyQty - sellQty;
+            if (qty == 0) continue;
+            BigDecimal buyAmount = new BigDecimal(p.path("buyamount").asText("0"));
+            BigDecimal sellAmount = new BigDecimal(p.path("sellamount").asText("0"));
+            BigDecimal avgPrice = qty > 0
+                    ? (buyQty > 0 ? buyAmount.divide(BigDecimal.valueOf(buyQty), 4, RoundingMode.HALF_UP) : BigDecimal.ZERO)
+                    : (sellQty > 0 ? sellAmount.divide(BigDecimal.valueOf(sellQty), 4, RoundingMode.HALF_UP) : BigDecimal.ZERO);
+            result.add(new BrokerPosition(
+                    p.path("symbol").asText(""),
+                    p.path("exchange").asText("NSEFO"),
+                    qty,
+                    avgPrice,
+                    new BigDecimal(p.path("LTP").asText(p.path("ltp").asText("0"))),
+                    new BigDecimal(p.path("marktomarket").asText("0")),
+                    new BigDecimal(p.path("bookedprofitloss").asText("0")),
+                    p.path("productname").asText(p.path("producttype").asText("NORMAL"))));
+        }
+        return result;
+    }
+
+    // ---- Margin ----
 
     @Override
-    public String getOrderStatus(String accessToken, String orderId) { return "SUBMITTED"; }
+    public String lastMarginError() { return lastMarginError; }
 
-    private String moapiPost(String path, Map<String, Object> body, String apiKey, String apiSecret, String vendorTag, String token) throws Exception {
+    @Override
+    public BigDecimal getAvailableMargin(String accessToken) {
+        log.info("MOFSL: fetching available margin");
+        String error;
+        try {
+            JsonNode root = call(accessToken, "/rest/report/v3/getreportmarginsummary", Map.of());
+            if ("SUCCESS".equalsIgnoreCase(root.path("status").asText(""))) {
+                Double available = parseAvailableMargin(root.path("data"));
+                if (available != null) {
+                    log.info("MOFSL: available margin={}", available);
+                    lastMarginError = null;
+                    return BigDecimal.valueOf(available);
+                }
+                String body = root.toString();
+                error = "margin summary had no available-margin row: "
+                        + (body.length() > 300 ? body.substring(0, 300) + "…" : body);
+            } else {
+                error = root.path("message").asText(root.toString());
+            }
+        } catch (Exception e) {
+            error = e.getMessage();
+        }
+        log.warn("MOFSL margin fetch failed: {}", error);
+        lastMarginError = error;
+        return BigDecimal.ZERO;
+    }
+
+    /**
+     * MO margin summary is a list of {srno, particulars, amount}. Row 103 is the total available margin;
+     * otherwise take the row whose particulars read like "Total Available Margin". Flat objects with
+     * cashavailable are accepted as a fallback. Null when nothing recognisable is present.
+     */
+    static Double parseAvailableMargin(JsonNode data) {
+        if (data == null || data.isMissingNode() || data.isNull()) return null;
+        if (data.isArray()) {
+            for (JsonNode item : data) {
+                if (item.path("srno").asInt(0) == 103) return item.path("amount").asDouble(0);
+            }
+            for (JsonNode item : data) {
+                String p = item.path("particulars").asText("").toLowerCase();
+                if (p.contains("total available margin") || (p.contains("available") && p.contains("margin"))) {
+                    return item.path("amount").asDouble(0);
+                }
+            }
+            return null;
+        }
+        for (String f : List.of("cashavailable", "CashAvailable", "availablemargin")) {
+            JsonNode v = data.path(f);
+            if (!v.isMissingNode() && !v.isNull() && !v.asText("").isBlank()) return v.asDouble(0);
+        }
+        return null;
+    }
+
+    // ---- Order status ----
+
+    @Override
+    public String getOrderStatus(String accessToken, String orderId) {
+        try {
+            JsonNode root = call(accessToken, "/rest/book/v5/getorderbook", Map.of());
+            JsonNode orders = root.path("data");
+            if (orders.isArray()) {
+                for (JsonNode o : orders) {
+                    String id = o.path("uniqueorderid").asText(o.path("orderid").asText(""));
+                    if (orderId.equals(id)) return mapOrderStatus(o.path("orderstatus").asText(null));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("MOFSL getOrderStatus {} failed: {}", orderId, e.getMessage());
+        }
+        return "UNKNOWN";
+    }
+
+    /** MO order-book statuses → the platform's OPEN / PARTIAL / COMPLETE / CANCELLED / REJECTED. */
+    static String mapOrderStatus(String moStatus) {
+        if (moStatus == null || moStatus.isBlank()) return "UNKNOWN";
+        String s = moStatus.trim().toLowerCase();
+        if (s.contains("partial")) return "PARTIAL";
+        if (s.equals("traded") || s.contains("complete") || s.contains("executed") || s.contains("filled")) return "COMPLETE";
+        if (s.contains("cancel")) return "CANCELLED";
+        if (s.contains("reject") || s.equals("error")) return "REJECTED";
+        if (s.contains("confirm") || s.contains("sent") || s.contains("open") || s.contains("pending")
+                || s.contains("modif") || s.contains("trigger")) return "OPEN";
+        return moStatus.toUpperCase();
+    }
+
+    // ---- HTTP ----
+
+    private String mofslPost(String path, Map<String, Object> body, String token,
+                             String apiKey, String apiSecret, String clientCode) throws Exception {
         String bodyJson = MAPPER.writeValueAsString(body);
-        HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
-        
-        var builder = HttpRequest.newBuilder()
-                .uri(URI.create(MOAPI_BASE + path))
-                .timeout(Duration.ofSeconds(20))
+        // MO API only accepts calls from the static IP registered on the app (the Contabo server).
+        String serverIp = System.getProperty("server.public-ip", "173.249.55.84");
+        String vendorVal = (clientCode != null && !clientCode.isBlank()) ? clientCode.toUpperCase() : "";
+
+        HttpRequest.Builder req = HttpRequest.newBuilder(URI.create(MOFSL_BASE + path))
+                .timeout(Duration.ofSeconds(30))
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
-                .header("User-Agent", "MOSL/V.1.1.0")
-                .header("apikey", apiKey != null ? apiKey : "")
-                .header("api-key", apiKey != null ? apiKey : "")
-                .header("apisecretkey", apiSecret != null ? apiSecret : "")
-                .header("vendorinfo", vendorTag != null ? vendorTag : "ARS89")
-                .header("osname", "Windows")
-                .header("osversion", "10.0")
-                .header("devicemodel", "PC")
-                .header("manufacturer", "PC")
-                .header("productname", "STOKR")
-                .header("productversion", "1.0")
-                .header("browsername", "Chrome")
-                .header("browserversion", "120.0")
+                .header("ApiKey", apiKey != null ? apiKey : "")
                 .header("SourceId", "WEB")
-                .header("ClientLocalIp", "127.0.0.1")
-                .header("ClientPublicIp", "127.0.0.1")
-                .header("MacAddress", "00:00:00:00:00:00");
+                .header("vendorinfo", vendorVal)
+                .header("User-Agent", "MOSL/V.1.1.0")
+                .header("ClientLocalIp", serverIp)
+                .header("ClientPublicIp", serverIp)
+                .header("MacAddress", "00:00:00:00:00:00")
+                .header("osname", "WEB")
+                .header("osversion", "1.0.0")
+                .header("devicemodel", "WEB")
+                .header("manufacturer", "WEB")
+                .header("productname", "STOKR")
+                .header("productversion", "1.0.0")
+                .header("browsername", "Chrome")
+                .header("browserversion", "120.0.0");
+        if (apiSecret != null && !apiSecret.isBlank()) req.header("apisecretkey", apiSecret);
+        if (token != null && !token.isBlank()) req.header("Authorization", token);
 
-        if (token != null && !token.isBlank()) {
-            builder.header("AuthToken", token);
-        }
-
-        HttpRequest request = builder.POST(HttpRequest.BodyPublishers.ofString(bodyJson)).build();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        return response.body();
+        log.info("MOFSL HTTP: {} vendorinfo={} hasToken={}", path, vendorVal, token != null && !token.isBlank());
+        HttpResponse<String> response = httpClient.send(
+                req.POST(HttpRequest.BodyPublishers.ofString(bodyJson)).build(), HttpResponse.BodyHandlers.ofString());
+        String responseBody = response.body();
+        log.info("MOFSL HTTP response: {} status={} body={}", path, response.statusCode(),
+                responseBody.length() > 500 ? responseBody.substring(0, 500) : responseBody);
+        return responseBody;
     }
 
     private static String sha256(String input) {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hexString = new StringBuilder();
-            for (byte b : hash) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) hexString.append('0');
-                hexString.append(hex);
-            }
-            return hexString.toString();
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) sb.append(String.format("%02x", b));
+            return sb.toString();
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("SHA-256 hashing failed", e);
         }
-    }
-
-    private static String generateTotp(String secretKey) {
-        if (secretKey == null || secretKey.isBlank()) return "";
-        try {
-            String cleanSecret = secretKey.trim().toUpperCase().replaceAll("\s+", "");
-            byte[] key = base32Decode(cleanSecret);
-            long timeWindow = System.currentTimeMillis() / 1000L / 30L;
-
-            byte[] data = new byte[8];
-            for (int i = 7; i >= 0; i--) {
-                data[i] = (byte) (timeWindow & 0xFF);
-                timeWindow >>= 8;
-            }
-
-            SecretKeySpec signKey = new SecretKeySpec(key, "HmacSHA1");
-            Mac mac = Mac.getInstance("HmacSHA1");
-            mac.init(signKey);
-            byte[] hash = mac.doFinal(data);
-
-            int offset = hash[hash.length - 1] & 0xF;
-            long truncatedHash = 0;
-            for (int i = 0; i < 4; ++i) {
-                truncatedHash <<= 8;
-                truncatedHash |= (hash[offset + i] & 0xFF);
-            }
-
-            truncatedHash &= 0x7FFFFFFF;
-            truncatedHash %= 1000000;
-            return String.format("%06d", truncatedHash);
-        } catch (Exception e) {
-            log.warn("TOTP generation failed: {}", e.getMessage());
-            return "";
-        }
-    }
-
-    private static byte[] base32Decode(String base32) {
-        String base32Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-        base32 = base32.replaceAll("=", "");
-        byte[] bytes = new byte[base32.length() * 5 / 8];
-        int buffer = 0;
-        int next = 0;
-        int bitsLeft = 0;
-        for (char c : base32.toCharArray()) {
-            buffer <<= 5;
-            buffer |= base32Chars.indexOf(c);
-            bitsLeft += 5;
-            if (bitsLeft >= 8) {
-                bytes[next++] = (byte) (buffer >> (bitsLeft - 8));
-                bitsLeft -= 8;
-            }
-        }
-        return bytes;
     }
 }
