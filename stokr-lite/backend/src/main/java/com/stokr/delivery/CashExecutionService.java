@@ -21,10 +21,10 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CashExecutionService {
 
-    private static final int MAX_OPEN_PAPER = 10;
+    private static final int MAX_OPEN_PAPER = 5;
     private static final double PAPER_CAPITAL = 10000.0;
     private static final int MAX_HOLD_DAYS_SURGE = 3;
-    private static final int MAX_HOLD_DAYS_SWING = 5;
+    private static final int MAX_HOLD_DAYS_SWING = 2;
     private static final int SYMBOL_COOLDOWN_HOURS = 24;
 
     private final CashPositionRepository positionRepo;
@@ -196,7 +196,9 @@ public class CashExecutionService {
             double target = pos.getTargetPrice() != null ? pos.getTargetPrice().doubleValue() : 0;
             double stopLoss = pos.getStopLossPrice() != null ? pos.getStopLossPrice().doubleValue() : 0;
             boolean hitTarget = target > 0 && ltp >= target;
-            boolean hitStop = stopLoss > 0 && ltp <= stopLoss;
+            double entryP = pos.getEntryPrice() != null ? pos.getEntryPrice().doubleValue() : 0;
+            boolean hitHardSL = entryP > 0 && ltp <= (entryP * 0.965); // Hard -3.5% SL
+            boolean hitStop = (stopLoss > 0 && ltp <= stopLoss) || hitHardSL;
 
             int maxHoldDays = "CASH_SURGE".equals(pos.getStrategyType()) ? MAX_HOLD_DAYS_SURGE : MAX_HOLD_DAYS_SWING;
             long holdDays = pos.getEnteredAt() != null ? ChronoUnit.DAYS.between(pos.getEnteredAt().toLocalDate(), LocalDateTime.now().toLocalDate()) : 0;

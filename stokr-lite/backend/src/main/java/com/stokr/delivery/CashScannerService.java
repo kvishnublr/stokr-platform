@@ -60,14 +60,15 @@ public class CashScannerService {
             double delivRatio = todayDelivPct / avgDelivPct;
             double volumeRatio = todayQty / avgQty;
 
-            boolean qualifies = todayDelivPct >= 50.0 && delivRatio >= 1.5 && volumeRatio >= 1.5 && priceChangePct >= 2.0;
+            double dailyTurnover = todayQty * closeP;
+            boolean qualifies = todayDelivPct >= 50.0 && delivRatio >= 1.5 && volumeRatio >= 1.5 && priceChangePct >= 2.0 && dailyTurnover >= 5000000.0 && closeP >= 30.0;
             if (!qualifies) continue;
 
             double atr = computeATR(rows, 14);
             if (atr <= 0) continue;
 
             double entryPrice = closeP;
-            double stopLossPrice = round2(entryPrice - 1.5 * atr);
+            double stopLossPrice = Math.max(round2(entryPrice - 1.5 * atr), round2(entryPrice * 0.965)); // Max 3.5% SL
             double targetPrice = round2(entryPrice + 3.0 * atr);
             double score = delivRatio * volumeRatio * (1 + priceChangePct / 100.0);
 
@@ -114,12 +115,15 @@ public class CashScannerService {
                 if (cNow > c5) breadthUp++;
             }
 
-            Double rsi14 = computeRSI(closes, 14);
-            if (rsi14 == null || rsi14 < 60.0 || rsi14 > 68.0) continue;
-
             NseDeliveryData today = rows.get(rows.size() - 1);
             Double closeP = dbl(today.getClosePrice());
-            if (closeP == null) continue;
+            if (closeP == null || closeP < 30.0) continue;
+
+            Double todayTurnover = (today.getTotalQty() != null && today.getClosePrice() != null) ? today.getTotalQty() * dbl(today.getClosePrice()) : 0.0;
+            if (todayTurnover < 5000000.0) continue;
+
+            Double rsi14 = computeRSI(closes, 14);
+            if (rsi14 == null || rsi14 < 60.0 || rsi14 > 68.0) continue;
 
             List<NseDeliveryData> last5 = rows.subList(rows.size() - 5, rows.size());
             List<NseDeliveryData> last20 = rows.subList(Math.max(0, rows.size() - 20), rows.size());
@@ -131,7 +135,7 @@ public class CashScannerService {
             if (atr <= 0) continue;
 
             double entryPrice = closeP;
-            double stopLossPrice = round2(entryPrice - 1.5 * atr);
+            double stopLossPrice = Math.max(round2(entryPrice - 1.5 * atr), round2(entryPrice * 0.965)); // Max 3.5% SL
             double targetPrice = round2(entryPrice + 2.5 * atr);
 
             Map<String, Object> m = new LinkedHashMap<>();
