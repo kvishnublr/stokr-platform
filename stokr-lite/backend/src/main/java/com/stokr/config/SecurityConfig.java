@@ -38,13 +38,7 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers(
-                        AntPathRequestMatcher.antMatcher("/api/auth/**"),
-                        AntPathRequestMatcher.antMatcher("/api/option-arbitrage/**"),
-                        AntPathRequestMatcher.antMatcher("/api/smart-strategies/**"),
-                        AntPathRequestMatcher.antMatcher("/api/market/**"),
-                        AntPathRequestMatcher.antMatcher("/api/brokers/**"),
-                        AntPathRequestMatcher.antMatcher("/api/broker/**"),
-                        AntPathRequestMatcher.antMatcher("/api/zerodha/**"),
+                        AntPathRequestMatcher.antMatcher("/api/**"),
                         AntPathRequestMatcher.antMatcher("/actuator/**"),
                         AntPathRequestMatcher.antMatcher("/"),
                         AntPathRequestMatcher.antMatcher("/index.html"),
@@ -56,7 +50,7 @@ public class SecurityConfig {
                         AntPathRequestMatcher.antMatcher("/error")
                     ).permitAll();
                     auth.requestMatchers(AntPathRequestMatcher.antMatcher("/api/admin/**")).hasRole("ADMIN");
-                    auth.anyRequest().authenticated();
+                    auth.anyRequest().permitAll();
                 })
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, authException) -> {

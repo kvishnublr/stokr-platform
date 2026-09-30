@@ -3946,9 +3946,9 @@ export function DetailedOpportunityExpandedRow({ item, executionBroker, setPendi
         }
         return sum + sign * val * (Number(leg.qty) || 1);
       }, 0);
-      const dteVal = (oppToPass && typeof oppToPass.dte === 'number' && opp.dte > 0) ? oppToPass.dte : 5;
+      const dteVal = (oppToPass && typeof oppToPass.dte === 'number' && oppToPass.dte > 0) ? oppToPass.dte : 5;
       const t0Years = Math.max(0.5, dteVal) / 365.0;
-      const ivVal = (oppToPass && typeof oppToPass.iv === 'number' && opp.iv > 0) ? oppToPass.iv / 100.0 : 0.16;
+      const ivVal = (oppToPass && typeof oppToPass.iv === 'number' && oppToPass.iv > 0) ? oppToPass.iv / 100.0 : 0.16;
       
       const t0Payoff = oppToPass.legList.reduce((sum, leg) => {
         const optType = String(leg.optionType).toUpperCase();
