@@ -516,6 +516,21 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                     .filter(p -> "PAPER".equals(p.getBroker()) && opp.getStrategyType().equals(p.getStrategyType()))
                     .mapToInt(p -> p.getLots() != null ? p.getLots() : 1).sum();
             if (openPaperStrategy >= strategyMaxLots) continue;
+
+            // 20-Minute Re-entry Cooldown Guard: Skip if same strategy, underlying & strike exited within last 20 mins
+            LocalDateTime cooldownCutoff = LocalDateTime.now(ZoneId.of("Asia/Kolkata")).minusMinutes(20);
+            boolean recentlyExited = positionRepo.findAll().stream()
+                    .filter(p -> "CLOSED".equals(p.getStatus()) || "EXITED".equals(p.getStatus()))
+                    .filter(p -> p.getExitedAt() != null && p.getExitedAt().isAfter(cooldownCutoff))
+                    .anyMatch(p -> p.getStrategyType() != null && p.getStrategyType().equalsIgnoreCase(opp.getStrategyType())
+                            && p.getUnderlying() != null && p.getUnderlying().equalsIgnoreCase(opp.getUnderlying())
+                            && Objects.equals(p.getStrike(), opp.getStrike()));
+            if (recentlyExited) {
+                log.info("Auto-exec skipped for {} {} strike {}: Recently exited within 20m cooldown", opp.getStrategyType(), opp.getUnderlying(), opp.getStrike());
+                addLog("COOLDOWN_SKIP", "SKIPPED", opp.getStrategyType() + " " + opp.getUnderlying() + " strike " + opp.getStrike() + " skipped due to 20m exit cooldown");
+                continue;
+            }
+
             
             long openPaperTotal = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
                     .filter(p -> "PAPER".equals(p.getBroker()))

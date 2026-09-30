@@ -847,7 +847,8 @@ export default function Positions() {
       ...p,
       assetClass: 'FNO',
       mode: p.broker || 'PAPER',
-      displaySymbol: p.underlying ? `${p.underlying} ${p.strike || ''} ${p.action || ''}`.trim() : (p.action || 'F&O Trade'),
+      displaySymbol: p.underlying || 'F&O Trade',
+      strikeDisplay: p.strike ? String(p.strike) : (p.action ? p.action.replace(/.*\((.*)\)/, '$1') : '—'),
       qtyDisplay: `${p.lots || 1} Lot (${((p.lots || 1) * (p.lotSize || 120)).toLocaleString()} qty)`
     }));
   }, [livePositionsData]);
@@ -999,121 +1000,33 @@ export default function Positions() {
             </div>
           </div>
 
-          {/* Prominent Primary Active Positions Table */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🔥</span>
-                <h3 className="text-xs font-black uppercase tracking-wider">Active Open Positions ({openPositions.length})</h3>
-              </div>
-              <span className="text-[10px] font-mono text-emerald-400 font-bold bg-slate-800 px-2.5 py-1 rounded-full border border-slate-700">
-                ⚡ Live 2s Auto-Refresh
-              </span>
-            </div>
+          {/* Foldable Group 1: F&O Arbitrage Active Positions */}
+          {(assetFilter === 'ALL' || assetFilter === 'FNO') && (
+            <AccordionCard
+              title={`F&O Arbitrage Active Trades (${fnoActivePositions.length})`}
+              icon="⚡"
+              count={fnoActivePositions.length}
+              defaultOpen={true}
+              badgeColor="bg-indigo-100 text-indigo-800"
+            >
+              <LivePositionsSection executionBroker={executionBroker} modeFilter={modeFilter} assetFilter={assetFilter} defaultExpanded={true} />
+            </AccordionCard>
+          )}
 
-            {openPositions.length === 0 ? (
-              <div className="p-12 text-center text-slate-400 font-medium text-sm">
-                No active open positions currently running matching your filters.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left border-collapse">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-400 uppercase font-extrabold text-[10px] tracking-wider">
-                    <tr>
-                      <th className="px-5 py-3">Symbol / Asset</th>
-                      <th className="px-4 py-3">Strategy</th>
-                      <th className="px-3 py-3 text-center">Class</th>
-                      <th className="px-4 py-3 text-right">Qty / Lots</th>
-                      <th className="px-4 py-3 text-right">Entry Price</th>
-                      <th className="px-4 py-3 text-right">Current / LTP</th>
-                      <th className="px-4 py-3 text-right">Unrealized P&amp;L</th>
-                      <th className="px-4 py-3 text-center">Mode</th>
-                      <th className="px-4 py-3 text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-mono">
-                    {openPositions.map(p => {
-                      const pnl = p.currentPnl != null ? Number(p.currentPnl) : (p.unrealizedPnl != null ? Number(p.unrealizedPnl) : 0);
-                      const isCash = p.assetClass === 'CASH' || p.strategyType?.startsWith('CASH');
-                      const entryStr = p.entryPrice != null ? `₹${Number(p.entryPrice).toFixed(2)}` : (p.entryCost != null ? `₹${Number(p.entryCost).toFixed(2)}` : '—');
-                      const currStr = p.currentPrice != null ? `₹${Number(p.currentPrice).toFixed(2)}` : (p.ltp != null ? `₹${Number(p.ltp).toFixed(2)}` : entryStr);
-                      const isExp = expandedActiveId === p.id;
+          {/* Foldable Group 2: Cash Equity Swing Active Positions */}
+          {(assetFilter === 'ALL' || assetFilter === 'CASH') && (
+            <AccordionCard
+              title={`Cash Equity Swing Active Trades (${cashActivePositions.length})`}
+              icon="📈"
+              count={cashActivePositions.length}
+              defaultOpen={true}
+              badgeColor="bg-orange-100 text-orange-800"
+            >
+              <CashPositionsSection />
+            </AccordionCard>
+          )}
 
-                      return (
-                        <React.Fragment key={p.id || p.symbol}>
-                          <tr className={`hover:bg-indigo-50/40 transition-colors ${isExp ? 'bg-indigo-50/60 border-l-4 border-indigo-600' : ''}`}>
-                            {/* Symbol */}
-                            <td className="px-5 py-3.5 font-bold text-slate-800">
-                              <div>{p.displaySymbol || p.symbol}</div>
-                              {p.name && <div className="text-[10px] font-normal text-slate-400">{p.name}</div>}
-                            </td>
-
-                            {/* Strategy */}
-                            <td className="px-4 py-3.5 font-bold text-slate-700 font-sans">
-                              {STRATEGY_LABELS[p.strategyType || p.strategy] || p.strategyType || p.strategy || 'Arbitrage'}
-                            </td>
-
-                            {/* Asset Class Chip */}
-                            <td className="px-3 py-3.5 text-center font-sans">
-                              <span className={`px-2.5 py-0.5 rounded text-[9px] font-black ${isCash ? 'bg-orange-100 text-orange-800' : 'bg-indigo-100 text-indigo-800'}`}>
-                                {isCash ? 'CASH' : 'FNO'}
-                              </span>
-                            </td>
-
-                            {/* Qty / Lots */}
-                            <td className="px-4 py-3.5 text-right font-medium text-slate-600 whitespace-nowrap">
-                              {p.qtyDisplay}
-                            </td>
-
-                            {/* Entry */}
-                            <td className="px-4 py-3.5 text-right text-slate-600">{entryStr}</td>
-
-                            {/* Current */}
-                            <td className="px-4 py-3.5 text-right text-slate-800 font-bold">{currStr}</td>
-
-                            {/* PnL */}
-                            <td className={`px-4 py-3.5 text-right font-extrabold ${pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                              {pnl >= 0 ? '+' : ''}₹{Math.round(pnl).toLocaleString('en-IN')}
-                            </td>
-
-                            {/* Mode */}
-                            <td className="px-4 py-3.5 text-center font-sans">
-                              <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-extrabold border ${p.mode === 'PAPER' ? 'bg-slate-100 text-slate-600 border-slate-200' : 'bg-emerald-100 text-emerald-800 border-emerald-300'}`}>
-                                {p.mode}
-                              </span>
-                            </td>
-
-                            {/* Actions */}
-                            <td className="px-4 py-3.5 text-center font-sans">
-                              <button
-                                onClick={() => setExpandedActiveId(isExp ? null : p.id)}
-                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition"
-                              >
-                                {isExp ? 'Hide Details' : '🔍 View Legs'}
-                              </button>
-                            </td>
-                          </tr>
-
-                          {/* Expanded Legs Drawer */}
-                          {isExp && (
-                            <tr className="bg-indigo-50/20 border-b border-indigo-100">
-                              <td colSpan={9} className="p-4 space-y-3">
-                                <DetailedOpportunityExpandedRow item={p} title={`Active Position Leg Details & Payoff Diagram — ${p.displaySymbol || p.symbol}`} />
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* SECONDARY PANELS: COLLAPSED BY DEFAULT */}
-
-          {/* 1. Broker Positions Ground Truth Accordion */}
+          {/* Foldable Group 3: Broker Ground Truth & Account Positions */}
           <AccordionCard
             title="Broker Ground Truth & Account Positions"
             icon="🏦"
@@ -1121,32 +1034,6 @@ export default function Positions() {
           >
             <BrokerPositionsPanel executionBroker={executionBroker} defaultExpanded={false} />
           </AccordionCard>
-
-          {/* 2. Detailed F&O Arbitrage Section Accordion */}
-          {(assetFilter === 'ALL' || assetFilter === 'FNO') && (
-            <AccordionCard
-              title={`F&O Arbitrage Detailed Breakdown (${fnoActivePositions.length})`}
-              icon="⚡"
-              count={fnoActivePositions.length}
-              defaultOpen={false}
-              badgeColor="bg-indigo-100 text-indigo-800"
-            >
-              <LivePositionsSection executionBroker={executionBroker} modeFilter={modeFilter} assetFilter={assetFilter} defaultExpanded={false} />
-            </AccordionCard>
-          )}
-
-          {/* 3. Detailed Cash Equity Section Accordion */}
-          {(assetFilter === 'ALL' || assetFilter === 'CASH') && (
-            <AccordionCard
-              title={`Cash Equity Swing Breakdown (${cashActivePositions.length})`}
-              icon="📈"
-              count={cashActivePositions.length}
-              defaultOpen={false}
-              badgeColor="bg-orange-100 text-orange-800"
-            >
-              <CashPositionsSection />
-            </AccordionCard>
-          )}
 
         </div>
       )}
