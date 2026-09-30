@@ -1439,8 +1439,8 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                         </span>
                       </td>
                       <td className="px-2 py-2.5 text-right">
-                        <span className={`font-mono font-bold text-[10px] ${mxLoss > 0 ? 'text-red-500' : 'text-slate-400'}`}>
-                          {mxLoss > 0 ? `₹${Math.round(mxLoss).toLocaleString('en-IN')}` : '--'}
+                        <span className={`font-mono font-bold text-[10px] ${mxLoss > 0 ? 'text-red-500' : 'text-emerald-600 font-extrabold'}`}>
+                          {mxLoss > 0 ? `₹${Math.round(mxLoss).toLocaleString('en-IN')}` : (String(p.strategyType || p.action || '').toUpperCase().includes('PARITY') || String(p.strategyType || p.action || '').toUpperCase().includes('ARBITRAGE') || String(p.strategyType || p.action || '').toUpperCase().includes('CONVERSION') || String(p.strategyType || p.action || '').toUpperCase().includes('REVERSAL') ? 'Risk-Free' : '--')}
                         </span>
                       </td>
                       <td className="px-2 py-2.5 text-center font-bold text-slate-700">{p.lots}</td>
@@ -3831,15 +3831,24 @@ function blackScholesPrice(S, K, t, r, v, type) {
 export function DetailedOpportunityExpandedRow({ item, executionBroker, setPendingLiveDeploy, title = "Signal Breakdown" }) {
   let oppToPass = item;
   if (!Array.isArray(oppToPass.legList) || oppToPass.legList.length === 0) {
-    const isReversal = String(oppToPass.action || oppToPass.strategyType || '').toUpperCase().includes('REVERSAL');
+    const actionStr = String(oppToPass.action || oppToPass.strategyType || '').toUpperCase();
     const synthesized = [];
     const ceP = Number(oppToPass.ceEntryPrice || oppToPass.cePrice || oppToPass.ceAsk || 0);
     const peP = Number(oppToPass.peEntryPrice || oppToPass.pePrice || oppToPass.peBid || 0);
-    const futP = Number(oppToPass.futEntryPrice || oppToPass.futuresPrice || 0);
+    let futP = Number(oppToPass.futEntryPrice || oppToPass.futuresPrice || oppToPass.exitSpotPrice || oppToPass.spotPrice || 0);
     const stk = Number(oppToPass.strike || oppToPass.atmStrike || 0);
-    if (ceP > 0) synthesized.push({ side: isReversal ? 'BUY' : 'SELL', optionType: 'CE', strike: stk, price: ceP, qty: 1 });
-    if (peP > 0) synthesized.push({ side: isReversal ? 'SELL' : 'BUY', optionType: 'PE', strike: stk, price: peP, qty: 1 });
-    if (futP > 0) synthesized.push({ side: isReversal ? 'SELL' : 'BUY', optionType: 'FUT', strike: 0, price: futP, qty: 1 });
+    
+    // Explicit side determination matching action string exactly (e.g. "BUY CE + SELL PE + SELL FUT" vs "BUY FUT + SELL CE + BUY PE")
+    const ceSide = actionStr.includes('BUY CE') ? 'BUY' : 'SELL';
+    const peSide = actionStr.includes('BUY PE') ? 'BUY' : 'SELL';
+    const futSide = actionStr.includes('BUY FUT') ? 'BUY' : 'SELL';
+
+    if (ceP > 0) synthesized.push({ side: ceSide, optionType: 'CE', strike: stk, price: ceP, qty: 1 });
+    if (peP > 0) synthesized.push({ side: peSide, optionType: 'PE', strike: stk, price: peP, qty: 1 });
+    // Fallback: If futP is 0 or unpopulated, use stk so FUT leg is always present for 3-leg Conversion/Reversal!
+    if (futP <= 0 && stk > 0) futP = stk;
+    if (futP > 0) synthesized.push({ side: futSide, optionType: 'FUT', strike: 0, price: futP, qty: 1 });
+
     if (synthesized.length > 0) {
       oppToPass = { ...oppToPass, legList: synthesized };
     }

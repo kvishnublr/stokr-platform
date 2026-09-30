@@ -580,7 +580,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 LivePosition livePos = LivePosition.builder()
                     .userId(1L).broker("PAPER").opportunityId(opp.getId())
                     .underlying(opp.getUnderlying()).strike(opp.getStrike()).action(opp.getAction())
-                    .strategyType(opp.getStrategyType()).lots(lots).lotSize(lotSize)
+                    .strategyType(opp.getStrategyType()).expiryDate(opp.getExpiryDate()).lots(lots).lotSize(lotSize)
                     .targetEdge(opp.getEdgeAfterCosts()).entryCost(BigDecimal.valueOf(entryCost))
                     .status("OPEN").enteredAt(LocalDateTime.now()).createdAt(LocalDateTime.now()).build();
                 livePos.setLegs(resolvedLegs);
@@ -616,7 +616,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 LivePosition livePos = LivePosition.builder()
                     .userId(1L).broker("PAPER").opportunityId(opp.getId())
                     .underlying(opp.getUnderlying()).strike(opp.getStrike()).action(opp.getAction())
-                    .strategyType(opp.getStrategyType()).lots(lots).lotSize(lotSize)
+                    .strategyType(opp.getStrategyType()).expiryDate(opp.getExpiryDate()).lots(lots).lotSize(lotSize)
                     .ceEntryPrice(ceLive > 0 ? BigDecimal.valueOf(ceLive) : null)
                     .peEntryPrice(peLive > 0 ? BigDecimal.valueOf(peLive) : null)
                     .futEntryPrice(futLive > 0 ? BigDecimal.valueOf(futLive) : null)
@@ -975,7 +975,16 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             double stopLossPct = parseDouble(settings.getOrDefault("stopLossPct", 50.0), 50.0);
 
             // Stop-loss: close position if loss exceeds threshold
-            if (stopLossEnabled && targetEdge > 0 && pnlPerLot < 0) {
+            // CRITICAL FIX: Defined-risk and Risk-Free multi-leg strategies (Condors, Butterflies, Box, Arbitrage)
+            // have zero or bounded max loss and must NOT be stopped out by temporary Bid-Ask spread MTM noise.
+            boolean isMultiLegOrDefinedRisk = isMultiLeg || (pos.getStrategyType() != null && (
+                pos.getStrategyType().contains("CONDOR") || 
+                pos.getStrategyType().contains("BUTTERFLY") || 
+                pos.getStrategyType().contains("BOX") || 
+                pos.getStrategyType().contains("ARBITRAGE")
+            ));
+
+            if (stopLossEnabled && !isMultiLegOrDefinedRisk && targetEdge > 0 && pnlPerLot < 0) {
                 java.time.LocalDateTime entryTime = pos.getEnteredAt() != null ? pos.getEnteredAt() : pos.getCreatedAt();
                 boolean inGracePeriod = entryTime != null &&
                     java.time.Duration.between(entryTime, java.time.LocalDateTime.now()).getSeconds() < 30;
@@ -1008,7 +1017,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             boolean inGracePeriod = entryTime != null &&
                 java.time.Duration.between(entryTime, java.time.LocalDateTime.now()).getSeconds() < 120;
 
-            if (!inGracePeriod && !shouldExit && pos.getSlPct() != null && pos.getSlPct() > 0 && pos.getMaxLossAmount() != null && pos.getMaxLossAmount() > 0) {
+            if (!inGracePeriod && !shouldExit && !isMultiLegOrDefinedRisk && pos.getSlPct() != null && pos.getSlPct() > 0 && pos.getMaxLossAmount() != null && pos.getMaxLossAmount() > 0) {
                 double slThreshold = pos.getMaxLossAmount() * pos.getSlPct() / 100.0;
                 if (pnl < 0 && Math.abs(pnl) >= slThreshold) {
                     shouldExit = true;

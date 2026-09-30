@@ -1872,11 +1872,29 @@ public class OptionArbitrageController {
             double edgeCaptured = target > 0 ? Math.min(100, Math.round(pnlPerLot / target * 100)) : 0;
             map.put("edgeCaptured", edgeCaptured);
             map.put("marketOpen", marketOpen);
-            map.put("isMultiLeg", isMultiLeg);
+            // Backfill expiryDate from opportunity if missing on older positions
+            if (p.getExpiryDate() == null && p.getOpportunityId() != null) {
+                oppRepo.findById(p.getOpportunityId()).ifPresent(opp -> {
+                    if (opp.getExpiryDate() != null) {
+                        p.setExpiryDate(opp.getExpiryDate());
+                        map.put("expiryDate", opp.getExpiryDate().toString());
+                        try { livePositionRepo.save(p); } catch (Exception ignored) {}
+                    }
+                });
+            }
 
-            // Compute max loss from legs — use wing width (adjacent pair), not total strike range
+            // Compute max loss from legs
+            String stratUpper = (p.getStrategyType() != null ? p.getStrategyType() : "").toUpperCase();
+            String actionUpper = (p.getAction() != null ? p.getAction() : "").toUpperCase();
+            boolean isRiskFreeArb = stratUpper.contains("BID_PARITY") || stratUpper.contains("ARBITRAGE") || 
+                                    stratUpper.contains("CONVERSION") || stratUpper.contains("REVERSAL") || 
+                                    stratUpper.contains("BOX") || stratUpper.contains("SYNTHETIC") ||
+                                    actionUpper.contains("BUY CE + SELL PE") || actionUpper.contains("SELL CE + BUY PE");
+
             double maxLoss = 0;
-            if (isMultiLeg) {
+            if (isRiskFreeArb) {
+                maxLoss = 0;
+            } else if (isMultiLeg) {
                 var legs = p.getLegs();
                 if (legs != null && legs.size() >= 2) {
                     double netPremium = 0;
