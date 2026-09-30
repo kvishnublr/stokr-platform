@@ -63,7 +63,7 @@ function AccordionCard({ title, icon, count, defaultOpen = false, children, badg
   );
 }
 
-function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, modeFilter, datePreset, customStartDate, customEndDate, setDatePreset, setCustomStartDate, setCustomEndDate }) {
+function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, assetFilter, modeFilter, datePreset, customStartDate, customEndDate, setDatePreset, setCustomStartDate, setCustomEndDate }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStrategy, setSelectedStrategy] = useState('ALL');
   const [expandedRowId, setExpandedRowId] = useState(null);
@@ -131,9 +131,35 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
       };
     });
 
-    const activeSet = new Set(['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED', 'ENTERED', 'EXECUTED']);
-    return [...fno, ...cash].filter(p => !activeSet.has(p.status) && (p.status === 'CLOSED' || p.status === 'EXITED'));
-  }, [fnoHistory, cashHistory, lotScaleMode]);
+    const rawArb = Array.isArray(arbHistory) ? arbHistory : (arbHistory?.items || []);
+    const arb = rawArb.map(p => {
+      const rawPnl = p.pnlAfterCosts != null ? Number(p.pnlAfterCosts) : (p.edgeAfterCosts != null ? Number(p.edgeAfterCosts) : 0);
+      const lots = Number(p.lots) > 0 ? Number(p.lots) : 1;
+      const realPnl = lotScaleMode === 'ONE_LOT' ? (rawPnl / lots) : rawPnl;
+      const isPaper = !p.broker || p.broker === 'PAPER';
+
+      return {
+        ...p,
+        id: p.id ? `arb-${p.id}` : `arb-${p.scanTime}-${Math.random()}`,
+        assetClass: 'FNO',
+        mode: isPaper ? 'PAPER' : (p.broker || 'LIVE'),
+        rawPnl,
+        realPnl,
+        originalLots: lots,
+        displaySymbol: `${p.underlying || 'FNO'} ${p.strike ? p.strike : ''} ${p.action || ''}`.trim(),
+        qtyDisplay: lotScaleMode === 'ONE_LOT' ? `1 lot (${(p.lotSize || 120).toLocaleString()} qty)` : `${lots} lot${lots > 1 ? 's' : ''} (${(lots * (p.lotSize || 120)).toLocaleString()} qty)`,
+        entryDate: fmtDate(p.scanTime || p.createdAt || p.enteredAt),
+        entryTime: fmtTime(p.scanTime || p.createdAt || p.enteredAt),
+        exitDate: fmtDate(p.exitTime || p.exitedAt || p.createdAt),
+        exitTime: fmtTime(p.exitTime || p.exitedAt || p.createdAt),
+        duration: calcDuration(p.scanTime || p.createdAt, p.exitTime || p.exitedAt),
+        timestamp: p.exitTime || p.exitedAt || p.scanTime || p.createdAt
+      };
+    });
+
+    const activeSet = new Set(['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED', 'ENTERED']);
+    return [...fno, ...cash, ...arb].filter(p => !activeSet.has(p.status));
+  }, [fnoHistory, cashHistory, arbHistory, lotScaleMode]);
 
   // Date Filtering Logic
   const filteredHistory = useMemo(() => {
@@ -872,6 +898,12 @@ export default function Positions() {
     refetchInterval: 10000,
   });
 
+  const { data: arbHistoryData } = useQuery({
+    queryKey: ['arbHistoryAudit'],
+    queryFn: () => client.get('/option-arbitrage/history', { params: { page: 0, size: 5000 } }).then(r => r.data),
+    refetchInterval: 15000,
+  });
+
   const { data: livePositionsData, refetch: refetchLiveActive } = useQuery({
     queryKey: ['livePositionsActiveSummary'],
     queryFn: () => client.get('/option-arbitrage/live-positions').then(r => r.data),
@@ -1086,6 +1118,7 @@ export default function Positions() {
         <UnifiedPerformanceAndHistory 
           fnoHistory={Array.isArray(fnoHistoryData) ? fnoHistoryData : (fnoHistoryData?.positions || [])} 
           cashHistory={Array.isArray(cashHistoryData) ? cashHistoryData : (cashHistoryData?.positions || cashHistoryData?.trades || [])}
+          arbHistory={arbHistoryData}
           assetFilter={assetFilter}
           modeFilter={modeFilter}
           datePreset={datePreset}
