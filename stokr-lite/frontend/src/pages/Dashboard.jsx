@@ -1,3 +1,4 @@
+import MarketSnapshot from '../components/MarketSnapshot';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
@@ -127,6 +128,9 @@ export default function Dashboard() {
           <Link to="/settings" className="header-btn" style={{ width: '44px', height: '44px', borderRadius: '12px', border: '2px solid rgba(148,163,184,0.15)', background: 'linear-gradient(135deg, rgba(255,255,255,0.8), rgba(255,255,255,0.6))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', cursor: 'pointer', transition: 'all 0.3s', textDecoration: 'none' }}>⚙️</Link>
         </div>
       </div>
+
+      {/* Institutional Market Snapshot */}
+      <MarketSnapshot />
 
       {/* Market Ticker */}
       <div className="ticker-container-aurora" style={{ marginBottom: '28px', position: 'relative', overflow: 'hidden' }}>
