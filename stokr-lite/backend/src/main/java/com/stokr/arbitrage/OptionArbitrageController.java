@@ -1886,7 +1886,7 @@ public class OptionArbitrageController {
             // Compute max loss from legs
             String stratUpper = (p.getStrategyType() != null ? p.getStrategyType() : "").toUpperCase();
             String actionUpper = (p.getAction() != null ? p.getAction() : "").toUpperCase();
-            boolean isRiskFreeArb = stratUpper.contains("BID_PARITY") || stratUpper.contains("ARBITRAGE") || 
+            boolean isRiskFreeArb = stratUpper.contains("PARITY") || stratUpper.contains("ARBITRAGE") || 
                                     stratUpper.contains("CONVERSION") || stratUpper.contains("REVERSAL") || 
                                     stratUpper.contains("BOX") || stratUpper.contains("SYNTHETIC") ||
                                     actionUpper.contains("BUY CE + SELL PE") || actionUpper.contains("SELL CE + BUY PE");

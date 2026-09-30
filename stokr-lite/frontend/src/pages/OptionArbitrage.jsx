@@ -1476,12 +1476,12 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                             ? 'bg-rose-50 text-rose-700 border-rose-200' 
                             : 'text-slate-400'
                         }`}>
-                          {pnl != null && pnl !== 0 ? `${pnl > 0 ? '+' : ''}₹${Math.round(pnl).toLocaleString('en-IN')}` : '--'}
+                          {pnl != null ? `${pnl >= 0 ? '+' : ''}₹${Math.round(pnl).toLocaleString('en-IN')}` : '₹0'}
                         </span>
                       </td>
                       <td className="px-2 py-2.5 text-right">
                         <span className={`font-mono font-bold text-[10px] ${mxLoss > 0 ? 'text-red-500' : 'text-emerald-600 font-extrabold'}`}>
-                          {mxLoss > 0 ? `₹${Math.round(mxLoss).toLocaleString('en-IN')}` : (String(p.strategyType || p.action || '').toUpperCase().includes('PARITY') || String(p.strategyType || p.action || '').toUpperCase().includes('ARBITRAGE') || String(p.strategyType || p.action || '').toUpperCase().includes('CONVERSION') || String(p.strategyType || p.action || '').toUpperCase().includes('REVERSAL') ? 'Risk-Free' : '--')}
+                          {(String(p.strategyType || p.action || '').toUpperCase().includes('PARITY') || String(p.strategyType || p.action || '').toUpperCase().includes('ARBITRAGE') || String(p.strategyType || p.action || '').toUpperCase().includes('CONVERSION') || String(p.strategyType || p.action || '').toUpperCase().includes('REVERSAL') || String(p.strategyType || p.action || '').toUpperCase().includes('BOX')) ? 'Risk-Free' : (mxLoss > 0 ? `₹${Math.round(mxLoss).toLocaleString('en-IN')}` : 'Risk-Free')}
                         </span>
                       </td>
                       <td className="px-2 py-2.5 text-center font-bold text-slate-700">{p.lots}</td>
