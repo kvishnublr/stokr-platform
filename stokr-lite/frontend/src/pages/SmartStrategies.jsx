@@ -611,6 +611,72 @@ function computePayoff(legs, lotSize, spot, opp) {
   return points;
 }
 
+// ── "Today" (T+0) curve ─────────────────────────────────────────────────────
+// Mark-to-market P&L if the underlying moved to each price right now, with each leg's time to
+// its own expiry unchanged. Same Black-Scholes (r = 6.5%) as the backend scanners.
+const TODAY_RATE = 0.065;
+const YEAR_MS = 365 * 24 * 3600 * 1000;
+
+function normCdf(x) {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x) / Math.SQRT2);
+  const erf = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t
+    * Math.exp(-(x * x) / 2);
+  return x >= 0 ? 0.5 * (1 + erf) : 0.5 * (1 - erf);
+}
+
+function bsPrice(call, S, K, T, sigma) {
+  if (T <= 0 || sigma <= 0) return Math.max(0, call ? S - K : K - S);
+  const sq = sigma * Math.sqrt(T);
+  const d1 = (Math.log(S / K) + (TODAY_RATE + 0.5 * sigma * sigma) * T) / sq;
+  const d2 = d1 - sq;
+  const df = Math.exp(-TODAY_RATE * T);
+  return call ? S * normCdf(d1) - K * df * normCdf(d2) : K * df * normCdf(-d2) - S * normCdf(-d1);
+}
+
+/** Implied vol by bisection (price is monotonic in sigma); null when the price is outside model bounds. */
+function impliedVol(call, price, S, K, T) {
+  if (!(price > 0) || !(T > 0)) return null;
+  let lo = 0.005, hi = 4;
+  if (price <= bsPrice(call, S, K, T, lo) || price >= bsPrice(call, S, K, T, hi)) return null;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (bsPrice(call, S, K, T, mid) > price) hi = mid; else lo = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/** Years until 15:30 IST on the leg's expiry (calendar legs carry their own), floored at 1 minute. */
+function legYears(leg, opp) {
+  const d = leg.expiry || opp?.expiryDate || opp?.expiry;
+  if (!d) return null;
+  const ms = new Date(`${String(d).slice(0, 10)}T15:30:00+05:30`).getTime();
+  if (Number.isNaN(ms)) return null;
+  return Math.max(ms - Date.now(), 60000) / YEAR_MS;
+}
+
+/** T+0 P&L at each price in `points`, or null if any leg lacks an expiry (e.g. illustrative legs). */
+function computeTodayPayoff(legs, lotSize, spot, opp, points) {
+  if (!legs || legs.length === 0 || !(spot > 0) || points.length === 0) return null;
+  const fallbackIv = opp?.atmIv > 0 ? opp.atmIv / 100 : 0.15;
+  const meta = [];
+  for (const l of legs) {
+    const T = legYears(l, opp);
+    if (T == null) return null;
+    const call = l.optionType === 'CE';
+    // Each leg's own IV (from its entry price at today's spot) keeps the skew in the curve.
+    const iv = impliedVol(call, l.price, spot, l.strike, T) || fallbackIv;
+    meta.push({ call, T, iv, strike: l.strike, price: l.price, qty: l.qty || 1, buy: l.side === 'BUY' });
+  }
+  return points.map(p => {
+    let pnl = 0;
+    for (const m of meta) {
+      const v = bsPrice(m.call, p.s, m.strike, m.T, m.iv);
+      pnl += (m.buy ? v - m.price : m.price - v) * m.qty;
+    }
+    return { s: p.s, pnl: pnl * lotSize };
+  });
+}
+
 function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
   const points = useMemo(() => computePayoff(legs, lotSize, spot, opp), [legs, lotSize, spot, opp]);
   const todayPoints = useMemo(() => computeTodayPayoff(legs, lotSize, spot, opp, points), [legs, lotSize, spot, opp, points]);

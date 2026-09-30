@@ -29,6 +29,18 @@ function calcDuration(entryTs, exitTs) {
   return `${hr}h`;
 }
 
+function fmtRupees(v, signed = true) {
+  const n = Math.round(Number(v) || 0);
+  const sign = signed ? (n > 0 ? '+' : n < 0 ? '-' : '') : (n < 0 ? '-' : '');
+  return `${sign}₹${Math.abs(n).toLocaleString('en-IN')}`;
+}
+
+/** Local calendar day of a timestamp, used to group the history log by day. */
+function dayKey(ts) {
+  const d = ts ? new Date(ts) : null;
+  return d && !isNaN(d.getTime()) ? d.toDateString() : 'Unknown date';
+}
+
 // Collapsible Accordion Wrapper Component
 function AccordionCard({ title, icon, count, defaultOpen = false, children, badgeColor = 'bg-indigo-100 text-indigo-800' }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
