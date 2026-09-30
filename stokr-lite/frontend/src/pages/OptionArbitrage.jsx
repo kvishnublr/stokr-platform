@@ -1125,8 +1125,14 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
     }
   }, [executionBroker]);
 
-  const brokerFilter = (modeFilter && modeFilter !== 'ALL') ? modeFilter : internalBrokerFilter;
-  const setBrokerFilter = setInternalBrokerFilter;
+  useEffect(() => {
+    if (modeFilter) {
+      setInternalBrokerFilter(modeFilter);
+    }
+  }, [modeFilter]);
+
+  const brokerFilter = internalBrokerFilter;
+  const setBrokerFilter = (val) => setInternalBrokerFilter(val);
 
   const { data, refetch } = useQuery({
     queryKey: ['livePositions'],
@@ -1146,12 +1152,32 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
   const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   const isToday = (p) => typeof p.enteredAt === 'string' && p.enteredAt.slice(0, 10) === todayIST;
 
+  const [viewScope, setViewScope] = useState('TODAY_ALL'); // 'OPEN' or 'TODAY_ALL'
   const isPaper = (p) => !p.broker || p.broker === 'PAPER';
   const isActiveStatus = (p) => p.status === 'OPEN' || p.status === 'RUNNING' || p.status === 'EXECUTING' || p.status === 'PARTIAL' || p.status === 'DETECTED' || p.status === 'ENTERED' || p.status === 'EXECUTED';
-  const allPositions = (data?.positions || []).filter(p => isActiveStatus(p));
-  const positions = brokerFilter === 'ALL' ? allPositions
-    : brokerFilter === 'PAPER' ? allPositions.filter(isPaper)
-    : allPositions.filter(p => !isPaper(p));
+  
+  const rawOpen = (data?.positions || []).filter(p => isActiveStatus(p));
+  const rawClosedToday = (data?.todayClosedPositions || []);
+  
+  const mergedToday = useMemo(() => {
+    if (viewScope === 'OPEN') return rawOpen;
+    // TODAY_ALL: Combine open + today's closed
+    const combined = [...rawOpen];
+    for (const c of rawClosedToday) {
+      if (!combined.some(x => x.id === c.id)) combined.push(c);
+    }
+    return combined;
+  }, [rawOpen, rawClosedToday, viewScope]);
+
+  const positions = brokerFilter === 'ALL' ? mergedToday
+    : brokerFilter === 'PAPER' ? mergedToday.filter(isPaper)
+    : mergedToday.filter(p => !isPaper(p));
+    
+  const openCount = rawOpen.length;
+  const todayClosedCount = rawClosedToday.length;
+  const realizedPnl = rawClosedToday.reduce((s, p) => s + (p.currentPnl != null ? Number(p.currentPnl) : 0), 0);
+  const unrealizedPnl = rawOpen.reduce((s, p) => s + (p.currentPnl != null ? Number(p.currentPnl) : 0), 0);
+  const combinedPnl = realizedPnl + unrealizedPnl;
   const sortedPositions = useMemo(() => {
     const arr = [...positions];
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -1270,17 +1296,31 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                 {brokerFilter === 'PAPER' ? 'Paper' : 'Total'} P&L: ₹{Math.round(filteredTotalPnl).toLocaleString('en-IN')}
               </span>
             )}
-            <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-full p-0.5" onClick={(e) => e.stopPropagation()}>
-              {[
-                { id: 'LIVE', label: '🔴 Live' },
-                { id: 'PAPER', label: '📄 Paper' },
-                { id: 'ALL', label: 'All' },
-              ].map(f => (
-                <button key={f.id} onClick={() => setBrokerFilter(f.id)}
-                  className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition ${brokerFilter === f.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
-                  {f.label}
-                </button>
-              ))}
+            <div className="flex items-center gap-1 border-l border-slate-200 pl-2">
+              <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-full p-0.5" onClick={(e) => e.stopPropagation()}>
+                {[
+                  { id: 'TODAY_ALL', label: `📅 Today's Trades (${mergedToday.length})` },
+                  { id: 'OPEN', label: `🟢 Open Only (${openCount})` },
+                ].map(v => (
+                  <button key={v.id} onClick={() => setViewScope(v.id)}
+                    className={`px-2 py-0.5 rounded-full text-[9px] font-black transition ${viewScope === v.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-full p-1 shadow-inner" onClick={(e) => e.stopPropagation()}>
+                {[
+                  { id: 'ALL', label: '⚡ All Modes' },
+                  { id: 'LIVE', label: '🔴 Live' },
+                  { id: 'PAPER', label: '📄 Paper' },
+                ].map(f => (
+                  <button key={f.id} type="button" onClick={() => setBrokerFilter(f.id)}
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-black cursor-pointer transition-all ${brokerFilter === f.id ? 'bg-indigo-600 text-white shadow-md scale-105' : 'text-slate-600 hover:bg-slate-200 hover:text-slate-900'}`}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1298,22 +1338,22 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
         {!collapsed && positions.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-[11px] text-left border-collapse">
-              <thead className="bg-slate-900 text-slate-200 text-[10px] uppercase tracking-wider font-black border-b-2 border-slate-800 shadow-sm">
+              <thead className="bg-slate-900 text-slate-200 text-[9px] uppercase tracking-wider font-black border-b-2 border-slate-800 shadow-sm">
                 <tr>
-                  <SortTh col="enteredAt">Time</SortTh>
-                  <SortTh col="broker">Broker</SortTh>
-                  <SortTh col="strategy">Strategy</SortTh>
-                  <SortTh col="underlying">Symbol</SortTh>
-                  <SortTh col="strike" className="text-right">Strike</SortTh>
-                  <SortTh col="expiry">Expiry</SortTh>
-                  <th className="px-3 py-3 text-center min-w-[220px]">Legs / Entry</th>
-                  <SortTh col="edge" className="text-right">Edge</SortTh>
-                  <SortTh col="edgeProgress" className="text-center">Progress</SortTh>
-                  <SortTh col="pnl" className="text-right">P&amp;L</SortTh>
-                  <SortTh col="maxLoss" className="text-right">Max Loss</SortTh>
-                  <SortTh col="lots" className="text-center">Lots</SortTh>
-                  <SortTh col="status" className="text-center">Status</SortTh>
-                  <th className="px-3 py-3 text-center">Actions</th>
+                  <SortTh col="enteredAt" className="px-1.5 py-2">Time</SortTh>
+                  <SortTh col="broker" className="px-1.5 py-2">Broker</SortTh>
+                  <SortTh col="strategy" className="px-1.5 py-2">Strategy</SortTh>
+                  <SortTh col="underlying" className="px-1.5 py-2">Symbol</SortTh>
+                  <SortTh col="strike" className="px-1.5 py-2 text-right">Strike</SortTh>
+                  <SortTh col="expiry" className="px-1.5 py-2">Expiry</SortTh>
+                  <th className="px-1.5 py-2 text-center">Legs</th>
+                  <SortTh col="edge" className="px-1.5 py-2 text-right">Edge</SortTh>
+                  <SortTh col="edgeProgress" className="px-1.5 py-2 text-center">Prog.</SortTh>
+                  <SortTh col="pnl" className="px-1.5 py-2 text-right">P&amp;L</SortTh>
+                  <SortTh col="maxLoss" className="px-1.5 py-2 text-right">Max L.</SortTh>
+                  <SortTh col="lots" className="px-1.5 py-2 text-center">Lots</SortTh>
+                  <SortTh col="status" className="px-1.5 py-2 text-center">Status</SortTh>
+                  <th className="px-1.5 py-2 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1329,26 +1369,26 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                     <React.Fragment key={p.id}>
                     <tr onClick={() => canShowPayoff && setExpandedPosId(isExpanded ? null : p.id)}
                       className={`${rowBg} hover:bg-indigo-50/60 transition-colors border-b border-slate-100 ${canShowPayoff ? 'cursor-pointer' : ''}`}>
-                      <td className="px-3 py-2 font-mono text-[10px] text-slate-500 whitespace-nowrap">{fmtTime(p.enteredAt)}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-1.5 py-1 font-mono text-[10px] text-slate-500 whitespace-nowrap">{fmtTime(p.enteredAt)}</td>
+                      <td className="px-1.5 py-1">
                         {isPaper(p)
                           ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold border border-slate-200">📄 Paper</span>
                           : <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-700 border border-emerald-500/30 text-[10px] font-black"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> {p.broker}</span>
                         }
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-1.5 py-1">
                         <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black bg-violet-500/15 text-violet-700 border border-violet-200 whitespace-nowrap shadow-2xs">
                           {STRATEGY_LABELS[p.strategyType] || p.strategyType || '—'}
                         </span>
                       </td>
-                      <td className="px-3 py-2 font-black text-slate-900 text-xs tracking-tight">{p.underlying}</td>
-                      <td className="px-3 py-2 text-right font-mono font-black text-slate-800">{p.strike}</td>
-                      <td className="px-3 py-2 text-[10px] font-mono text-slate-500 whitespace-nowrap">
+                      <td className="px-1.5 py-1 font-black text-slate-900 text-[11px] tracking-tight">{p.underlying}</td>
+                      <td className="px-1.5 py-1 text-right font-mono font-black text-slate-800 text-[10px]">{p.strike}</td>
+                      <td className="px-1.5 py-1 text-[9px] font-mono text-slate-500 whitespace-nowrap">
                         {(p.expiryDate || p.expiry) ? new Date((p.expiryDate || p.expiry) + (String(p.expiryDate || p.expiry).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '--'}
                       </td>
-                      <td className="px-3 py-2 min-w-[220px]">
+                      <td className="px-1.5 py-1">
                         {p.isMultiLeg ? (
-                          <div className="grid grid-cols-2 gap-1 min-w-[210px]">
+                          <div className="flex flex-wrap gap-0.5 max-w-[160px]">
                             {Array.isArray(p.legList) && p.legList.length > 0
                               ? p.legList.map((leg, i) => {
                                   const isBuy = leg.side === 'BUY';
@@ -1377,8 +1417,8 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-right font-mono font-black text-indigo-700">₹{target?.toFixed(0) || '--'}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-1.5 py-1 text-right font-mono font-black text-indigo-700 text-[10px]">₹{target?.toFixed(0) || '--'}</td>
+                      <td className="px-1.5 py-1">
                         <div className="flex items-center gap-1.5 min-w-[85px]">
                           <div className="flex-1 h-2 bg-slate-200/80 rounded-full overflow-hidden">
                             <div className={`h-full rounded-full transition-all ${captured >= 90 ? 'bg-gradient-to-r from-amber-400 to-amber-500' : captured >= 50 ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : 'bg-gradient-to-r from-blue-400 to-blue-500'}`}
@@ -1387,7 +1427,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                           <span className={`text-[10px] font-black min-w-[28px] text-right ${captured >= 90 ? 'text-amber-600' : captured >= 50 ? 'text-emerald-600' : 'text-blue-600'}`}>{captured}%</span>
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="px-1.5 py-1 text-right">
                         <span className={`inline-block font-mono font-black text-xs px-2.5 py-1 rounded-lg border ${
                           pnl > 0 
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
@@ -1759,7 +1799,7 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
                       <td className={`px-3 py-2 text-right font-bold ${g.realizedPnl > 0 ? 'text-emerald-600' : g.realizedPnl < 0 ? 'text-red-600' : 'text-slate-500'}`}>
                         {g.realizedPnl > 0 ? '+' : ''}{g.realizedPnl.toFixed(2)}
                       </td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="px-1.5 py-1 text-right">
                         <div className="flex flex-col gap-1 items-end">
                           <button onClick={(e) => { e.stopPropagation(); handleGroupExit(g); }} 
                             className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg font-bold text-[10px] shadow-sm transition-all transform active:scale-95">
@@ -1923,7 +1963,7 @@ function CashPositionsSection() {
                 return (
                   <tr key={p.id} className={`hover:bg-slate-50 ${isStale ? 'bg-amber-50' : ''}`}>
                     <td className="px-3 py-2 font-bold text-slate-800">{p.symbol}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-1.5 py-1">
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${p.strategyType === 'CASH_SURGE' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
                         {p.strategyType === 'CASH_SURGE' ? 'SURGE' : 'SWING'}
                       </span>
