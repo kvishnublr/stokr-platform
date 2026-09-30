@@ -93,15 +93,15 @@ const TOP_PICK_STYLES = `
 `;
 
 const TABS = [
-  { id: 'ratio', label: 'Ratio Butterfly', shortLabel: 'Ratio', icon: '🦋', risk: 'LOW', desc: 'Near-zero cost, 1:15 reward', gradient: 'from-violet-500 via-purple-500 to-fuchsia-500', lightBg: 'from-violet-50 to-purple-50', text: 'violet', accent: '#7c3aed', ring: 'ring-violet-500/30' },
-  { id: 'bwb', label: 'Broken Wing', shortLabel: 'BWB', icon: '🔥', risk: 'LOW', desc: 'Credit entry, zero one-side risk', gradient: 'from-amber-500 via-orange-500 to-red-400', lightBg: 'from-amber-50 to-orange-50', text: 'amber', accent: '#f59e0b', ring: 'ring-amber-500/30' },
-  { id: 'skew', label: 'Skew Harvest', shortLabel: 'Skew', icon: '📊', risk: 'LOW', desc: 'Exploit IV skew mispricing', gradient: 'from-cyan-500 via-blue-500 to-indigo-500', lightBg: 'from-cyan-50 to-blue-50', text: 'cyan', accent: '#0891b2', ring: 'ring-cyan-500/30' },
-  { id: 'theta', label: 'Theta Crush', shortLabel: 'Theta', icon: '⏰', risk: 'LOW', desc: 'Expiry day theta capture', gradient: 'from-emerald-500 via-teal-500 to-cyan-500', lightBg: 'from-emerald-50 to-teal-50', text: 'emerald', accent: '#10b981', ring: 'ring-emerald-500/30' },
-  { id: 'box', label: 'Box Spread', shortLabel: 'Box', icon: '📦', risk: 'ZERO', desc: 'Risk-free arbitrage profit', gradient: 'from-rose-500 via-pink-500 to-fuchsia-500', lightBg: 'from-rose-50 to-pink-50', text: 'rose', accent: '#e11d48', ring: 'ring-rose-500/30' },
-  { id: 'jade', label: 'Jade Lizard', shortLabel: 'Jade', icon: '🦎', risk: 'LOW', desc: 'Zero upside risk, 70%+ win', gradient: 'from-lime-500 via-green-500 to-emerald-500', lightBg: 'from-lime-50 to-green-50', text: 'green', accent: '#16a34a', ring: 'ring-green-500/30' },
+  { id: 'ratio', label: 'Ratio Butterfly', shortLabel: 'Ratio', icon: '🦋', risk: 'MEDIUM', desc: 'Low cost; loses past far wing', gradient: 'from-violet-500 via-purple-500 to-fuchsia-500', lightBg: 'from-violet-50 to-purple-50', text: 'violet', accent: '#7c3aed', ring: 'ring-violet-500/30' },
+  { id: 'bwb', label: 'Broken Wing', shortLabel: 'BWB', icon: '🔥', risk: 'LOW', desc: 'Credit entry, no risk on one side', gradient: 'from-amber-500 via-orange-500 to-red-400', lightBg: 'from-amber-50 to-orange-50', text: 'amber', accent: '#f59e0b', ring: 'ring-amber-500/30' },
+  { id: 'skew', label: 'Skew Harvest', shortLabel: 'Skew', icon: '📊', risk: 'LOW', desc: 'Bullish, funded by put skew', gradient: 'from-cyan-500 via-blue-500 to-indigo-500', lightBg: 'from-cyan-50 to-blue-50', text: 'cyan', accent: '#0891b2', ring: 'ring-cyan-500/30' },
+  { id: 'theta', label: 'Theta Crush', shortLabel: 'Theta', icon: '⏰', risk: 'LOW', desc: 'Expiry-day iron fly', gradient: 'from-emerald-500 via-teal-500 to-cyan-500', lightBg: 'from-emerald-50 to-teal-50', text: 'emerald', accent: '#10b981', ring: 'ring-emerald-500/30' },
+  { id: 'box', label: 'Box Spread', shortLabel: 'Box', icon: '📦', risk: 'EXECUTION', desc: 'Payoff locked at expiry', gradient: 'from-rose-500 via-pink-500 to-fuchsia-500', lightBg: 'from-rose-50 to-pink-50', text: 'rose', accent: '#e11d48', ring: 'ring-rose-500/30' },
+  { id: 'jade', label: 'Jade Lizard', shortLabel: 'Jade', icon: '🦎', risk: 'LOW', desc: 'Defined risk, bullish tilt', gradient: 'from-lime-500 via-green-500 to-emerald-500', lightBg: 'from-lime-50 to-green-50', text: 'green', accent: '#16a34a', ring: 'ring-green-500/30' },
   { id: 'calendar', label: 'Calendar Edge', shortLabel: 'Calendar', icon: '📅', risk: 'LOW', desc: 'Time decay differential', gradient: 'from-sky-500 via-blue-500 to-indigo-500', lightBg: 'from-sky-50 to-blue-50', text: 'sky', accent: '#0284c7', ring: 'ring-sky-500/30' },
-  { id: 'condor', label: 'Iron Condor', shortLabel: 'Condor', icon: '🦅', risk: 'LOW', desc: 'Range-bound, 70-80% win', gradient: 'from-indigo-500 via-purple-500 to-pink-500', lightBg: 'from-indigo-50 to-purple-50', text: 'indigo', accent: '#6366f1', ring: 'ring-indigo-500/30' },
-  { id: 'adaptive', label: 'Adaptive AI', shortLabel: 'Adaptive', icon: '🧠', risk: 'SMART', desc: 'Regime-aware dynamic strategies', gradient: 'from-fuchsia-500 via-pink-500 to-rose-500', lightBg: 'from-fuchsia-50 to-rose-50', text: 'fuchsia', accent: '#d946ef', ring: 'ring-fuchsia-500/30' },
+  { id: 'condor', label: 'Iron Condor', shortLabel: 'Condor', icon: '🦅', risk: 'LOW', desc: 'Range-bound, defined risk', gradient: 'from-indigo-500 via-purple-500 to-pink-500', lightBg: 'from-indigo-50 to-purple-50', text: 'indigo', accent: '#6366f1', ring: 'ring-indigo-500/30' },
+  { id: 'adaptive', label: 'Adaptive', shortLabel: 'Adaptive', icon: '🧠', risk: 'SMART', desc: 'Rules by IV rank & day trend', gradient: 'from-fuchsia-500 via-pink-500 to-rose-500', lightBg: 'from-fuchsia-50 to-rose-50', text: 'fuchsia', accent: '#d946ef', ring: 'ring-fuchsia-500/30' },
 ];
 
 const SCAN_URLS = {
@@ -117,15 +117,15 @@ const SCAN_URLS = {
 };
 
 const STRATEGY_INFO = {
-  ratio: { structure: 'BUY 1 ATM | SELL 3 OTM | BUY 2 FAR OTM', detail: 'Risk ₹200-500 to make ₹5,000-15,000. Near-zero cost entry with asymmetric payoff. 20-25% hit rate = net profitable over time.', emptyMsg: 'No ratio butterfly setups right now. Requires near-zero cost with R:R >= 3:1. Try during market hours (9:15 AM - 3:30 PM).' },
-  bwb: { structure: 'BUY Wing | SELL 2x Body | BUY Far Wing (Asymmetric)', detail: 'Credit entry with zero risk on one side. 60-65% win rate. Ideal for directional bias with protection.', emptyMsg: 'No broken wing butterfly setups found. Requires credit > 0 with valid asymmetric wing structure.' },
-  skew: { structure: 'SELL OTM Put Spread (overpriced) + BUY OTM Call Spread (cheap)', detail: 'Exploits structural IV skew. Near-zero cost. Profits when market stays flat or moves up.', emptyMsg: 'No IV skew opportunities. Requires put-call IV difference >= 2%. More common in volatile/fearful markets.' },
-  theta: { structure: 'SELL ATM Straddle + BUY Wings (Iron Butterfly)', detail: 'Capture 70% theta decay in last 90 minutes of expiry. 90-95% win rate in optimal window (post 1:30 PM).', emptyMsg: 'Theta crush shows only on expiry day or 1-2 days before. Most effective on expiry day after 1:30 PM.' },
-  box: { structure: 'Bull Call Spread + Bear Put Spread (Same Strikes)', detail: 'Zero-risk arbitrage. Box value at expiry = strike width (guaranteed). Profit when market misprices the box below theoretical value after transaction costs.', emptyMsg: 'No box spread arbitrage found. Requires market mispricing where box cost < theoretical value minus transaction costs. Very rare in efficient markets.' },
-  jade: { structure: 'SELL OTM Put + SELL OTM Call + BUY Further OTM Call', detail: 'Short put + bear call spread. Zero upside risk when credit >= call spread width. 70-80% estimated win rate with defined risk.', emptyMsg: 'No jade lizard setups found. Requires credit > 40% of call spread width. Best in moderate IV environments with slight bullish bias.' },
+  ratio: { structure: 'BUY 1 ATM | SELL 3 OTM | BUY 2 FAR OTM', detail: 'Low-cost entry that peaks at the short strike. Beyond the far wing the legs net out and lock in a loss of wing width + cost — see Max Risk per lot. Win % is the option-implied probability of expiring inside the profit zone.', emptyMsg: 'No ratio butterfly setups right now. Requires near-zero cost with R:R >= 3:1. Try during market hours (9:15 AM - 3:30 PM).' },
+  bwb: { structure: 'BUY Wing | SELL 2x Body | BUY Far Wing (Asymmetric)', detail: 'Credit entry: the narrow side keeps the credit. Max loss (wide wing − narrow wing − credit) only if price runs through the far wing. Win % is option-implied.', emptyMsg: 'No broken wing butterfly setups found. Requires credit > 0 with valid asymmetric wing structure.' },
+  skew: { structure: 'SELL OTM Put Spread + BUY OTM Call Spread', detail: 'Sells a put spread and buys a call spread. Index puts are normally priced above calls, and that premium funds a bullish position. Loses the full put-spread width (plus any net debit) on a sharp fall.', emptyMsg: 'No IV skew opportunities. Requires put-call IV difference >= 2%. More common in volatile/fearful markets.' },
+  theta: { structure: 'SELL ATM Straddle + BUY Wings (Iron Butterfly)', detail: 'Short ATM straddle with wings on expiry day. Decay figures are a rule of thumb; Win % is the option-implied chance of settling between the breakevens. Positions are closed 3 minutes before the bell.', emptyMsg: 'Theta crush shows only on expiry day or 1-2 days before. Most effective on expiry day after 1:30 PM.' },
+  box: { structure: 'Bull Call Spread + Bear Put Spread (Same Strikes)', detail: 'Bull call spread + bear put spread on the same strikes: payoff is fixed at the strike width at expiry (European, cash-settled). The risk is in execution — four legs fill separately and quotes move — so Max Risk shows slippage + costs. Real edges above costs are rare; off-hours LTP \'boxes\' are usually stale prints.', emptyMsg: 'No box spread arbitrage found. Requires market mispricing where box cost < theoretical value minus transaction costs. Very rare in efficient markets.' },
+  jade: { structure: 'SELL OTM Put + BUY Far OTM Put + SELL OTM Call + BUY Further OTM Call', detail: 'Short put + bear call spread, with a far put bought to cap the downside. No upside risk only when the credit covers the call-spread width. The downside loss can be several times the credit — check Max Loss.', emptyMsg: 'No jade lizard setups found. Requires credit > 40% of call spread width. Best in moderate IV environments with slight bullish bias.' },
   calendar: { structure: 'SELL Near-Expiry + BUY Far-Expiry (Same Strike, Same Type)', detail: 'Exploits faster time decay of near-term options. Profits from theta differential and IV term structure. Low risk, defined max loss.', emptyMsg: 'No calendar spread edge found. Requires meaningful theta differential between near and far expiry. Best when near-term IV > far-term IV.' },
-  condor: { structure: 'BUY OTM Put + SELL OTM Put + SELL OTM Call + BUY OTM Call', detail: 'Defined-risk range-bound strategy. Max profit = net credit when price stays between short strikes. 70-80% win rate. Both sides protected by long wings.', emptyMsg: 'No iron condor setups found. Requires net credit > 30% of wing width. Best in sideways/range-bound markets with moderate IV.' },
-  adaptive: { structure: 'Dynamically constructed based on market regime', detail: 'Reads IV rank, trend, skew, and expected move to construct the optimal strategy structure. Iron Butterfly in high IV, Ratio Spreads for direction, Dynamic Condors at expected move boundaries, Skew Exploiter for mispricing, Momentum Ladders for trends, Vol Crush plays.', emptyMsg: 'No adaptive setups found. The scanner requires live market data to detect regime and construct strategies.' },
+  condor: { structure: 'BUY OTM Put + SELL OTM Put + SELL OTM Call + BUY OTM Call', detail: 'Defined-risk range trade: max profit is the net credit when price stays between the short strikes. Win % is the option-implied probability of settling between the breakevens — a high Win % comes with a small credit versus the risk.', emptyMsg: 'No iron condor setups found. Requires net credit > 30% of wing width. Best in sideways/range-bound markets with moderate IV.' },
+  adaptive: { structure: 'Dynamically constructed based on market regime', detail: 'Rule-based: picks a structure from IV rank and the day\'s move (vs previous close) — iron butterfly / vol-crush in high IV, credit ratio spreads or ladders on trend days, condors otherwise. Win % is option-implied.', emptyMsg: 'No adaptive setups found. The scanner requires live market data to detect regime and construct strategies.' },
 };
 
 const STRAT_LABELS = {
@@ -244,11 +244,11 @@ export default function SmartStrategies() {
                     <span className={`text-xl leading-none ${isActive ? 'drop-shadow-sm' : 'grayscale-[30%] group-hover:grayscale-0 transition-all'}`}>{t.icon}</span>
                     <div className={`text-[11px] font-bold leading-tight ${isActive ? 'text-white' : 'text-slate-700'}`}>{t.label}</div>
                     <div className={`text-[9px] leading-tight ${isActive ? 'text-white/50' : 'text-slate-400'}`}>{t.desc}</div>
-                    {t.risk === 'ZERO' && !isActive && (
-                      <span className="mt-0.5 px-1.5 py-0.5 rounded text-[7px] font-black bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase tracking-wider">Zero Risk</span>
+                    {t.risk === 'EXECUTION' && !isActive && (
+                      <span className="mt-0.5 px-1.5 py-0.5 rounded text-[7px] font-black bg-amber-50 text-amber-600 border border-amber-100 uppercase tracking-wider">Execution Risk</span>
                     )}
-                    {t.risk === 'ZERO' && isActive && (
-                      <span className="mt-0.5 px-1.5 py-0.5 rounded text-[7px] font-black bg-white/20 text-white uppercase tracking-wider">Zero Risk</span>
+                    {t.risk === 'EXECUTION' && isActive && (
+                      <span className="mt-0.5 px-1.5 py-0.5 rounded text-[7px] font-black bg-white/20 text-white uppercase tracking-wider">Execution Risk</span>
                     )}
                   </div>
                 </button>
@@ -613,6 +613,7 @@ function computePayoff(legs, lotSize, spot, opp) {
 
 function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
   const points = useMemo(() => computePayoff(legs, lotSize, spot, opp), [legs, lotSize, spot, opp]);
+  const todayPoints = useMemo(() => computeTodayPayoff(legs, lotSize, spot, opp, points), [legs, lotSize, spot, opp, points]);
   const svgRef = useRef(null);
   const [hover, setHover] = useState(null);
 
@@ -624,8 +625,13 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
     const PAD_L = 70, PAD_R = 40;
     const plotW = 700 - PAD_L - PAD_R;
     if (svgX < PAD_L || svgX > 700 - PAD_R) { setHover(null); return; }
-    const ratio = (svgX - PAD_L) / plotW;
-    const idx = Math.min(Math.max(0, Math.round(ratio * (points.length - 1))), points.length - 1);
+    // Samples include every strike, so they are not evenly spaced: pick the nearest price.
+    const lo = points[0].s, hi = points[points.length - 1].s;
+    const target = lo + ((svgX - PAD_L) / plotW) * (hi - lo);
+    let idx = 0;
+    for (let i = 1; i < points.length; i++) {
+      if (Math.abs(points[i].s - target) < Math.abs(points[idx].s - target)) idx = i;
+    }
     setHover({ idx, svgX });
   }, [points]);
 
@@ -634,8 +640,9 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
   const W = 700, H = 260, PAD = { t: 30, r: 40, b: 40, l: 70 };
   const plotW = W - PAD.l - PAD.r, plotH = H - PAD.t - PAD.b;
 
-  const minPnl = Math.min(...points.map(p => p.pnl));
-  const maxPnl = Math.max(...points.map(p => p.pnl));
+  const allPnl = todayPoints ? [...points, ...todayPoints].map(p => p.pnl) : points.map(p => p.pnl);
+  const minPnl = Math.min(...allPnl);
+  const maxPnl = Math.max(...allPnl);
   const pnlRange = maxPnl - minPnl || 1;
   const minS = points[0].s, maxS = points[points.length - 1].s;
   const sRange = maxS - minS || 1;
@@ -648,6 +655,9 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
 
   const t0PathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.s).toFixed(1)},${y(p.t0Pnl !== undefined ? p.t0Pnl : p.pnl).toFixed(1)}`).join(' ');
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.s).toFixed(1)},${y(p.pnl).toFixed(1)}`).join(' ');
+  const todayD = todayPoints
+    ? todayPoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.s).toFixed(1)},${y(p.pnl).toFixed(1)}`).join(' ')
+    : null;
 
   const profitPath = [];
   const lossPath = [];
@@ -689,19 +699,25 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
   const maxLossPt = points.reduce((a, b) => b.pnl < a.pnl ? b : a);
 
   const hoverPt = hover ? points[hover.idx] : null;
+  const hoverToday = hover && todayPoints ? todayPoints[hover.idx] : null;
+  const fmtPnl = v => `${v >= 0 ? '+' : '-'}₹${Math.abs(Math.round(v)).toLocaleString()}`;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-black text-gray-800 tracking-tight">Payoff at Expiry</span>
-        <div className="flex items-center gap-4 text-[10px]">
+        <span className="text-sm font-black text-gray-800 tracking-tight">Payoff</span>
+        <div className="flex items-center gap-4 text-[10px] flex-wrap justify-end">
+          <span className="flex items-center gap-1.5"><span className="w-4 h-0.5" style={{background:'#7c3aed'}}></span><span className="text-violet-700 font-bold">Expiry</span></span>
+          {todayPoints && (
+            <span className="flex items-center gap-1.5" title="Mark-to-market P&L if the underlying moved there now (Black-Scholes, each leg's own IV)"><span className="w-4 h-0.5" style={{background:'#2563eb'}}></span><span className="text-blue-700 font-bold">Today (T+0)</span></span>
+          )}
           <span className="flex items-center gap-1.5"><span className="w-3 h-2.5 rounded-sm" style={{background:'#10b981'}}></span><span className="text-emerald-700 font-bold">Profit</span></span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-2.5 rounded-sm" style={{background:'#ef4444'}}></span><span className="text-red-700 font-bold">Loss</span></span>
           <span className="flex items-center gap-1.5"><span className="w-3.5 h-1 rounded-full" style={{background:'#2563eb'}}></span><span className="text-blue-600 font-bold">Target P&L</span></span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-0.5" style={{background:'#6366f1'}}></span><span className="text-indigo-700 font-bold">Spot: {spot?.toLocaleString()}</span></span>
           {hoverPt && (
             <span className={`font-mono font-black px-2 py-0.5 rounded-md text-[11px] ${hoverPt.pnl >= 0 ? 'text-emerald-800 bg-emerald-100 border border-emerald-300' : 'text-red-800 bg-red-100 border border-red-300'}`}>
-              {hoverPt.s.toLocaleString()} → {hoverPt.pnl >= 0 ? '+' : ''}₹{Math.round(hoverPt.pnl).toLocaleString()}
+              {hoverPt.s.toLocaleString()} → {fmtPnl(hoverPt.pnl)}{hoverToday ? ` · today ${fmtPnl(hoverToday.pnl)}` : ''}
             </span>
           )}
         </div>
@@ -778,18 +794,24 @@ function PayoffChart({ opp, legs, lotSize, spot, accentColor = '#7c3aed' }) {
             <line x1={x(hoverPt.s)} y1={PAD.t} x2={x(hoverPt.s)} y2={H - PAD.b} stroke="#6366f1" strokeWidth="1" strokeDasharray="3,2" opacity="0.5" />
             <line x1={PAD.l} y1={y(hoverPt.pnl)} x2={W - PAD.r} y2={y(hoverPt.pnl)} stroke="#6366f1" strokeWidth="1" strokeDasharray="3,2" opacity="0.3" />
             <circle cx={x(hoverPt.s)} cy={y(hoverPt.pnl)} r="6" fill={hoverPt.pnl >= 0 ? '#10b981' : '#ef4444'} stroke="white" strokeWidth="2.5" />
-            <g transform={`translate(${Math.min(x(hoverPt.s) + 12, W - PAD.r - 150)}, ${Math.max(y(hoverPt.pnl) - 48, PAD.t)})`}>
-              <rect x="0" y="0" width="145" height="44" rx="8" fill="white" stroke="#e5e7eb" strokeWidth="1" />
-              <rect x="0" y="0" width="145" height="44" rx="8" fill="none" stroke={hoverPt.pnl >= 0 ? '#10b981' : '#ef4444'} strokeWidth="1.5" opacity="0.5" />
+            {hoverToday && <circle cx={x(hoverToday.s)} cy={y(hoverToday.pnl)} r="5" fill="#2563eb" stroke="white" strokeWidth="2" />}
+            <g transform={`translate(${Math.min(x(hoverPt.s) + 12, W - PAD.r - 160)}, ${Math.max(y(hoverPt.pnl) - 48, PAD.t)})`}>
+              <rect x="0" y="0" width="155" height={hoverToday ? 62 : 44} rx="8" fill="white" stroke="#e5e7eb" strokeWidth="1" />
+              <rect x="0" y="0" width="155" height={hoverToday ? 62 : 44} rx="8" fill="none" stroke={hoverPt.pnl >= 0 ? '#10b981' : '#ef4444'} strokeWidth="1.5" opacity="0.5" />
               <text x="12" y="17" fontSize="10" fill="#6b7280" fontFamily="monospace" fontWeight="600">Price: {hoverPt.s.toLocaleString()}</text>
-              <text x="12" y="35" fontSize="13" fill={hoverPt.pnl >= 0 ? '#059669' : '#dc2626'} fontWeight="900" fontFamily="monospace">
-                P&L: {hoverPt.pnl >= 0 ? '+' : ''}₹{Math.round(hoverPt.pnl).toLocaleString()}
+              {hoverToday && (
+                <text x="12" y="35" fontSize="12" fill="#1d4ed8" fontWeight="800" fontFamily="monospace">
+                  Today:  {fmtPnl(hoverToday.pnl)}
+                </text>
+              )}
+              <text x="12" y={hoverToday ? 53 : 35} fontSize={hoverToday ? 12 : 13} fill={hoverPt.pnl >= 0 ? '#059669' : '#dc2626'} fontWeight="900" fontFamily="monospace">
+                {hoverToday ? 'Expiry: ' : 'P&L: '}{fmtPnl(hoverPt.pnl)}
               </text>
             </g>
           </>
         )}
 
-        <text x={W / 2} y={H - 4} textAnchor="middle" fontSize="10" fill="#6b7280" fontWeight="bold">Underlying Price at Expiry</text>
+        <text x={W / 2} y={H - 4} textAnchor="middle" fontSize="10" fill="#6b7280" fontWeight="bold">Underlying Price</text>
         <text x={12} y={H / 2} textAnchor="middle" fontSize="10" fill="#6b7280" fontWeight="bold" transform={`rotate(-90,12,${H / 2})`}>P&L (₹)</text>
       </svg>
     </div>
@@ -1157,8 +1179,8 @@ function TabContent({ tab, underlying, tabInfo, onEnter }) {
         <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-50 border border-blue-200/60">
           <span className="text-lg">📊</span>
           <div>
-            <span className="text-[11px] font-bold text-blue-700">LTP-based estimates</span>
-            <span className="text-[10px] text-blue-500 ml-2">Market closed — prices based on Last Traded Price / Bid-Ask quotes. Actual live execution prices may differ when market reopens.</span>
+            <span className="text-[11px] font-bold text-blue-700">LTP preview — market closed</span>
+            <span className="text-[10px] text-blue-500 ml-2">Every leg is priced at its Last Traded Price, so these are indicative only and cannot be entered now. From market open, scans use live bid/ask and strikes without a two-sided quote are skipped.</span>
           </div>
         </div>
       )}
@@ -1351,7 +1373,7 @@ function SkewContent({ opps, onEnter }) {
             <div><div className="text-[9px] text-slate-400 font-semibold">Put Spread</div><div className="text-xs font-mono text-slate-600">S{o.putSellStrike}/B{o.putBuyStrike}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">Call Spread</div><div className="text-xs font-mono text-slate-600">B{o.callBuyStrike}/S{o.callSellStrike}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">Skew Edge</div><div className="text-sm font-black text-cyan-600">{o.skewEdge}%</div></div>
-            <div><div className="text-[9px] text-slate-400 font-semibold">If Flat</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.scenarioFlat).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">If Flat</div><div className={`text-sm font-black ${o.scenarioFlat >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>₹{Math.round(o.scenarioFlat).toLocaleString()}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">If Up</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.scenarioUp).toLocaleString()}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">If Down</div><div className="text-sm font-black text-red-500">₹{Math.round(o.scenarioDown).toLocaleString()}</div></div>
           </div>
@@ -1359,7 +1381,7 @@ function SkewContent({ opps, onEnter }) {
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <Stat label="IV Skew Edge" value={`${b.skewEdge}%`} color="text-cyan-600" icon="📊" />
         <Stat label={b.netCostRs <= 0 ? "Net Credit" : "Net Cost"} value={b.netCostRs <= 0 ? `+₹${Math.abs(Math.round(b.netCostRs)).toLocaleString()}` : `₹${Math.round(b.netCostRs).toLocaleString()}`} sub={b.netCostRs <= 0 ? 'Credit received' : 'Net debit'} color={b.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'} icon="💵" />
-        <Stat label="If Flat" value={`₹${Math.round(b.scenarioFlat).toLocaleString()}`} color="text-emerald-600" icon="➡️" />
+        <Stat label="If Flat" value={`₹${Math.round(b.scenarioFlat).toLocaleString()}`} color={b.scenarioFlat >= 0 ? 'text-emerald-600' : 'text-red-500'} icon="➡️" />
         <Stat label="If Up" value={`₹${Math.round(b.scenarioUp).toLocaleString()}`} color="text-emerald-600" icon="📈" />
         <Stat label="If Down" value={`₹${Math.round(b.scenarioDown).toLocaleString()}`} color="text-red-500" icon="📉" />
       </div>
@@ -1426,7 +1448,7 @@ function ThetaContent({ opps, onEnter }) {
         <Stat label="Window" value={b.window?.split(' ')[0] || '--'} sub={b.isOptimalWindow ? 'GO NOW!' : 'Wait for optimal'} color={b.isOptimalWindow ? 'text-emerald-600' : 'text-slate-500'} icon="⏰" />
         <Stat label="Net Credit" value={`₹${Math.round(b.netCreditRs ?? 0).toLocaleString()}`} color="text-emerald-600" icon="💵" />
         <Stat label="Expected P&L" value={`₹${Math.round(b.expectedProfitRs ?? b.dailyDecayRs ?? 0).toLocaleString()}`} color="text-emerald-600" icon="💰" />
-        <Stat label="Win Rate" value={b.winRate || '--'} color="text-blue-600" icon="🎯" />
+        <Stat label="Win % (model)" value={b.winRate || '--'} color="text-blue-600" icon="🎯" />
       </div>
 
       {!isExpiryDay && (
@@ -1560,14 +1582,14 @@ function JadeContent({ opps, onEnter }) {
             <div><div className="text-[9px] text-slate-400 font-semibold">Max Loss</div><div className="text-sm font-black text-red-500">₹{Math.round(o.maxLoss || o.maxLossDown).toLocaleString()}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">R:R</div><div className="text-sm font-black text-blue-600">{(o.riskRewardRatio || 0).toFixed(2)}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">Win Rate</div><div className="text-sm font-black text-emerald-600">{Math.round(o.estimatedWinRate)}%</div></div>
-            <div><div className="text-[9px] text-slate-400 font-semibold">Flat P&L</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.scenarioFlat).toLocaleString()}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">Flat P&L</div><div className={`text-sm font-black ${o.scenarioFlat >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>₹{Math.round(o.scenarioFlat).toLocaleString()}</div></div>
           </div>
         )} />
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
         <Stat label="Best Credit" value={`₹${Math.round(b.netCreditRs || b.creditRs).toLocaleString()}`} sub="After costs" color="text-emerald-600" icon="💵" />
         <Stat label="Max Loss" value={`₹${Math.round(b.maxLoss || b.maxLossDown).toLocaleString()}`} sub="Defined risk" color="text-red-500" icon="🛡️" />
         <Stat label="R:R Ratio" value={`${(b.riskRewardRatio || 0).toFixed(2)}`} sub="Reward/Risk" color="text-blue-600" icon="📊" />
-        <Stat label="Win Rate" value={`${Math.round(b.estimatedWinRate)}%`} color="text-blue-600" icon="🎯" />
+        <Stat label="Win % (model)" value={`${Math.round(b.estimatedWinRate)}%`} color="text-blue-600" icon="🎯" />
         <Stat label="Break Even" value={Math.round(b.breakEvenDown).toLocaleString()} sub="Downside" color="text-red-500" icon="📉" />
         <Stat label="Signals" value={opps.length} sub={b.expiry} color="text-green-600" icon="📡" />
       </div>
@@ -2019,7 +2041,7 @@ function PerformanceReportCard() {
       </div>
       <div className="p-4 grid grid-cols-2 md:grid-cols-6 gap-3">
         <Stat label="Total Trades" value={data.totalTrades} icon="📈" />
-        <Stat label="Win Rate" value={`${data.winRate}%`} color={winRateColor} icon="🎯" />
+        <Stat label="Win % (model)" value={`${data.winRate}%`} color={winRateColor} icon="🎯" />
         <Stat label="Total P&L" value={`₹${data.totalPnl?.toLocaleString?.() || 0}`} color={pnlColor} icon="💰" />
         <Stat label="Avg Win" value={`₹${data.avgWin?.toLocaleString?.() || 0}`} color="text-emerald-600" icon="✅" />
         <Stat label="Avg Loss" value={`₹${data.avgLoss?.toLocaleString?.() || 0}`} color="text-red-500" icon="❌" />

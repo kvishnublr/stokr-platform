@@ -1,5 +1,7 @@
 package com.stokr.smartstrategy;
 
+import com.stokr.arbitrage.QuotePolicy;
+import com.stokr.marketdata.MarketCalendar;
 import com.stokr.arbitrage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,6 +68,10 @@ public class BrokenWingButterflyScanner {
         log.info("BWB [{}]: spot={}, atm={}, expiry={}, dte={}, instruments={}, quotes={}",
             underlying, spot, atmStrike, expiry, dte, instruments.size(), quotes.size());
 
+        double years = PopModel.yearsToExpiry(expiry);
+        double atmIv = PopModel.atmIv(getQuote(quotes, underlying, expiry, atmStrike, "CE"),
+            getQuote(quotes, underlying, expiry, atmStrike, "PE"), spot, atmStrike, years);
+
         // PUT BWB: Buy lower put, sell 2x middle put, buy higher put (skip a strike on downside)
         // CALL BWB: Buy higher call, sell 2x middle call, buy lower call (skip a strike on upside)
         for (String optType : List.of("PE", "CE")) {
@@ -125,6 +131,14 @@ public class BrokenWingButterflyScanner {
                     opp.put("maxLoss", round2(maxLossWide + txnCost));
                     opp.put("riskReward", round2(maxProfitNarrow / (maxLossWide + txnCost)));
                     opp.put("zeroRiskSide", "PE".equals(optType) ? "UPSIDE" : "DOWNSIDE");
+                    boolean call = "CE".equals(optType);
+                    double breakEven = OptionPayoffs.bwbBreakeven(call, bodyStrike, narrowWidth, credit);
+                    opp.put("breakEven", round2(breakEven));
+                    // Profitable everywhere on the narrow side of the breakeven
+                    opp.put("estimatedWinRate", call
+                        ? PopModel.popPct(spot, Double.NaN, breakEven, years, atmIv)
+                        : PopModel.popPct(spot, breakEven, Double.NaN, years, atmIv));
+                    opp.put("atmIv", round2(atmIv * 100));
                     opp.put("action", String.format("BUY %d%s @ %.1f | SELL 2x%d%s @ %.1f | BUY %d%s @ %.1f",
                         nearWingStrike, optType, nAsk, bodyStrike, optType, bBid, farWingStrike, optType, fAsk));
                     opp.put("legList", List.of(
@@ -147,12 +161,8 @@ public class BrokenWingButterflyScanner {
     private OptionChainService.OptionQuote getQuote(Map<String, OptionChainService.OptionQuote> quotes,
             String underlying, LocalDate expiry, int strike, String optType) {
         for (String c : optionChainService.buildNfoSymbolCandidates(underlying, expiry, strike, optType)) {
-            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) {
-                OptionChainService.OptionQuote q = quotes.get(c);
-                if (q.bid <= 0) q.bid = q.lastPrice;
-                if (q.ask <= 0) q.ask = q.lastPrice;
-                return q;
-            }
+            OptionChainService.OptionQuote q = QuotePolicy.usable(quotes.get(c), MarketCalendar.isMarketOpenNow());
+            if (q != null) return q;
         }
         return null;
     }

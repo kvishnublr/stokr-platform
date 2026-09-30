@@ -1,5 +1,7 @@
 package com.stokr.smartstrategy;
 
+import com.stokr.arbitrage.QuotePolicy;
+import com.stokr.marketdata.MarketCalendar;
 import com.stokr.arbitrage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,7 +58,7 @@ public class SkewHarvestScanner {
 
         LocalDate expiry = optionChainService.getNearestExpiry(underlying);
         long dte = Math.max(1, Duration.between(LocalDate.now().atStartOfDay(), expiry.atStartOfDay()).toDays());
-        double years = dte / 365.0;
+        double years = PopModel.yearsToExpiry(expiry);
         int step = OptionChainService.getStrikeStep(underlying);
         int lotSize = OptionChainService.getLotSize(underlying);
         int atmStrike = (int) (Math.round(spot / step) * step);
@@ -86,7 +88,12 @@ public class SkewHarvestScanner {
             }
         }
 
-        // Sell OTM put spread (overpriced) + Buy OTM call spread (underpriced)
+        Double atmPutIv = putIVs.get(atmStrike), atmCallIv = callIVs.get(atmStrike);
+        double atmIvDec = atmPutIv != null && atmCallIv != null ? (atmPutIv + atmCallIv) / 200.0
+            : atmPutIv != null ? atmPutIv / 100.0 : atmCallIv != null ? atmCallIv / 100.0 : PopModel.FALLBACK_IV;
+
+        // Sell OTM put spread + buy OTM call spread. Index put IV normally exceeds call IV (crash
+        // premium), so this is a bullish risk-reversal funded by that skew — not a mispricing.
         for (int putDist = 2; putDist <= 4; putDist++) {
             for (int callDist = 2; callDist <= 4; callDist++) {
                 int putSellStrike = atmStrike - putDist * step;
@@ -115,9 +122,15 @@ public class SkewHarvestScanner {
 
                 int putSpreadWidth = Math.abs(putSellStrike - putBuyStrike);
                 int callSpreadWidth = Math.abs(callSellStrike - callBuyStrike);
-                double maxLossPut = (putSpreadWidth - putSpreadCredit) * lotSize;
-                double maxProfitCall = (callSpreadWidth - callSpreadDebit) * lotSize;
                 double txnCost = ArbitrageCosts.PER_LEG_BROKERAGE * 4 + 40;
+                // Full-structure expiry P&L — the call-spread debit is paid in every scenario.
+                OptionPayoffs.Scenarios sc = OptionPayoffs.skewHarvest(putSpreadWidth, callSpreadWidth,
+                    putSpreadCredit, callSpreadDebit);
+                double maxLoss = -sc.down() * lotSize + txnCost;
+                double maxProfit = sc.up() * lotSize - txnCost;
+                if (maxLoss <= 0) continue;
+                double breakEven = OptionPayoffs.skewHarvestBreakeven(putSellStrike, callBuyStrike,
+                    putSpreadCredit, callSpreadDebit);
 
                 Map<String, Object> opp = new LinkedHashMap<>();
                 opp.put("strategyType", "SKEW_HARVEST");
@@ -138,11 +151,15 @@ public class SkewHarvestScanner {
                 opp.put("putSellIV", putSellIV != null ? round2(putSellIV) : 0);
                 opp.put("callBuyIV", callBuyIV != null ? round2(callBuyIV) : 0);
                 opp.put("skewEdge", round2(skewEdge));
-                opp.put("maxLossPut", round2(maxLossPut + txnCost));
-                opp.put("maxProfitCall", round2(maxProfitCall));
-                opp.put("scenarioFlat", round2(putSpreadCredit * lotSize - txnCost));
-                opp.put("scenarioUp", round2(maxProfitCall + putSpreadCredit * lotSize - txnCost));
-                opp.put("scenarioDown", round2(-maxLossPut));
+                opp.put("maxLoss", round2(maxLoss));
+                opp.put("maxLossPut", round2(maxLoss));
+                opp.put("maxProfit", round2(maxProfit));
+                opp.put("maxProfitCall", round2(maxProfit));
+                opp.put("scenarioFlat", round2(sc.flat() * lotSize - txnCost));
+                opp.put("scenarioUp", round2(maxProfit));
+                opp.put("scenarioDown", round2(-maxLoss));
+                opp.put("breakEven", round2(breakEven));
+                opp.put("estimatedWinRate", PopModel.popPct(spot, breakEven, Double.NaN, years, atmIvDec));
                 opp.put("action", String.format("SELL %dPE @ %.1f | BUY %dPE @ %.1f | BUY %dCE @ %.1f | SELL %dCE @ %.1f",
                     putSellStrike, psBid, putBuyStrike, pbAsk, callBuyStrike, cbAsk, callSellStrike, csBid));
                 opp.put("legList", List.of(
@@ -156,7 +173,7 @@ public class SkewHarvestScanner {
                         "symbol", getSymbol(quotes, underlying, expiry, callSellStrike, "CE"))
                 ));
                 opp.put("edgePoints", round2(skewEdge));
-                opp.put("edgeAfterCosts", round2(putSpreadCredit * lotSize - txnCost));
+                opp.put("edgeAfterCosts", round2(sc.flat() * lotSize - txnCost));
                 results.add(opp);
             }
         }
@@ -167,12 +184,8 @@ public class SkewHarvestScanner {
     private OptionChainService.OptionQuote getQuote(Map<String, OptionChainService.OptionQuote> quotes,
             String underlying, LocalDate expiry, int strike, String optType) {
         for (String c : optionChainService.buildNfoSymbolCandidates(underlying, expiry, strike, optType)) {
-            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) {
-                OptionChainService.OptionQuote q = quotes.get(c);
-                if (q.bid <= 0) q.bid = q.lastPrice;
-                if (q.ask <= 0) q.ask = q.lastPrice;
-                return q;
-            }
+            OptionChainService.OptionQuote q = QuotePolicy.usable(quotes.get(c), MarketCalendar.isMarketOpenNow());
+            if (q != null) return q;
         }
         return null;
     }

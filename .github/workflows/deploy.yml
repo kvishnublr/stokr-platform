@@ -41,3 +41,12 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: bash scripts/ci_ssh_deploy.sh
+
+      - name: Check Motilal login and balance
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          sleep 90  # startup login + self-test run in the background after the service comes up
+          bash scripts/ci_mofsl_check.sh

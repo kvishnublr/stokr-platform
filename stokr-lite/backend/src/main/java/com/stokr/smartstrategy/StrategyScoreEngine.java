@@ -142,29 +142,12 @@ public class StrategyScoreEngine {
     private double scoreWinProbability(Map<String, Object> opp) {
         double estimatedWinRate = getDouble(opp, "estimatedWinRate");
         if (estimatedWinRate <= 0) {
-            // Fallback: compute from spot distance
-            double spot = getDouble(opp, "spotPrice");
-            if (spot <= 0) return 30;
-            double minStrikeDist = computeMinStrikeDistance(opp, spot);
-            double distPct = minStrikeDist / spot * 100;
-            estimatedWinRate = Math.min(90, 50 + distPct * 3);
+            // No model probability (e.g. calendars, whose P&L depends on IV at the near expiry, not
+            // on where spot settles). Score as a coin flip instead of inventing a distance-based rate.
+            estimatedWinRate = 50;
         }
         // 50% win = 20 score, 70% = 60 score, 85% = 90 score
         return Math.max(0, Math.min(100, (estimatedWinRate - 40) * 2));
-    }
-
-    @SuppressWarnings("unchecked")
-    private double computeMinStrikeDistance(Map<String, Object> opp, double spot) {
-        List<Map<String, Object>> legs = (List<Map<String, Object>>) opp.get("legList");
-        if (legs == null) return 0;
-        double minDist = Double.MAX_VALUE;
-        for (Map<String, Object> leg : legs) {
-            if ("SELL".equals(leg.get("side"))) {
-                int strike = ((Number) leg.get("strike")).intValue();
-                minDist = Math.min(minDist, Math.abs(spot - strike));
-            }
-        }
-        return minDist == Double.MAX_VALUE ? 0 : minDist;
     }
 
     @SuppressWarnings("unchecked")

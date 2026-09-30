@@ -634,7 +634,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
         if (!Boolean.TRUE.equals(settings.get("enabled"))) return;
 
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 29))) return;
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 29))) return;
 
         String broker = (String) settings.getOrDefault("broker", "NAVIA");
         if ("PAPER".equalsIgnoreCase(broker) || "PAPER".equalsIgnoreCase(mode)) {
@@ -847,7 +847,7 @@ for (LivePosition pos : openPositions) {
                 }
             }
 
-            if (!autoExitEnabled && !stopLossEnabled && !hasPositionTriggers) continue;
+            if (!autoExitEnabled && !stopLossEnabled && !hasPositionTriggers && !hasSmartExitRules(pos)) continue;
 
             double autoExitThresholdPct = parseDouble(settings.getOrDefault("autoExitThresholdPct", 90.0), 90.0);
             boolean isPaper = "PAPER".equalsIgnoreCase(broker);
@@ -871,6 +871,12 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
 
             double pnl;
             if (isMultiLeg) {
+                // A leg without a quote would be dropped from the P&L sum and could fire a false
+                // SL/target — only evaluate when every leg is priced.
+                if (!allLegsQuoted(pos, quotes)) {
+                    log.debug("Exit check skipped for position {} — missing leg quote(s)", pos.getId());
+                    continue;
+                }
                 pnl = computeMultiLegPnl(pos, quotes);
             } else {
                 String actionStr = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
@@ -964,7 +970,9 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 }
             }
 
-            if (targetEdge <= 0) continue;
+            // Legacy arb positions are driven by targetEdge; Smart Strategy positions carry their own
+            // SL / target / time-exit rules and no targetEdge, so they must not be skipped here.
+            if (targetEdge <= 0 && !hasSmartExitRules(pos)) continue;
 
             double pnlPerLot = lots > 0 ? pnl / lots : 0;
             double pctAchieved = targetEdge > 0 ? (pnlPerLot / targetEdge) * 100 : 0;
@@ -1002,7 +1010,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             }
 
             // Auto-exit: close position when target edge met (no re-entry)
-            if (autoExitEnabled && pctAchieved >= autoExitThresholdPct) {
+            if (autoExitEnabled && targetEdge > 0 && pctAchieved >= autoExitThresholdPct) {
                 shouldExit = true;
                 exitReason = "AUTO_EXIT";
                 log.info("AUTO_EXIT: {} {} strike {} — {}% of target ₹{} reached (P&L ₹{})",
@@ -1769,6 +1777,23 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         }
         double span = Math.max(0, maxStrike - minStrike);
         return span * lotSize * lots * 1.15;
+    }
+
+    /** Smart Strategy positions carry per-position exit rules instead of a legacy targetEdge. */
+    static boolean hasSmartExitRules(LivePosition pos) {
+        return (pos.getSlPct() != null && pos.getSlPct() > 0)
+            || (pos.getTargetPct() != null && pos.getTargetPct() > 0)
+            || (pos.getTimeExitMinutes() != null && pos.getTimeExitMinutes() > 0);
+    }
+
+    /** True when every leg of a multi-leg position has a quote in {@code quotes}. */
+    static boolean allLegsQuoted(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes) {
+        if (pos.getLegs() == null) return false;
+        for (Map<String, Object> leg : pos.getLegs()) {
+            Object sym = leg.get("symbol");
+            if (!(sym instanceof String s) || quotes.get(s) == null) return false;
+        }
+        return true;
     }
 
     /**

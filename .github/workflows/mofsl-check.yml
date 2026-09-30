@@ -1,0 +1,24 @@
+name: Motilal connection check
+
+# Manual check of the Motilal Oswal session on the production server (sanitised log summary).
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH deploy key
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: bash scripts/ci_prepare_deploy_ssh.sh
+
+      - name: Check Motilal login and margin
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: bash scripts/ci_mofsl_check.sh

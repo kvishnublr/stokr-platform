@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
-import { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS, GlobalConfirmModal, DetailedOpportunityExpandedRow } from './OptionArbitrage';
+import { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS, strategyLabel, GlobalConfirmModal, DetailedOpportunityExpandedRow } from './OptionArbitrage';
 
 function fmtDate(ts) {
   if (!ts) return '--';
@@ -137,6 +137,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
 
   // Date Filtering Logic
   const filteredHistory = useMemo(() => {
+    const [from, to] = periodBounds(period, customFrom, customTo);
     return allHistory.filter(p => {
       if (assetFilter !== 'ALL' && p.assetClass !== assetFilter) return false;
 
@@ -294,6 +295,32 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
     const start = (currentPage - 1) * pageSize;
     return sortedHistory.slice(start, start + pageSize);
   }, [sortedHistory, currentPage, pageSize]);
+
+  // Per-day totals over the whole filtered set (not just this page), for the day subtotal rows
+  const dayTotals = useMemo(() => {
+    const m = {};
+    filteredHistory.forEach(p => {
+      const k = dayKey(p.exitedAt || p.timestamp);
+      if (!m[k]) m[k] = { trades: 0, pnl: 0 };
+      m[k].trades++;
+      m[k].pnl += p.realPnl;
+    });
+    return m;
+  }, [filteredHistory]);
+  const groupByDay = sortCol === 'exitTime';
+
+  const periodLabel = useMemo(() => {
+    const [from, to] = periodBounds(period, customFrom, customTo);
+    const f = d => d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    if (period === 'ALL') return 'All time';
+    if (period === 'CUSTOM') {
+      if (!from && !to) return 'Pick a date range';
+      return `${from ? f(from) : 'Start'} – ${to ? f(to) : 'Today'}`;
+    }
+    const label = period === 'DAY' ? 'Today' : period === 'WEEK' ? 'This week' : 'This month';
+    return `${label} · ${f(from)} onwards`;
+  }, [period, customFrom, customTo]);
+  const winRateLabel = metrics.trades > 0 ? `${metrics.winRate.toFixed(0)}%` : '--';
 
   return (
     <div className="space-y-6 mt-4">
@@ -644,12 +671,27 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {paginatedHistory.map(p => {
+                {paginatedHistory.map((p, idx) => {
                   const isExp = expandedRowId === p.id;
                   const isLoss = p.realPnl < 0;
+                  const dk = dayKey(p.exitedAt || p.timestamp);
+                  const newDay = groupByDay && (idx === 0 || dayKey(paginatedHistory[idx - 1].exitedAt || paginatedHistory[idx - 1].timestamp) !== dk);
+                  const dt = dayTotals[dk];
 
                   return (
                     <React.Fragment key={p.id}>
+                      {newDay && dt && (
+                        <tr className="bg-slate-50/80">
+                          <td colSpan={6} className="px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                            📅 {dk === 'Unknown date' ? dk : new Date(dk).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
+                            <span className="ml-2 font-bold normal-case tracking-normal text-slate-400">{dt.trades} trade{dt.trades > 1 ? 's' : ''}</span>
+                          </td>
+                          <td className={`px-4 py-1.5 text-right font-mono text-[11px] font-extrabold ${dt.pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {fmtRupees(dt.pnl)}
+                          </td>
+                          <td />
+                        </tr>
+                      )}
                       <tr
                         onClick={() => setExpandedRowId(isExp ? null : p.id)}
                         className={`hover:bg-indigo-50/50 transition-colors cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : ''}`}
@@ -682,7 +724,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
 
                         {/* Strategy */}
                         <td className="px-4 py-3 font-bold text-slate-700 whitespace-nowrap">
-                          {STRATEGY_LABELS[p.strategyType || p.strategy] || p.strategyType || p.strategy || '—'}
+                          {strategyLabel(p.strategyType || p.strategy)}
                         </td>
 
                         {/* Symbol / Legs */}
@@ -701,8 +743,10 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
                         </td>
 
                         {/* Realized P&L */}
-                        <td className={`px-4 py-3 text-right font-mono font-bold whitespace-nowrap ${p.realPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                          {p.realPnl >= 0 ? '+' : ''}₹{Math.round(p.realPnl).toLocaleString('en-IN')}
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          <span className={`inline-block px-2 py-0.5 rounded-md font-mono font-bold ${p.realPnl > 0 ? 'bg-emerald-50 text-emerald-700' : p.realPnl < 0 ? 'bg-rose-50 text-rose-700' : 'bg-slate-50 text-slate-500'}`}>
+                            {fmtRupees(p.realPnl)}
+                          </span>
                         </td>
 
                         {/* Mode */}

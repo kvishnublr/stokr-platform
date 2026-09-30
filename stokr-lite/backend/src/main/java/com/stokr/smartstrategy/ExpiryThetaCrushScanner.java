@@ -1,5 +1,7 @@
 package com.stokr.smartstrategy;
 
+import com.stokr.arbitrage.QuotePolicy;
+import com.stokr.marketdata.MarketCalendar;
 import com.stokr.arbitrage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -81,6 +83,9 @@ public class ExpiryThetaCrushScanner {
         Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
         boolean isOptimalWindow = nowIST.isAfter(LocalTime.of(13, 30));
+        double years = PopModel.yearsToExpiry(expiry);
+        double atmIv = PopModel.atmIv(getQuote(quotes, underlying, expiry, atmStrike, "CE"),
+            getQuote(quotes, underlying, expiry, atmStrike, "PE"), spot, atmStrike, years);
         String window = isOptimalWindow ? "OPTIMAL (post 1:30 PM)" : "EARLY (pre 1:30 PM)";
 
         for (int offset = 0; offset <= 1; offset++) {
@@ -133,6 +138,14 @@ public class ExpiryThetaCrushScanner {
             opp.put("maxLoss", round2(maxLoss + txnCost));
             opp.put("minutesToClose", (int) minutesToClose);
             opp.put("window", window);
+            // Profit zone at expiry is (put short − credit, call short + credit). The decay figures
+            // above are a rule of thumb (70% / 40% of credit), not a forecast.
+            double beDown = peStrike - netCredit, beUp = ceStrike + netCredit;
+            opp.put("breakEvenDown", round2(beDown));
+            opp.put("breakEvenUp", round2(beUp));
+            opp.put("estimatedWinRate", PopModel.popPct(spot, beDown, beUp, years, atmIv));
+            opp.put("atmIv", round2(atmIv * 100));
+            opp.put("decayAssumption", "Rule of thumb: " + (int) (decayRate * 100) + "% of credit decays by close");
             opp.put("isOptimalWindow", isOptimalWindow);
             opp.put("winRate", isOptimalWindow ? "90-95%" : "75-85%");
             opp.put("action", String.format("SELL %dCE @ %.1f + SELL %dPE @ %.1f | BUY %dCE @ %.1f + BUY %dPE @ %.1f",
@@ -198,7 +211,35 @@ public class ExpiryThetaCrushScanner {
         opp.put("thetaDecayExpected", round2(dailyDecay));
         opp.put("window", dte + " days to expiry -- PREVIEW ONLY");
         opp.put("isOptimalWindow", false);
+        opp.put("winRate", "75-85%");
         opp.put("action", "PREVIEW: ATM straddle " + atmStrike + " @ " + round2(straddleValue) + " -- enter on expiry day");
+
+        // Add legList for payoff chart display in preview mode
+        int wingOffset = 3 * step;
+        int ceWingStrike = atmStrike + wingOffset;
+        int peWingStrike = atmStrike - wingOffset;
+        OptionChainService.OptionQuote ceWQ = getQuote(quotes, underlying, expiry, ceWingStrike, "CE");
+        OptionChainService.OptionQuote peWQ = getQuote(quotes, underlying, expiry, peWingStrike, "PE");
+        double ceWAsk = ceWQ != null ? ceWQ.effectiveAsk() : 0;
+        double peWAsk = peWQ != null ? peWQ.effectiveAsk() : 0;
+        opp.put("legList", List.of(
+            Map.of("strike", atmStrike, "optionType", "CE", "side", "SELL", "qty", 1, "price", ceQ.effectiveBid(),
+                "symbol", getSymbol(quotes, underlying, expiry, atmStrike, "CE")),
+            Map.of("strike", atmStrike, "optionType", "PE", "side", "SELL", "qty", 1, "price", peQ.effectiveBid(),
+                "symbol", getSymbol(quotes, underlying, expiry, atmStrike, "PE")),
+            Map.of("strike", ceWingStrike, "optionType", "CE", "side", "BUY", "qty", 1, "price", ceWAsk,
+                "symbol", getSymbol(quotes, underlying, expiry, ceWingStrike, "CE")),
+            Map.of("strike", peWingStrike, "optionType", "PE", "side", "BUY", "qty", 1, "price", peWAsk,
+                "symbol", getSymbol(quotes, underlying, expiry, peWingStrike, "PE"))
+        ));
+        double wingCost = ceWAsk + peWAsk;
+        double netCredit = straddleValue - wingCost;
+        opp.put("netCredit", round2(netCredit));
+        opp.put("netCreditRs", round2(netCredit * lotSize));
+        double maxLoss = Math.max(wingOffset - netCredit, 0) * lotSize;
+        opp.put("maxLoss", round2(maxLoss));
+        opp.put("expectedProfitRs", round2(dailyDecay * lotSize - 80));
+
         opp.put("edgePoints", round2(dailyDecay));
         opp.put("edgeAfterCosts", round2(dailyDecay * lotSize - 80));
         results.add(opp);
@@ -208,12 +249,8 @@ public class ExpiryThetaCrushScanner {
     private OptionChainService.OptionQuote getQuote(Map<String, OptionChainService.OptionQuote> quotes,
             String underlying, LocalDate expiry, int strike, String optType) {
         for (String c : optionChainService.buildNfoSymbolCandidates(underlying, expiry, strike, optType)) {
-            if (quotes.containsKey(c) && quotes.get(c).lastPrice > 0) {
-                OptionChainService.OptionQuote q = quotes.get(c);
-                if (q.bid <= 0) q.bid = q.lastPrice;
-                if (q.ask <= 0) q.ask = q.lastPrice;
-                return q;
-            }
+            OptionChainService.OptionQuote q = QuotePolicy.usable(quotes.get(c), MarketCalendar.isMarketOpenNow());
+            if (q != null) return q;
         }
         return null;
     }

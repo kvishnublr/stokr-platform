@@ -9,8 +9,6 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.*;
 
 @Slf4j
@@ -62,7 +60,8 @@ public class SmartStrategyExecutionService {
 
         if (!isMarketOpen()) {
             result.put("status", "ERROR");
-            result.put("message", "Market is closed. Orders can only be placed during market hours (9:15 AM - 3:30 PM).");
+            result.put("message", "Market is closed. Orders can only be placed on trading days, 9:15 AM - 3:30 PM. "
+                + "Off-hours results are LTP previews and will be re-priced from live bid/ask when the market opens.");
             return result;
         }
 
@@ -370,7 +369,6 @@ public class SmartStrategyExecutionService {
     }
 
     private boolean isMarketOpen() {
-        LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        return !now.isBefore(LocalTime.of(9, 15)) && !now.isAfter(LocalTime.of(15, 30));
+        return com.stokr.marketdata.MarketCalendar.isMarketOpenNow();
     }
 }

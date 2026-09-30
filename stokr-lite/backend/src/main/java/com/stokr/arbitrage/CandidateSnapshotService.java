@@ -32,7 +32,7 @@ public class CandidateSnapshotService {
     @Scheduled(fixedDelayString = "900000", initialDelay = 90000)
     public void snapshotAll() {
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30))) return;
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30))) return;
 
         try {
             snapshotOne("VERTICAL_SPREAD", verticalSpreadService.scanCandidates("ALL", 0.35));

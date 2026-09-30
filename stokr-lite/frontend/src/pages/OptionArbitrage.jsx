@@ -96,7 +96,48 @@ const STRATEGY_LABELS = {
   BUTTERFLY_SPREAD: '🦋 Butterfly',
   CONDOR_SPREAD: '🎯 Condor',
   IRON_CONDOR: '🛡️ Iron Condor',
+  MORNING_RANGE_THETA: '🌅 Morning Theta',
+  EXPIRY_THETA_CRUSH: '⏰ Theta Crush',
+  JADE_LIZARD: '🦎 Jade Lizard',
+  RATIO_BUTTERFLY: '🦋 Ratio Butterfly',
+  BROKEN_WING_BUTTERFLY: '🔥 Broken Wing',
+  SKEW_HARVEST: '📊 Skew Harvest',
+  BOX_SPREAD_ARB: '📦 Box Spread',
+  CALENDAR_SPREAD_EDGE: '📅 Calendar',
 };
+
+/** Label for a strategy code, falling back to Title Case (MORNING_RANGE_THETA → Morning Range Theta). */
+function strategyLabel(code) {
+  if (!code) return '—';
+  return STRATEGY_LABELS[code] || String(code).toLowerCase().split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+/** Legs grouped one line per option type: "CE  S 23000 @52.8 · B 23100 @27.6". */
+function LegsCell({ legs }) {
+  const groups = ['CE', 'PE', 'FUT']
+    .map(t => ({ t, legs: legs.filter(l => (l.optionType || 'FUT') === t).sort((a, b) => a.strike - b.strike) }))
+    .filter(g => g.legs.length > 0);
+  return (
+    <div className="flex flex-col gap-1">
+      {groups.map(g => (
+        <div key={g.t} className="flex items-center gap-1.5 whitespace-nowrap">
+          <span className={`w-7 text-center px-1 py-0.5 rounded text-[8px] font-black tracking-wide ${g.t === 'CE' ? 'bg-sky-50 text-sky-700 border border-sky-200' : g.t === 'PE' ? 'bg-violet-50 text-violet-700 border border-violet-200' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>{g.t}</span>
+          {g.legs.map((leg, i) => (
+            <span key={i} className="inline-flex items-center gap-1 font-mono text-[10px]">
+              {i > 0 && <span className="text-slate-300">·</span>}
+              <span className={`w-4 h-4 inline-flex items-center justify-center rounded text-[8px] font-black text-white ${leg.side === 'BUY' ? 'bg-emerald-500' : 'bg-rose-500'}`}>
+                {leg.side === 'BUY' ? 'B' : 'S'}{(leg.qty || 1) > 1 ? leg.qty : ''}
+              </span>
+              <span className="font-bold text-slate-800">{leg.strike}</span>
+              <span className="text-slate-400">@{Number(leg.price || 0).toFixed(1)}</span>
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const TOAST_STYLES = {
   success: { bg: 'bg-white', border: 'border-emerald-400', bar: 'bg-emerald-500', icon: '✅', iconBg: 'bg-emerald-100', iconText: 'text-emerald-600', titleText: 'text-emerald-700', defaultTitle: 'Success' },
@@ -1554,7 +1595,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
               <div className="grid grid-cols-3 gap-2">
                 <div className="bg-indigo-50 rounded-lg px-3 py-2 border border-indigo-100">
                   <div className="text-[9px] text-indigo-500 font-bold uppercase">Strategy</div>
-                  <div className="text-xs font-bold text-indigo-700">{STRATEGY_LABELS[goLiveConfirm.strategyType] || goLiveConfirm.strategyType}</div>
+                  <div className="text-xs font-bold text-indigo-700">{strategyLabel(goLiveConfirm.strategyType)}</div>
                 </div>
                 <div className="bg-violet-50 rounded-lg px-3 py-2 border border-violet-100">
                   <div className="text-[9px] text-violet-500 font-bold uppercase">Broker</div>
@@ -7684,7 +7725,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
     </div>
   );
 }
-export { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS };
+export { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS, strategyLabel };
 
 function TopPicksView({ executionBroker, handleExecuteInline }) {
   const [underlying, setUnderlying] = React.useState('ALL');

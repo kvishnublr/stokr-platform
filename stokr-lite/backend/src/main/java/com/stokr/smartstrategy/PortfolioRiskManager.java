@@ -32,6 +32,21 @@ public class PortfolioRiskManager {
     public record RiskCheck(boolean allowed, String reason) {}
 
     public RiskCheck canEnterTrade(Map<String, Object> opportunity) {
+        return canEnterTrade(opportunity, 1);
+    }
+
+    /**
+     * Worst-case loss per lot in rupees for a scanned opportunity, or 0 when the scanner did not
+     * publish one. Box spreads are bounded at expiry, so their costs are the realistic worst case.
+     */
+    public static double maxLossPerLot(Map<String, Object> opp) {
+        for (String key : List.of("maxLoss", "maxLossDown", "maxLossPut")) {
+            if (opp.get(key) instanceof Number n && n.doubleValue() > 0) return n.doubleValue();
+        }
+        return 0;
+    }
+
+    public RiskCheck canEnterTrade(Map<String, Object> opportunity, int lots) {
         String strategyType = (String) opportunity.getOrDefault("strategyType", "");
         String underlying = (String) opportunity.getOrDefault("underlying", "");
 
@@ -95,10 +110,12 @@ public class PortfolioRiskManager {
         double totalOpenRisk = openPositions.stream()
             .mapToDouble(p -> p.getMaxLossAmount() != null ? p.getMaxLossAmount() : 0)
             .sum();
-        double newRisk = opportunity.get("maxLoss") instanceof Number n ? n.doubleValue() : 0;
-        if (newRisk <= 0) {
-            newRisk = opportunity.get("maxLossDown") instanceof Number n ? n.doubleValue() : 0;
+        double perLot = maxLossPerLot(opportunity);
+        if (perLot <= 0) {
+            // Unknown worst case must never count as "no risk".
+            return new RiskCheck(false, "Max loss unknown for " + strategyType + " — entry blocked");
         }
+        double newRisk = perLot * Math.max(1, lots);
         double maxTotalRisk = MAX_DAILY_LOSS * 3;
         if (totalOpenRisk + newRisk > maxTotalRisk) {
             return new RiskCheck(false, String.format("Total risk ₹%.0f + ₹%.0f exceeds limit ₹%.0f",

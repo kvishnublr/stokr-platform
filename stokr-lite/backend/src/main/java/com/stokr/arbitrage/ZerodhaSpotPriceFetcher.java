@@ -27,6 +27,8 @@ public class ZerodhaSpotPriceFetcher {
     private final ConcurrentHashMap<String, Double> cache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Long> cacheTimestamps = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 2000;
+    /** Day OHLC per instrument from the last quote: {open, high, low, prevClose}. */
+    private final ConcurrentHashMap<String, double[]> ohlcCache = new ConcurrentHashMap<>();
 
     public ZerodhaSpotPriceFetcher(ZerodhaTokenManager tokenManager) {
         this.tokenManager = tokenManager;
@@ -42,6 +44,15 @@ public class ZerodhaSpotPriceFetcher {
 
         double[] res = getSpotAndFutures(instrumentKey, instrumentKey);
         return (res != null && res.length > 0) ? res[0] : 0;
+    }
+
+    /**
+     * Day {open, high, low, prevClose} captured by the most recent {@link #getSpotAndFutures} call for
+     * this key (Kite's quote "ohlc.close" is the previous session's close), or null if none yet.
+     */
+    public double[] getCachedOhlc(String instrumentKey) {
+        double[] v = ohlcCache.get(instrumentKey);
+        return v != null ? v.clone() : null;
     }
 
     public String getAuthToken() {
@@ -125,6 +136,11 @@ public class ZerodhaSpotPriceFetcher {
                 log.info("DUMP spotNode='{}'", spotNode.toPrettyString());
                 spot = spotNode.path("last_price").asDouble(0);
                 if (spot <= 0) spot = spotNode.path("ohlc").path("close").asDouble(0);
+                JsonNode ohlc = spotNode.path("ohlc");
+                if (ohlc.isObject() && ohlc.path("high").asDouble(0) > 0) {
+                    ohlcCache.put(spotKey, new double[]{ohlc.path("open").asDouble(0), ohlc.path("high").asDouble(0),
+                        ohlc.path("low").asDouble(0), ohlc.path("close").asDouble(0)});
+                }
 
                 JsonNode futNode = data.path(futuresKey);
                 if (futNode.isMissingNode()) futNode = data.path(futuresKey.replace(" ", "%20"));

@@ -179,7 +179,7 @@ public class CashExecutionService {
     @Scheduled(fixedDelayString = "30000", initialDelay = 30000)
     public void checkExits() {
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
 
         List<CashPosition> open = positionRepo.findAllOpen();
         if (open.isEmpty()) return;
@@ -257,7 +257,7 @@ public class CashExecutionService {
     @Scheduled(fixedDelayString = "60000", initialDelay = 60000)
     public void autoPaperTradeCashSignals() {
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
 
         List<CashPosition> allPositions = positionRepo.findAllByOrderByEnteredAtDesc();
         List<CashPosition> openPositions = allPositions.stream().filter(p -> "OPEN".equals(p.getStatus())).toList();
