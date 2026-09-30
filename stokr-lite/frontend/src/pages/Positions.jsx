@@ -137,7 +137,6 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
 
   // Date Filtering Logic
   const filteredHistory = useMemo(() => {
-    const [from, to] = periodBounds(period, customFrom, customTo);
     return allHistory.filter(p => {
       if (assetFilter !== 'ALL' && p.assetClass !== assetFilter) return false;
 
@@ -310,16 +309,16 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, assetFilter, mo
   const groupByDay = sortCol === 'exitTime';
 
   const periodLabel = useMemo(() => {
-    const [from, to] = periodBounds(period, customFrom, customTo);
-    const f = d => d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-    if (period === 'ALL') return 'All time';
-    if (period === 'CUSTOM') {
-      if (!from && !to) return 'Pick a date range';
-      return `${from ? f(from) : 'Start'} – ${to ? f(to) : 'Today'}`;
+    if (datePreset === 'ALL') return 'All time';
+    if (datePreset === 'TODAY') return 'Today';
+    if (datePreset === 'WEEK') return 'Last 7 Days';
+    if (datePreset === 'MONTH') return 'Last 30 Days';
+    if (datePreset === 'CUSTOM') {
+      if (!customStartDate && !customEndDate) return 'Custom Date Range';
+      return `${customStartDate || 'Start'} - ${customEndDate || 'End'}`;
     }
-    const label = period === 'DAY' ? 'Today' : period === 'WEEK' ? 'This week' : 'This month';
-    return `${label} · ${f(from)} onwards`;
-  }, [period, customFrom, customTo]);
+    return datePreset || 'All time';
+  }, [datePreset, customStartDate, customEndDate]);
   const winRateLabel = metrics.trades > 0 ? `${metrics.winRate.toFixed(0)}%` : '--';
 
   return (
