@@ -21,7 +21,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CashExecutionService {
 
-    private static final int MAX_OPEN_PAPER = 5;
+    private static final int MAX_OPEN_PAPER = 99999; // Unlimited paper positions
     private static final double PAPER_CAPITAL = 10000.0;
     private static final int MAX_HOLD_DAYS_SURGE = 3;
     private static final int MAX_HOLD_DAYS_SWING = 2;
