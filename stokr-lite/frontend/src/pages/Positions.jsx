@@ -75,7 +75,7 @@ function AccordionCard({ title, icon, count, defaultOpen = false, children, badg
   );
 }
 
-function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, assetFilter, modeFilter, datePreset, customStartDate, customEndDate, setDatePreset, setCustomStartDate, setCustomEndDate }) {
+function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, assetFilter = 'ALL', modeFilter = 'ALL', datePreset = 'ALL', customStartDate = '', customEndDate = '', setDatePreset, setCustomStartDate, setCustomEndDate, setAssetFilter, setModeFilter }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStrategy, setSelectedStrategy] = useState('ALL');
   const [expandedRowId, setExpandedRowId] = useState(null);
@@ -394,34 +394,55 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
   return (
     <div className="space-y-6 mt-4">
 
-      {/* Prominent Top-Level History Date Range Control Bar */}
+      {/* Prominent Top-Level History Date & Asset Range Control Bar */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl shadow-md space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <span className="text-xl">📅</span>
             <div>
-              <span className="text-xs font-black text-indigo-200 uppercase tracking-widest block">History Date Filter</span>
-              <span className="text-xs text-slate-300 font-medium">Select timeframe to filter closed trades and performance metrics</span>
+              <span className="text-xs font-black text-indigo-200 uppercase tracking-widest block">History &amp; Breakdown Filters</span>
+              <span className="text-xs text-slate-300 font-medium">Filter performance breakdown and history log by Asset, Mode, or Date Range</span>
             </div>
           </div>
 
-          {/* Quick Preset Filter Buttons */}
-          <div className="flex flex-wrap items-center gap-2 bg-slate-800/90 p-1.5 rounded-xl border border-slate-700/80">
-            {[
-              { id: 'ALL', label: 'All Time' },
-              { id: 'TODAY', label: 'Today (1D)' },
-              { id: 'WEEK', label: '1 Week (7D)' },
-              { id: 'MONTH', label: '1 Month (1M)' },
-              { id: 'CUSTOM', label: 'Custom Range 🗓️' },
-            ].map(b => (
-              <button
-                key={b.id}
-                onClick={() => setDatePreset(b.id)}
-                className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition ${datePreset === b.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700'}`}
-              >
-                {b.label}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Asset Class Filter */}
+            {setAssetFilter && (
+              <div className="flex items-center gap-1 bg-slate-800/90 p-1.5 rounded-xl border border-slate-700/80">
+                {[
+                  { id: 'ALL', label: 'All Assets' },
+                  { id: 'FNO', label: '⚡ F&O Arbitrage' },
+                  { id: 'CASH', label: '📈 Cash Equity' },
+                ].map(a => (
+                  <button
+                    key={a.id}
+                    onClick={() => setAssetFilter(a.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition ${assetFilter === a.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700'}`}
+                  >
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Quick Preset Filter Buttons */}
+            <div className="flex flex-wrap items-center gap-1.5 bg-slate-800/90 p-1.5 rounded-xl border border-slate-700/80">
+              {[
+                { id: 'ALL', label: 'All Time' },
+                { id: 'TODAY', label: 'Today (1D)' },
+                { id: 'WEEK', label: '1 Week (7D)' },
+                { id: 'MONTH', label: '1 Month (1M)' },
+                { id: 'CUSTOM', label: 'Custom Range 🗓️' },
+              ].map(b => (
+                <button
+                  key={b.id}
+                  onClick={() => setDatePreset(b.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition ${datePreset === b.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-700'}`}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -543,12 +564,90 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
       {/* Strategy Breakdown Table */}
       {metrics.strategyList.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-            <h3 className="font-extrabold text-slate-800 text-xs tracking-wider uppercase">
-              Strategy Performance Breakdown {lotScaleMode === 'ONE_LOT' ? '(1-Lot Figures)' : '(Total Lots)'}
-            </h3>
-            <span className="text-xs text-slate-400 font-medium">{metrics.strategyList.length} Strategies</span>
+          <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <h3 className="font-extrabold text-slate-800 text-xs tracking-wider uppercase">
+                Strategy Performance Breakdown {lotScaleMode === 'ONE_LOT' ? '(1-Lot Figures)' : '(Total Lots)'}
+              </h3>
+              <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-indigo-100 text-indigo-800">
+                {metrics.strategyList.length} {metrics.strategyList.length === 1 ? 'Strategy' : 'Strategies'}
+              </span>
+            </div>
+
+            {/* Inline Breakdown Controls: Asset Filter & Date Filter */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Asset Class Pills */}
+              {setAssetFilter && (
+                <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+                  {[
+                    { id: 'ALL', label: 'All' },
+                    { id: 'FNO', label: 'F&O' },
+                    { id: 'CASH', label: 'Cash' },
+                  ].map(a => (
+                    <button
+                      key={a.id}
+                      onClick={() => setAssetFilter(a.id)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition ${assetFilter === a.id ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'}`}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Date Presets */}
+              <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+                {[
+                  { id: 'ALL', label: 'All Time' },
+                  { id: 'TODAY', label: 'Today' },
+                  { id: 'WEEK', label: 'Week' },
+                  { id: 'MONTH', label: 'Month' },
+                  { id: 'CUSTOM', label: 'Custom 🗓️' },
+                ].map(b => (
+                  <button
+                    key={b.id}
+                    onClick={() => setDatePreset(b.id)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition ${datePreset === b.id ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'}`}
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
+
+          {/* Custom Date Pickers inside Breakdown Card if Custom selected */}
+          {datePreset === 'CUSTOM' && (
+            <div className="px-5 py-2.5 bg-indigo-50/50 border-b border-indigo-100 flex flex-wrap items-center gap-3">
+              <span className="text-xs font-extrabold text-indigo-900">Custom Date Range:</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-600">From:</span>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={e => setCustomStartDate(e.target.value)}
+                  className="bg-white border border-slate-300 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-600">To:</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={e => setCustomEndDate(e.target.value)}
+                  className="bg-white border border-slate-300 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+              {(customStartDate || customEndDate) && (
+                <button
+                  onClick={() => { setCustomStartDate(''); setCustomEndDate(''); }}
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline ml-auto"
+                >
+                  Reset Dates
+                </button>
+              )}
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-50 text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-slate-100">
@@ -1173,6 +1272,8 @@ export default function Positions() {
           setDatePreset={setDatePreset}
           setCustomStartDate={setCustomStartDate}
           setCustomEndDate={setCustomEndDate}
+          setAssetFilter={setAssetFilter}
+          setModeFilter={setModeFilter}
         />
       )}
     </div>
