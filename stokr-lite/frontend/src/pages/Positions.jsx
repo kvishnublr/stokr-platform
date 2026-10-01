@@ -144,7 +144,39 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
     });
 
     const rawArb = Array.isArray(arbHistory) ? arbHistory : (arbHistory?.items || []);
-    const arb = rawArb.map(p => {
+
+    // Deduplicate arb items against already executed FNO positions
+    const executedOppIds = new Set();
+    rawFno.forEach(p => {
+      if (p.opportunityId != null) executedOppIds.add(String(p.opportunityId));
+      if (p.id != null) executedOppIds.add(String(p.id));
+    });
+
+    const executedTradeKeys = new Set();
+    rawFno.forEach(p => {
+      const exitMin = p.exitedAt ? String(p.exitedAt).substring(0, 16) : (p.createdAt ? String(p.createdAt).substring(0, 16) : '');
+      const und = String(p.underlying || '').toUpperCase();
+      const strat = String(p.strategyType || p.strategy || '').toUpperCase();
+      const strike = p.strike != null ? String(p.strike) : '';
+      if (exitMin && und) {
+        executedTradeKeys.add(und + '_' + strat + '_' + strike + '_' + exitMin);
+      }
+    });
+
+    const filteredRawArb = rawArb.filter(p => {
+      if (p.id != null && executedOppIds.has(String(p.id))) return false;
+      const exitMin = (p.exitTime || p.exitedAt || p.createdAt) ? String(p.exitTime || p.exitedAt || p.createdAt).substring(0, 16) : '';
+      const und = String(p.underlying || '').toUpperCase();
+      const strat = String(p.strategyType || p.strategy || '').toUpperCase();
+      const strike = p.strike != null ? String(p.strike) : '';
+      if (exitMin && und) {
+        const key = und + '_' + strat + '_' + strike + '_' + exitMin;
+        if (executedTradeKeys.has(key)) return false;
+      }
+      return true;
+    });
+
+    const arb = filteredRawArb.map(p => {
       const rawPnl = p.pnlAfterCosts != null ? Number(p.pnlAfterCosts) : (p.edgeAfterCosts != null ? Number(p.edgeAfterCosts) : 0);
       const lots = Number(p.lots) > 0 ? Number(p.lots) : 1;
       const realPnl = lotScaleMode === 'ONE_LOT' ? (rawPnl / lots) : rawPnl;
