@@ -1012,7 +1012,13 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             }
 
             // Auto-exit: close position when target edge met (no re-entry)
-            if (autoExitEnabled && targetEdge > 0 && pctAchieved >= autoExitThresholdPct) {
+            // MINIMUM HOLD TIME GUARD: Require at least 60 seconds of position hold time before AUTO_EXIT can trigger,
+            // preventing instant 3s - 15s premature exits caused by initial tick noise or MTM bid-ask spread fluctuations.
+            java.time.LocalDateTime autoExitEntryTime = pos.getEnteredAt() != null ? pos.getEnteredAt() : pos.getCreatedAt();
+            boolean autoExitGracePeriod = autoExitEntryTime != null &&
+                java.time.Duration.between(autoExitEntryTime, java.time.LocalDateTime.now()).getSeconds() < 60;
+
+            if (autoExitEnabled && !autoExitGracePeriod && targetEdge > 0 && pctAchieved >= autoExitThresholdPct) {
                 shouldExit = true;
                 exitReason = "AUTO_EXIT";
                 log.info("AUTO_EXIT: {} {} strike {} — {}% of target ₹{} reached (P&L ₹{})",
