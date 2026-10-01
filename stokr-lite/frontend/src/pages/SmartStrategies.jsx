@@ -975,7 +975,7 @@ function AdvancedPayoff({ opp, legs, lotSize, spot, accentColor }) {
             </tbody>
           </table>
           <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-t border-slate-100">
-            <span className="text-[9px] text-slate-400 font-bold">{legs.length} legs × {lotSize} lot</span>
+            <span className="text-[9px] text-slate-400 font-bold">{legs.length} legs • {(opp && opp.lots) || 1} Lot{((opp && opp.lots) || 1) > 1 ? 's' : ''} ({lotSize * ((opp && opp.lots) || 1)} qty)</span>
             <span className={`text-[10px] font-black ${netCredit > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
               Net: {netCredit > 0 ? '+' : ''}₹{netCredit.toFixed(2)}/share
             </span>
@@ -1017,8 +1017,8 @@ function AdvancedPayoff({ opp, legs, lotSize, spot, accentColor }) {
               <div className="text-sm font-black text-slate-700 mt-0.5">{breakevens.length > 0 ? breakevens.join(' / ') : '--'}</div>
             </div>
             <div className="text-right">
+              <div className="text-[9px] text-slate-400 font-bold text-slate-600">Lots: {(opp && opp.lots) || 1} ({lotSize * ((opp && opp.lots) || 1)} qty)</div>
               <div className="text-[9px] text-slate-400">Spot: {spot}</div>
-              <div className="text-[9px] text-slate-400">Lot: {lotSize}</div>
             </div>
           </div>
         </div>

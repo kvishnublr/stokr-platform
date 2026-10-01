@@ -813,7 +813,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
                               </p>
                             </div>
 
-                            <DetailedOpportunityExpandedRow item={{ ...p, lots: 1 }} title={`Trade Payoff Chart & Execution Breakdown (1 Lot) — ${p.displaySymbol}`} />
+                            <DetailedOpportunityExpandedRow item={{ ...p, lots: p.lots || 1 }} title={`Trade Payoff Chart & Execution Breakdown (${p.lots || 1} Lot${(p.lots || 1) > 1 ? 's' : ''}) — ${p.displaySymbol}`} />
                           </td>
                         </tr>
                       )}

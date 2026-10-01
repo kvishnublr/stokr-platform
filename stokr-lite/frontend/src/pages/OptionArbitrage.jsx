@@ -4196,8 +4196,12 @@ function ArbitrageSignalPayoffChart({ opp }) {
     setHover({ px: xToPx(pt.x), py: yToPx(pt.y), price: pt.x, pnl: pt.y });
   };
 
-  const totalMax = maxProfitPerShare * lotSize;
-  const totalMin = maxLossPerShare * lotSize;
+  const singleLotSize = Number(opp.lotSize) > 0 ? Number(opp.lotSize) : 1;
+  const lots = Number(opp.lots) > 0 ? Number(opp.lots) : 1;
+  const totalQty = singleLotSize * lots;
+
+  const totalMax = maxProfitPerShare * totalQty;
+  const totalMin = maxLossPerShare * totalQty;
 
   const expVal = opp.expiryDate || opp.expiry;
   const expiryLabel = expVal
@@ -4212,7 +4216,7 @@ function ArbitrageSignalPayoffChart({ opp }) {
         </div>
         {expiryLabel && (
           <span className="inline-flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700 text-white font-black text-xs px-3 py-1 rounded-full shadow-md border border-indigo-300" title="This payoff is priced off THIS contract expiry -- comparing against another tool with a different expiry selected will show different premiums even for identical strikes.">
-            📅 Expiry {expiryLabel}
+            📅 Expiry {expiryLabel} • {lots} Lot{lots > 1 ? 's' : ''} ({totalQty} qty)
           </span>
         )}
       </div>
@@ -4220,12 +4224,12 @@ function ArbitrageSignalPayoffChart({ opp }) {
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5">
           <div className="text-[9px] font-bold text-emerald-700 uppercase">Max Profit</div>
           <div className="text-sm font-black text-emerald-700">₹{Math.round(totalMax).toLocaleString('en-IN')}</div>
-          <div className="text-[9px] text-emerald-600">₹{maxProfitPerShare.toFixed(2)}/share × {lotSize}</div>
+          <div className="text-[9px] text-emerald-600">₹{maxProfitPerShare.toFixed(2)}/share × {totalQty} ({lots} Lot{lots > 1 ? 's' : ''})</div>
         </div>
         <div className="bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
           <div className="text-[9px] font-bold text-red-700 uppercase">Max Loss</div>
           <div className="text-sm font-black text-red-700">₹{Math.round(totalMin).toLocaleString('en-IN')}</div>
-          <div className="text-[9px] text-red-600">₹{maxLossPerShare.toFixed(2)}/share × {lotSize}</div>
+          <div className="text-[9px] text-red-600">₹{maxLossPerShare.toFixed(2)}/share × {totalQty} ({lots} Lot{lots > 1 ? 's' : ''})</div>
         </div>
         <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1.5">
           <div className="text-[9px] font-bold text-indigo-700 uppercase">Breakeven</div>
