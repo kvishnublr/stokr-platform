@@ -68,7 +68,7 @@ public class CashScannerService {
             if (atr <= 0) continue;
 
             double entryPrice = closeP;
-            double stopLossPrice = Math.max(round2(entryPrice - 1.5 * atr), round2(entryPrice * 0.965)); // Max 3.5% SL
+            double stopLossPrice = round2(entryPrice - 1.5 * atr); if (stopLossPrice >= entryPrice || stopLossPrice <= 0) stopLossPrice = round2(entryPrice * 0.93);
             double targetPrice = round2(entryPrice + 3.0 * atr);
             double score = delivRatio * volumeRatio * (1 + priceChangePct / 100.0);
 
@@ -135,7 +135,7 @@ public class CashScannerService {
             if (atr <= 0) continue;
 
             double entryPrice = closeP;
-            double stopLossPrice = Math.max(round2(entryPrice - 1.5 * atr), round2(entryPrice * 0.965)); // Max 3.5% SL
+            double stopLossPrice = round2(entryPrice - 1.5 * atr); if (stopLossPrice >= entryPrice || stopLossPrice <= 0) stopLossPrice = round2(entryPrice * 0.93);
             double targetPrice = round2(entryPrice + 2.5 * atr);
 
             Map<String, Object> m = new LinkedHashMap<>();

@@ -220,8 +220,7 @@ public class CashExecutionService {
             double stopLoss = pos.getStopLossPrice() != null ? pos.getStopLossPrice().doubleValue() : 0;
             boolean hitTarget = target > 0 && ltp >= target;
             double entryP = pos.getEntryPrice() != null ? pos.getEntryPrice().doubleValue() : 0;
-            boolean hitHardSL = entryP > 0 && ltp <= (entryP * 0.965); // Hard -3.5% SL
-            boolean hitStop = (stopLoss > 0 && ltp <= stopLoss) || hitHardSL;
+            boolean hitStop = stopLoss > 0 && ltp <= stopLoss;
 
             int maxHoldDays = "CASH_SURGE".equals(pos.getStrategyType()) ? MAX_HOLD_DAYS_SURGE : MAX_HOLD_DAYS_SWING;
             long holdDays = pos.getEnteredAt() != null ? ChronoUnit.DAYS.between(pos.getEnteredAt().toLocalDate(), LocalDateTime.now().toLocalDate()) : 0;
