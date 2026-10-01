@@ -333,13 +333,19 @@ function TypeBadge({ type }) {
 }
 
 function RRBadge({ value }) {
-  const v = Math.round(value);
+  if (value === undefined || value === null || isNaN(value) || value <= 0) {
+    return <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black border bg-slate-50 text-slate-400 border-slate-200">--</span>;
+  }
+  if (!isFinite(value)) {
+    return <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black border bg-emerald-50 text-emerald-700 border-emerald-200">∞ Risk-Free</span>;
+  }
+  const vStr = value.toFixed(1);
   return (
     <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black border ${
-      v >= 10 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-      v >= 5 ? 'bg-blue-50 text-blue-700 border-blue-200' :
+      value >= 5 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+      value >= 2 ? 'bg-blue-50 text-blue-700 border-blue-200' :
       'bg-slate-50 text-slate-600 border-slate-200'
-    }`}>1:{v}</span>
+    }`}>{vStr}:1</span>
   );
 }
 
@@ -1282,11 +1288,11 @@ function RatioContent({ opps, onEnter }) {
             <div><div className="text-[9px] text-slate-400 font-semibold">Buy 2x</div><div className="text-xs font-mono text-slate-600">{o.farBuyStrike} @ ₹{o.farBuyPrice}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">{o.netCostRs <= 0 ? 'Net Credit' : 'Net Cost'}</div><div className={`text-sm font-black ${o.netCostRs <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{o.netCostRs <= 0 ? `+₹${Math.abs(Math.round(o.netCostRs)).toLocaleString()}` : `₹${Math.round(o.netCostRs).toLocaleString()}`}</div></div>
             <div><div className="text-[9px] text-slate-400 font-semibold">Max Reward</div><div className="text-sm font-black text-emerald-600">₹{Math.round(o.maxProfit).toLocaleString()}</div></div>
-            <div><div className="text-[9px] text-slate-400 font-semibold">R:R</div><div className="text-sm font-black text-violet-600">1:{Math.round(o.riskReward)}</div></div>
+            <div><div className="text-[9px] text-slate-400 font-semibold">R:R</div><div className="text-sm font-black text-violet-600">{typeof o.riskReward === 'number' && isFinite(o.riskReward) ? `${o.riskReward.toFixed(1)}:1` : '∞'}</div></div>
           </div>
         )} />
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <Stat label="Best R:R" value={`1:${Math.round(b.riskReward)}`} color="text-emerald-600" icon="🎯" />
+        <Stat label="Best R:R" value={b.riskReward && isFinite(b.riskReward) ? `${b.riskReward.toFixed(1)}:1` : '∞'} color="text-emerald-600" icon="🎯" />
         <Stat label="Max Risk" value={`₹${Math.round(b.maxLoss).toLocaleString()}`} sub="Per lot" color="text-red-500" icon="🛡️" />
         <Stat label="Max Reward" value={`₹${Math.round(b.maxProfit).toLocaleString()}`} sub="Per lot" color="text-emerald-600" icon="💰" />
         <Stat label="Sweet Spot" value={b.sweetSpot} sub={b.underlying} icon="📍" />
