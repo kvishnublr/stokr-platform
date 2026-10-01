@@ -2279,11 +2279,15 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         }
     }
 
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    @Scheduled(fixedDelay = 60000)
     @Scheduled(cron = "0 35 15 * * MON-FRI", zone = "Asia/Kolkata")
     public void closeExpiredPositions() {
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        java.time.LocalTime nowTime = java.time.LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        boolean isPast330 = nowTime.isAfter(java.time.LocalTime.of(15, 30));
         try {
-            List<LivePosition> expired = positionRepo.findOpenExpiredBefore(today);
+            List<LivePosition> expired = positionRepo.findOpenExpiredPositions(today, isPast330);
             if (expired.isEmpty()) return;
 
             List<String> symbols = new ArrayList<>();

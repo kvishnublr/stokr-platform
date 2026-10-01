@@ -56,4 +56,7 @@ public interface LivePositionRepository extends JpaRepository<LivePosition, Long
 
     @Query("SELECT p FROM LivePosition p WHERE p.status = 'OPEN' AND p.expiryDate IS NOT NULL AND p.expiryDate < :today")
     List<LivePosition> findOpenExpiredBefore(@Param("today") java.time.LocalDate today);
+
+    @Query("SELECT p FROM LivePosition p WHERE p.status = 'OPEN' AND p.expiryDate IS NOT NULL AND (p.expiryDate < :today OR (p.expiryDate = :today AND :isPast330 = true))")
+    List<LivePosition> findOpenExpiredPositions(@Param("today") java.time.LocalDate today, @Param("isPast330") boolean isPast330);
 }

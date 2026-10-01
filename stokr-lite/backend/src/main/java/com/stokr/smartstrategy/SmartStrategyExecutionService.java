@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 
 @Slf4j
@@ -241,8 +242,14 @@ public class SmartStrategyExecutionService {
             "EXPIRY_THETA_CRUSH", "BOX_SPREAD_ARB", "JADE_LIZARD", "CALENDAR_SPREAD_EDGE",
             "IRON_CONDOR", "MORNING_RANGE_THETA"
         );
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        java.time.LocalTime nowTime = java.time.LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        boolean isPast330 = nowTime.isAfter(java.time.LocalTime.of(15, 30));
+
         List<LivePosition> openPositions = positionRepo.findAllOpen().stream()
             .filter(p -> "OPEN".equals(p.getStatus()) && smartTypes.contains(p.getStrategyType()))
+            .filter(p -> p.getExpiryDate() == null || !p.getExpiryDate().isBefore(today))
+            .filter(p -> p.getExpiryDate() == null || !(p.getExpiryDate().isEqual(today) && isPast330))
             .toList();
 
         if (openPositions.isEmpty()) return List.of();
