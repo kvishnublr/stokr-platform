@@ -907,9 +907,9 @@ function AdvancedPayoff({ opp, legs, lotSize, spot, accentColor }) {
   const netDebitRs = legs.reduce((sum, l) => sum + (l.side === 'BUY' ? l.price : -l.price) * (l.qty || 1), 0) * lotSize;
   const calculatedMaxLoss = points.length > 0 ? Math.min(...points.map(p => p.pnl)) : 0;
   const rawMaxLoss = isCalendar ? Math.min(-Math.abs(netDebitRs), calculatedMaxLoss) : calculatedMaxLoss;
-  const maxLoss = (opp && typeof opp.maxLoss === 'number') ? opp.maxLoss : rawMaxLoss;
-  const isRiskFree = maxLoss >= 0 && !isCalendar;
-  const rr = maxLoss < 0 ? Math.abs(maxProfit / maxLoss) : Infinity;
+  const maxLoss = calculatedMaxLoss < 0 ? calculatedMaxLoss : ((opp && typeof opp.maxLoss === 'number' && opp.maxLoss < 0) ? opp.maxLoss : rawMaxLoss);
+  const isRiskFree = maxLoss >= 0 && calculatedMaxLoss >= 0 && !isCalendar;
+  const rr = (maxLoss < 0 && Math.abs(maxLoss) > 0) ? Math.abs(maxProfit / maxLoss) : Infinity;
   const netCredit = legs.reduce((sum, l) => sum + (l.side === 'SELL' ? l.price : -l.price) * (l.qty || 1), 0);
   const expiry = opp.expiry || opp.expiryDate || '--';
   const breakevens = useMemo(() => {
