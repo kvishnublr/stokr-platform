@@ -2321,8 +2321,8 @@ function ActivePositionsPanel() {
   const { data: positions } = useQuery({
     queryKey: ['smart-positions'],
     queryFn: async () => { const r = await client.get('/smart-strategies/positions'); return r.data; },
-    refetchInterval: 10000,
-    staleTime: 5000,
+    refetchInterval: 1000,
+    staleTime: 500,
   });
 
   const exitMutation = useMutation({

@@ -171,9 +171,11 @@ public class SmartStrategyExecutionService {
                 int qty = lots * lotSize * qtyMult;
                 double price = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
 
+                // Cap live order slippage buffer to max 1% or Rs 3.00 to protect against wide spreads on heavy options
+                double bufAmt = Math.min(price * 0.01, 3.0);
                 double bufferedPrice = price > 0
-                    ? ("BUY".equals(side) ? Math.ceil(price * 1.05 * 20) / 20.0
-                                          : Math.floor(price * 0.95 * 20) / 20.0)
+                    ? ("BUY".equals(side) ? Math.ceil((price + bufAmt) * 20) / 20.0
+                                          : Math.floor((price - bufAmt) * 20) / 20.0)
                     : 0.0;
 
                 BrokerOrderRequest req = BrokerOrderRequest.builder()
@@ -239,10 +241,57 @@ public class SmartStrategyExecutionService {
             "EXPIRY_THETA_CRUSH", "BOX_SPREAD_ARB", "JADE_LIZARD", "CALENDAR_SPREAD_EDGE",
             "IRON_CONDOR", "MORNING_RANGE_THETA"
         );
-        return positionRepo.findAllOpen().stream()
+        List<LivePosition> openPositions = positionRepo.findAllOpen().stream()
             .filter(p -> "OPEN".equals(p.getStatus()) && smartTypes.contains(p.getStrategyType()))
-            .map(LivePosition::toMap)
             .toList();
+
+        if (openPositions.isEmpty()) return List.of();
+
+        List<String> symbols = new ArrayList<>();
+        for (LivePosition p : openPositions) {
+            if (p.getLegs() != null) {
+                for (Map<String, Object> leg : p.getLegs()) {
+                    Object sym = leg.get("symbol");
+                    if (sym instanceof String s) symbols.add(s);
+                }
+            }
+        }
+
+        Map<String, OptionChainService.OptionQuote> quotes;
+        try {
+            quotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
+        } catch (Exception e) {
+            log.debug("Smart active positions quote fetch failed: {}", e.getMessage());
+            quotes = Map.of();
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (LivePosition p : openPositions) {
+            Map<String, Object> map = p.toMap();
+            double pnl = computeMultiLegPnl(p, quotes);
+            double roundedPnl = Math.round(pnl * 100.0) / 100.0;
+            map.put("currentPnl", roundedPnl);
+            map.put("pnl", roundedPnl);
+
+            List<Map<String, Object>> legs = p.getLegs();
+            if (legs != null) {
+                List<Map<String, Object>> updatedLegs = new ArrayList<>();
+                for (Map<String, Object> leg : legs) {
+                    Map<String, Object> legMap = new LinkedHashMap<>(leg);
+                    String symbol = (String) leg.get("symbol");
+                    OptionChainService.OptionQuote q = symbol != null ? quotes.get(symbol) : null;
+                    if (q != null && q.lastPrice > 0) {
+                        double lp = Math.round(q.lastPrice * 100.0) / 100.0;
+                        legMap.put("currentPrice", lp);
+                        legMap.put("lastPrice", lp);
+                    }
+                    updatedLegs.add(legMap);
+                }
+                map.put("legs", updatedLegs);
+            }
+            result.add(map);
+        }
+        return result;
     }
 
     public Map<String, Object> exitPosition(Long positionId) {

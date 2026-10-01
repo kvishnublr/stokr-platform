@@ -919,13 +919,15 @@ export default function Positions() {
   const { data: livePositionsData, refetch: refetchLiveActive } = useQuery({
     queryKey: ['livePositionsActiveSummary'],
     queryFn: () => client.get('/option-arbitrage/live-positions').then(r => r.data),
-    refetchInterval: 2000,
+    refetchInterval: 1000,
+    staleTime: 500,
   });
 
   const { data: cashPositionsData, refetch: refetchCashActive } = useQuery({
     queryKey: ['cashPositionsActiveSummary'],
     queryFn: () => client.get('/option-arbitrage/cash-positions').then(r => r.data),
-    refetchInterval: 2000,
+    refetchInterval: 1000,
+    staleTime: 500,
   });
 
   const fnoActivePositions = useMemo(() => {

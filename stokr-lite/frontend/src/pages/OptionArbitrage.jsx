@@ -1940,8 +1940,8 @@ function CashPositionsSection() {
       const res = await client.get('/option-arbitrage/cash-positions');
       return res.data;
     },
-    refetchInterval: 10000,
-    staleTime: 8000,
+    refetchInterval: 2000,
+    staleTime: 1000,
   });
 
   const positions = data?.positions || [];
