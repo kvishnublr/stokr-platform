@@ -1937,7 +1937,7 @@ function formatCashDateTime(ts) {
   const d = new Date(ts);
   if (isNaN(d.getTime())) return String(ts);
   const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
-  const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   return `${dateStr} ${timeStr}`;
 }
 
@@ -2033,7 +2033,7 @@ function CashPositionsSection() {
     return (
       <div className="bg-white rounded-2xl border border-slate-200 p-6 text-center shadow-sm">
         <div className="flex items-center justify-center gap-2 mb-1.5">
-          <span className="text-lg">\uD83D\uDCC8</span>
+          <span className="text-lg">????</span>
           <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Cash Equity & Stock Strategy Positions</h4>
         </div>
         <p className="text-xs text-slate-500 font-medium">No open cash equity trades right now. Live stock positions populate automatically during market hours (9:15 AM - 3:30 PM IST) when strategy signals trigger.</p>
@@ -2046,7 +2046,7 @@ function CashPositionsSection() {
       {/* Header Bar */}
       <div className="px-4 py-3 bg-slate-900 flex flex-wrap items-center justify-between gap-3 cursor-pointer" onClick={() => setCollapsed(!collapsed)}>
         <div className="flex items-center gap-2.5">
-          <span className="text-xl">\uD83D\uDCC8</span>
+          <span className="text-xl">????</span>
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-black text-white tracking-tight">Cash Equity Active Trades</h3>
@@ -2062,14 +2062,14 @@ function CashPositionsSection() {
           <div className="flex items-center gap-2 bg-slate-800/90 px-3 py-1 rounded-xl border border-slate-700/60" onClick={e => e.stopPropagation()}>
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Open P&amp;L</span>
             <span className={`text-xs font-black font-mono ${summary.totalPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {summary.totalPnl >= 0 ? '+' : ''}\u20B9{Math.round(summary.totalPnl).toLocaleString('en-IN')} ({summary.avgPnlPct >= 0 ? '+' : ''}{summary.avgPnlPct.toFixed(2)}%)
+              {summary.totalPnl >= 0 ? '+' : ''}???{Math.round(summary.totalPnl).toLocaleString('en-IN')} ({summary.avgPnlPct >= 0 ? '+' : ''}{summary.avgPnlPct.toFixed(2)}%)
             </span>
           </div>
 
           <button onClick={(e) => { e.stopPropagation(); refetch(); }} className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-bold rounded-lg transition flex items-center gap-1">
-            <span>\uD83D\uDD04</span> Refresh
+            <span>????</span> Refresh
           </button>
-          <span className="text-slate-400 text-xs font-bold">{collapsed ? '\u25B2' : '\u25BC'}</span>
+          <span className="text-slate-400 text-xs font-bold">{collapsed ? '???' : '???'}</span>
         </div>
       </div>
 
@@ -2083,12 +2083,12 @@ function CashPositionsSection() {
             </div>
             <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs">
               <div className="text-[10px] font-bold text-slate-400 uppercase">Total Capital Invested</div>
-              <div className="text-base font-black text-slate-800 font-mono">\u20B9{Math.round(summary.totalInvested).toLocaleString('en-IN')}</div>
+              <div className="text-base font-black text-slate-800 font-mono">???{Math.round(summary.totalInvested).toLocaleString('en-IN')}</div>
             </div>
             <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs">
               <div className="text-[10px] font-bold text-slate-400 uppercase">Unrealized P&amp;L</div>
               <div className={`text-base font-black font-mono ${summary.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {summary.totalPnl >= 0 ? '+' : ''}\u20B9{Math.round(summary.totalPnl).toLocaleString('en-IN')}
+                {summary.totalPnl >= 0 ? '+' : ''}???{Math.round(summary.totalPnl).toLocaleString('en-IN')}
               </div>
             </div>
             <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs">
@@ -2110,9 +2110,9 @@ function CashPositionsSection() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-xl font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-500 shadow-2xs"
                 />
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">\uD83D\uDD0D</span>
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">????</span>
                 {searchQuery && (
-                  <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs">\u2715</button>
+                  <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs">???</button>
                 )}
               </div>
             </div>
@@ -2146,20 +2146,20 @@ function CashPositionsSection() {
                 <th className="px-3 py-2.5 cursor-pointer hover:bg-slate-200/70 transition" onClick={() => handleSort('enteredAt')}>
                   <div className="flex items-center gap-1">
                     <span>Start Date</span>
-                    {sortField === 'enteredAt' && (<span>{sortOrder === 'asc' ? '\u25B2' : '\u25BC'}</span>)}
+                    {sortField === 'enteredAt' && (<span>{sortOrder === 'asc' ? '???' : '???'}</span>)}
                   </div>
                 </th>
                 <th className="px-3 py-2.5 cursor-pointer hover:bg-slate-200/70 transition" onClick={() => handleSort('symbol')}>
                   <div className="flex items-center gap-1">
                     <span>Symbol</span>
-                    {sortField === 'symbol' && (<span>{sortOrder === 'asc' ? '\u25B2' : '\u25BC'}</span>)}
+                    {sortField === 'symbol' && (<span>{sortOrder === 'asc' ? '???' : '???'}</span>)}
                   </div>
                 </th>
                 <th className="px-3 py-2.5">Strategy</th>
                 <th className="px-3 py-2.5 text-center cursor-pointer hover:bg-slate-200/70 transition" onClick={() => handleSort('holdDays')}>
                   <div className="flex items-center justify-center gap-1">
                     <span>Days</span>
-                    {sortField === 'holdDays' && (<span>{sortOrder === 'asc' ? '\u25B2' : '\u25BC'}</span>)}
+                    {sortField === 'holdDays' && (<span>{sortOrder === 'asc' ? '???' : '???'}</span>)}
                   </div>
                 </th>
                 <th className="px-3 py-2.5 text-right">Qty</th>
@@ -2169,14 +2169,14 @@ function CashPositionsSection() {
                 <th className="px-3 py-2.5 text-right">Stop Loss</th>
                 <th className="px-3 py-2.5 text-right cursor-pointer hover:bg-slate-200/70 transition" onClick={() => handleSort('pnl')}>
                   <div className="flex items-center justify-end gap-1">
-                    <span>P&amp;L (\u20B9)</span>
-                    {sortField === 'pnl' && (<span>{sortOrder === 'asc' ? '\u25B2' : '\u25BC'}</span>)}
+                    <span>P&amp;L (???)</span>
+                    {sortField === 'pnl' && (<span>{sortOrder === 'asc' ? '???' : '???'}</span>)}
                   </div>
                 </th>
                 <th className="px-3 py-2.5 text-right cursor-pointer hover:bg-slate-200/70 transition" onClick={() => handleSort('pnlPct')}>
                   <div className="flex items-center justify-end gap-1">
                     <span>P&amp;L %</span>
-                    {sortField === 'pnlPct' && (<span>{sortOrder === 'asc' ? '\u25B2' : '\u25BC'}</span>)}
+                    {sortField === 'pnlPct' && (<span>{sortOrder === 'asc' ? '???' : '???'}</span>)}
                   </div>
                 </th>
                 <th className="px-3 py-2.5 text-center">Broker</th>
@@ -2212,25 +2212,25 @@ function CashPositionsSection() {
                         </span>
                       </td>
                       <td className={`px-3 py-2.5 text-center font-bold text-[10px] ${isStale ? 'text-amber-700 font-black' : 'text-slate-600'}`}>
-                        {holdDays}d{isStale ? ' \u26A0' : ''}
+                        {holdDays}d{isStale ? ' ???' : ''}
                       </td>
                       <td className="px-3 py-2.5 text-right font-bold text-slate-800 font-mono">
                         {p.quantity}
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono text-slate-700">
-                        \u20B9{Number(p.entryPrice || 0).toFixed(1)}
+                        ???{Number(p.entryPrice || 0).toFixed(1)}
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono font-black text-slate-900">
-                        \u20B9{Number(p.currentPrice || 0).toFixed(1)}
+                        ???{Number(p.currentPrice || 0).toFixed(1)}
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono text-emerald-600 font-bold">
-                        \u20B9{Number(p.targetPrice || 0).toFixed(1)}
+                        ???{Number(p.targetPrice || 0).toFixed(1)}
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono text-rose-600 font-bold">
-                        \u20B9{Number(p.stopLossPrice || 0).toFixed(1)}
+                        ???{Number(p.stopLossPrice || 0).toFixed(1)}
                       </td>
                       <td className={`px-3 py-2.5 text-right font-mono font-black text-xs ${pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {pnl >= 0 ? '+' : ''}\u20B9{Math.round(pnl).toLocaleString('en-IN')}
+                        {pnl >= 0 ? '+' : ''}???{Math.round(pnl).toLocaleString('en-IN')}
                       </td>
                       <td className={`px-3 py-2.5 text-right font-mono font-black text-[11px] ${pnlPct >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                         {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
