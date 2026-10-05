@@ -115,7 +115,12 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
         exitDate: fmtDate(p.exitedAt || p.createdAt),
         exitTime: fmtTime(p.exitedAt || p.createdAt),
         duration: calcDuration(p.enteredAt, p.exitedAt),
-        timestamp: p.exitedAt || p.enteredAt || p.createdAt
+        timestamp: p.exitedAt || p.enteredAt || p.createdAt,
+        entryPriceVal: p.entryPrice || p.entryCost || (p.ceEntryPrice ? (Number(p.ceEntryPrice) + (Number(p.peEntryPrice) || 0)) : null),
+        exitPriceVal: p.exitPrice || (p.closeCePrice ? (Number(p.closeCePrice) + (Number(p.closePePrice) || 0)) : null),
+        slVal: p.slPrice || (p.slPct ? `${p.slPct}%` : null),
+        targetVal: p.targetPrice || (p.targetEdge ? `₹${p.targetEdge}` : (p.targetPct ? `${p.targetPct}%` : null)),
+        exitReasonVal: p.exitReason || p.reason || p.status || 'CLOSED'
       };
     });
 
@@ -139,7 +144,12 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
         exitDate: fmtDate(p.exitedAt || p.createdAt),
         exitTime: fmtTime(p.exitedAt || p.createdAt),
         duration: calcDuration(p.enteredAt, p.exitedAt),
-        timestamp: p.exitedAt || p.enteredAt || p.createdAt
+        timestamp: p.exitedAt || p.enteredAt || p.createdAt,
+        entryPriceVal: p.entryPrice || p.entryCost || (p.ceEntryPrice ? (Number(p.ceEntryPrice) + (Number(p.peEntryPrice) || 0)) : null),
+        exitPriceVal: p.exitPrice || (p.closeCePrice ? (Number(p.closeCePrice) + (Number(p.closePePrice) || 0)) : null),
+        slVal: p.slPrice || (p.slPct ? `${p.slPct}%` : null),
+        targetVal: p.targetPrice || (p.targetEdge ? `₹${p.targetEdge}` : (p.targetPct ? `${p.targetPct}%` : null)),
+        exitReasonVal: p.exitReason || p.reason || p.status || 'CLOSED'
       };
     });
 
@@ -841,6 +851,9 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
                     Strategy {sortCol === 'strategy' && (sortDir === 'asc' ? '▲' : '▼')}
                   </th>
                   <th className="px-4 py-3">Symbol / Legs</th>
+                  <th className="px-3 py-3 text-right">Entry Price</th>
+                  <th className="px-3 py-3 text-right">Exit Price</th>
+                  <th className="px-3 py-3 text-center">SL / Target</th>
                   <th className="px-4 py-3 text-right cursor-pointer hover:bg-slate-100 select-none" onClick={() => toggleSort('lots')}>
                     Qty / Lots {sortCol === 'lots' && (sortDir === 'asc' ? '▲' : '▼')}
                   </th>
@@ -862,7 +875,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
                     <React.Fragment key={p.id}>
                       {newDay && dt && (
                         <tr className="bg-slate-50/80">
-                          <td colSpan={6} className="px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                          <td colSpan={9} className="px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
                             📅 {dk === 'Unknown date' ? dk : new Date(dk).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
                             <span className="ml-2 font-bold normal-case tracking-normal text-slate-400">{dt.trades} trade{dt.trades > 1 ? 's' : ''}</span>
                           </td>
