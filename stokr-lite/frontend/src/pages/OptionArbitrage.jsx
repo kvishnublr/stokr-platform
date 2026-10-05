@@ -31,6 +31,26 @@ function bsPutPrice(S, K, T, r, sigma) {
   return K * Math.exp(-r * T) * bsNormCDF(-d2) - S * bsNormCDF(-d1);
 }
 
+/** Time of day only (hh:mm:ss am/pm), for compact entry/exit cells. */
+function fmtClock(dt) {
+  if (!dt) return '--';
+  const d = new Date(dt);
+  if (isNaN(d.getTime())) return '--';
+  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+}
+
+/** Hold time between two timestamps (or until now), e.g. "45s", "12m", "1h 05m". */
+function fmtHold(fromDt, toDt) {
+  if (!fromDt) return null;
+  const ms = (toDt ? new Date(toDt) : new Date()) - new Date(fromDt);
+  if (isNaN(ms) || ms < 0) return null;
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
+}
+
 function fmtTime(dt) {
   if (!dt) return '--';
   const d = new Date(dt);
@@ -1381,7 +1401,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
             <table className="w-full text-[11px] text-left border-collapse">
               <thead className="bg-slate-900 text-slate-200 text-[9px] uppercase tracking-wider font-black border-b-2 border-slate-800 shadow-sm">
                 <tr>
-                  <SortTh col="enteredAt" className="px-1.5 py-2">Time</SortTh>
+                  <SortTh col="enteredAt" className="px-1.5 py-2">Entry / Exit</SortTh>
                   <SortTh col="broker" className="px-1.5 py-2">Broker</SortTh>
                   <SortTh col="strategy" className="px-1.5 py-2">Strategy</SortTh>
                   <SortTh col="underlying" className="px-1.5 py-2">Symbol</SortTh>
@@ -1410,7 +1430,28 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                     <React.Fragment key={p.id}>
                     <tr onClick={() => canShowPayoff && setExpandedPosId(isExpanded ? null : p.id)}
                       className={`${rowBg} hover:bg-indigo-50/60 transition-colors border-b border-slate-100 ${canShowPayoff ? 'cursor-pointer' : ''}`}>
-                      <td className="px-1.5 py-1 font-mono text-[10px] text-slate-500 whitespace-nowrap">{fmtTime(p.enteredAt)}</td>
+                      <td className="px-1.5 py-1 font-mono text-[10px] text-slate-500 whitespace-nowrap leading-tight">
+                        <div className="text-[9px] text-slate-400">
+                          {p.enteredAt ? new Date(p.enteredAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : ''}
+                        </div>
+                        <div title="Entry time">
+                          <span className="inline-block w-7 text-[8px] font-black text-emerald-600">IN</span>{fmtClock(p.enteredAt)}
+                        </div>
+                        {p.exitedAt ? (
+                          <div title={`Exit time${p.exitReason ? ' — ' + p.exitReason : ''}`}>
+                            <span className="inline-block w-7 text-[8px] font-black text-rose-600">OUT</span>{fmtClock(p.exitedAt)}
+                          </div>
+                        ) : (
+                          <div className="text-[9px] font-bold text-indigo-500">
+                            <span className="inline-block w-7 text-[8px] font-black">●</span>open
+                          </div>
+                        )}
+                        {fmtHold(p.enteredAt, p.exitedAt) && (
+                          <span className="inline-block mt-0.5 px-1 rounded bg-slate-100 text-slate-500 text-[8px] font-bold" title="Hold time">
+                            ⏱ {fmtHold(p.enteredAt, p.exitedAt)}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-1.5 py-1">
                         {isPaper(p)
                           ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold border border-slate-200">📄 Paper</span>
