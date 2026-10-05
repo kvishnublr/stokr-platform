@@ -61,7 +61,13 @@ $SSH_CMD "
     echo \"REFUSING TO DEPLOY: \$SRC is missing index.html or has no assets -- build likely failed\"
     exit 1
   fi
-  rm -rf /opt/stokr/ui/* && cp -r \"\$SRC\"/* /opt/stokr/ui/ && chmod -R 755 /opt/stokr/ui/assets/ && echo 'Frontend deployed OK'
+  # Keep the previous build's hashed assets for a few days: tabs opened before this deploy still
+  # request them, and deleting them blanks those tabs ('Failed to fetch dynamically imported module').
+  find /opt/stokr/ui -maxdepth 1 -type f -delete
+  mkdir -p /opt/stokr/ui/assets
+  cp -r \"\$SRC\"/* /opt/stokr/ui/ && chmod -R 755 /opt/stokr/ui/assets/
+  find /opt/stokr/ui/assets -type f -mtime +3 -delete
+  echo 'Frontend deployed OK'
 "
 echo ""
 
