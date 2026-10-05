@@ -1416,7 +1416,37 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         }
     }
 
+        private double getSpotPrice(String underlying) {
+        if (underlying == null) return 0;
+        try {
+            var qMap = optionChainService.fetchQuotes(List.of(optionChainService.buildNfoFutSymbol(underlying, java.time.LocalDate.now())));
+            if (qMap != null && !qMap.isEmpty()) {
+                for (var q : qMap.values()) {
+                    if (q != null && q.lastPrice > 0) return q.lastPrice;
+                }
+            }
+        } catch (Exception ignored) {}
+        return 0;
+    }
+
+    private boolean isMoneynessAndSpreadValid(OptionArbOpportunity opp) {
+        if (opp == null) return true;
+        double spot = getSpotPrice(opp.getUnderlying());
+        if (spot > 0 && opp.getStrike() != null && opp.getStrike() > 0) {
+            double diffPct = Math.abs(opp.getStrike() - spot) / spot;
+            if (diffPct > 0.03) {
+                log.warn("PRE-EXEC REJECT: {} strike {} is {:.2f}% from spot {:.2f} (>3% limit)", opp.getUnderlying(), opp.getStrike(), diffPct * 100, spot);
+                return false;
+            }
+        }
+        return true;
+    }
+
     private boolean executeTrade(BrokerAccount account, BrokerAdapter adapter, OptionArbOpportunity opp, int lots, Long userId) {
+        if (!isMoneynessAndSpreadValid(opp)) {
+            addLog("EXEC_REJECT", "MONEYNESS_EXCEEDED", opp.getUnderlying() + " strike " + opp.getStrike() + " >3% from spot");
+            return false;
+        }
         int lotSize = getLotSize(opp.getUnderlying());
         String action = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
         boolean isConversion = "CONVERSION".equals(action) || action.contains("BUY CE +");

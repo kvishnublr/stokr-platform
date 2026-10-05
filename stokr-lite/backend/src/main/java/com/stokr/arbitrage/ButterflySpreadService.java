@@ -152,6 +152,8 @@ public class ButterflySpreadService {
                             OptionChainService.OptionQuote q2 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k2, optionType));
                             OptionChainService.OptionQuote q3 = quotes.get(optionChainService.buildNfoSymbol(u, monthlyExpiry, k3, optionType));
                             if (!isLiquid(q1, lotSize) || !isLiquid(q2, lotSize) || !isLiquid(q3, lotSize)) continue;
+                            if (spot > 0 && (Math.abs(k1 - spot) / spot > 0.03 || Math.abs(k3 - spot) / spot > 0.03)) continue;
+                            if ((q1.ask - q1.bid > 15.0) || (q2.ask - q2.bid > 15.0) || (q3.ask - q3.bid > 15.0)) continue;
                             if (!OptionChainService.strikeOrdered(optionType, q1, q2, q3)) continue;
                             if (q1.ask <= 0 || q2.bid <= 0 || q3.ask <= 0) continue;
 
