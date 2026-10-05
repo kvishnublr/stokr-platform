@@ -1932,9 +1932,23 @@ function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
 }
 
 
+function formatCashDateTime(ts) {
+  if (!ts) return '--';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return String(ts);
+  const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+  const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${dateStr} ${timeStr}`;
+}
+
 function CashPositionsSection() {
   const [collapsed, setCollapsed] = useState(false);
-  const { data, refetch } = useQuery({
+  const [searchQuery, setSearchQuery] = useState('');
+  const [strategyFilter, setStrategyFilter] = useState('ALL'); // ALL | SURGE | SWING
+  const [sortField, setSortField] = useState('enteredAt'); // enteredAt | symbol | pnl | pnlPct | holdDays
+  const [sortOrder, setSortOrder] = useState('desc');
+
+  const { data, refetch, isLoading } = useQuery({
     queryKey: ['cashPositions'],
     queryFn: async () => {
       const res = await client.get('/option-arbitrage/cash-positions');
@@ -1944,8 +1958,78 @@ function CashPositionsSection() {
     staleTime: 1000,
   });
 
-  const positions = data?.positions || [];
-    if (positions.length === 0) {
+  const rawPositions = data?.positions || [];
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('desc');
+    }
+  };
+
+  const filteredAndSortedPositions = useMemo(() => {
+    let list = [...rawPositions];
+
+    if (strategyFilter === 'SURGE') {
+      list = list.filter(p => p.strategyType === 'CASH_SURGE');
+    } else if (strategyFilter === 'SWING') {
+      list = list.filter(p => p.strategyType === 'CASH_SWING');
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(p => 
+        (p.symbol && p.symbol.toLowerCase().includes(q)) ||
+        (p.strategyType && p.strategyType.toLowerCase().includes(q)) ||
+        (p.broker && p.broker.toLowerCase().includes(q))
+      );
+    }
+
+    list.sort((a, b) => {
+      let valA, valB;
+      if (sortField === 'enteredAt') {
+        valA = a.enteredAt ? new Date(a.enteredAt).getTime() : 0;
+        valB = b.enteredAt ? new Date(b.enteredAt).getTime() : 0;
+      } else if (sortField === 'symbol') {
+        valA = (a.symbol || '').toLowerCase();
+        valB = (b.symbol || '').toLowerCase();
+      } else if (sortField === 'pnl') {
+        valA = Number(a.currentPnl || 0);
+        valB = Number(b.currentPnl || 0);
+      } else if (sortField === 'pnlPct') {
+        valA = Number(a.pnlPct || 0);
+        valB = Number(b.pnlPct || 0);
+      } else if (sortField === 'holdDays') {
+        valA = Number(a.holdDays || 0);
+        valB = Number(b.holdDays || 0);
+      } else {
+        valA = 0;
+        valB = 0;
+      }
+
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return list;
+  }, [rawPositions, strategyFilter, searchQuery, sortField, sortOrder]);
+
+  const summary = useMemo(() => {
+    const totalInvested = rawPositions.reduce((acc, p) => acc + ((Number(p.entryPrice) || 0) * (Number(p.quantity) || 0)), 0);
+    const totalPnl = rawPositions.reduce((acc, p) => acc + (Number(p.currentPnl) || 0), 0);
+    const avgPnlPct = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
+    return {
+      count: rawPositions.length,
+      totalInvested,
+      totalPnl,
+      avgPnlPct
+    };
+  }, [rawPositions]);
+
+  if (rawPositions.length === 0 && !isLoading) {
     return (
       <div className="bg-white rounded-2xl border border-slate-200 p-6 text-center shadow-sm">
         <div className="flex items-center justify-center gap-2 mb-1.5">
@@ -1958,69 +2042,208 @@ function CashPositionsSection() {
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-4 py-3 bg-gradient-to-r from-amber-900 to-orange-950 flex items-center justify-between cursor-pointer" onClick={() => setCollapsed(!collapsed)}>
-        <div className="flex items-center gap-2">
-          <span className="text-lg">🔥</span>
-          <h3 className="text-sm font-black text-white">Cash Positions</h3>
-          <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full">{positions.length}</span>
-          {data?.totalPnl != null && (
-            <span className={`px-2.5 py-0.5 text-[11px] font-black rounded-full ${data.totalPnl >= 0 ? 'bg-emerald-500/30 text-emerald-300' : 'bg-red-500/30 text-red-300'}`}>
-              Total P&L: ₹{Math.round(data.totalPnl).toLocaleString('en-IN')}
-            </span>
-          )}
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-0">
+      {/* Header Bar */}
+      <div className="px-4 py-3 bg-slate-900 flex flex-wrap items-center justify-between gap-3 cursor-pointer" onClick={() => setCollapsed(!collapsed)}>
+        <div className="flex items-center gap-2.5">
+          <span className="text-xl">????</span>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-black text-white tracking-tight">Cash Equity Active Trades</h3>
+              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full border border-emerald-500/30">
+                {rawPositions.length} Open
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-400 font-medium hidden sm:block">Automated Intra/Swing Equity Positions with Dynamic SL & Target</p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={(e) => { e.stopPropagation(); refetch(); }} className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition">Refresh</button>
-          <span className="text-white/60 text-xs">{collapsed ? '▼' : '▲'}</span>
+
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-slate-800/90 px-3 py-1 rounded-xl border border-slate-700/60" onClick={e => e.stopPropagation()}>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Open P&amp;L</span>
+            <span className={`text-xs font-black font-mono ${summary.totalPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {summary.totalPnl >= 0 ? '+' : ''}???{Math.round(summary.totalPnl).toLocaleString('en-IN')} ({summary.avgPnlPct >= 0 ? '+' : ''}{summary.avgPnlPct.toFixed(2)}%)
+            </span>
+          </div>
+
+          <button onClick={(e) => { e.stopPropagation(); refetch(); }} className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-bold rounded-lg transition flex items-center gap-1">
+            <span>????</span> Refresh
+          </button>
+          <span className="text-slate-400 text-xs font-bold">{collapsed ? '???' : '???'}</span>
         </div>
       </div>
 
       {!collapsed && (
+        <div className="p-3 bg-slate-50 border-b border-slate-200 space-y-3">
+          {/* Top KPI Metrics Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs">
+              <div className="text-[10px] font-bold text-slate-400 uppercase">Active Trades</div>
+              <div className="text-base font-black text-slate-800 font-mono">{summary.count} Trades</div>
+            </div>
+            <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs">
+              <div className="text-[10px] font-bold text-slate-400 uppercase">Total Capital Invested</div>
+              <div className="text-base font-black text-slate-800 font-mono">???{Math.round(summary.totalInvested).toLocaleString('en-IN')}</div>
+            </div>
+            <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs">
+              <div className="text-[10px] font-bold text-slate-400 uppercase">Unrealized P&amp;L</div>
+              <div className={`text-base font-black font-mono ${summary.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {summary.totalPnl >= 0 ? '+' : ''}???{Math.round(summary.totalPnl).toLocaleString('en-IN')}
+              </div>
+            </div>
+            <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs">
+              <div className="text-[10px] font-bold text-slate-400 uppercase">Overall Return</div>
+              <div className={`text-base font-black font-mono ${summary.avgPnlPct >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {summary.avgPnlPct >= 0 ? '+' : ''}{summary.avgPnlPct.toFixed(2)}%
+              </div>
+            </div>
+          </div>
+
+          {/* Search and Filter Control Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+            <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+              <div className="relative w-full max-w-xs">
+                <input
+                  type="text"
+                  placeholder="Search symbol, strategy, broker..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-xl font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                />
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">????</span>
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs">???</button>
+                )}
+              </div>
+            </div>
+
+            {/* Strategy Filter Pills */}
+            <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase px-1.5">Strategy:</span>
+              {[
+                { id: 'ALL', label: 'All' },
+                { id: 'SURGE', label: 'Surge' },
+                { id: 'SWING', label: 'Swing' },
+              ].map(st => (
+                <button
+                  key={st.id}
+                  onClick={() => setStrategyFilter(st.id)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition ${strategyFilter === st.id ? 'bg-indigo-600 text-white shadow-2xs' : 'text-slate-600 hover:bg-slate-100'}`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!collapsed && (
         <div className="overflow-x-auto">
           <table className="w-full text-[11px] text-left">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold">
+            <thead className="bg-slate-100 border-b border-slate-200 text-slate-700 uppercase tracking-tight font-bold select-none">
               <tr>
-                <th className="px-3 py-2">Symbol</th>
-                <th className="px-3 py-2">Strategy</th>
-                <th className="px-3 py-2 text-center">Days</th>
-                <th className="px-3 py-2 text-right">Qty</th>
-                <th className="px-3 py-2 text-right">Entry</th>
-                <th className="px-3 py-2 text-right">Current</th>
-                <th className="px-3 py-2 text-right">Target</th>
-                <th className="px-3 py-2 text-right">Stop Loss</th>
-                <th className="px-3 py-2 text-right">P&amp;L</th>
-                <th className="px-3 py-2 text-right">P&amp;L %</th>
-                <th className="px-3 py-2 text-center">Broker</th>
+                <th className="px-3 py-2.5 cursor-pointer hover:bg-slate-200/70 transition" onClick={() => handleSort('enteredAt')}>
+                  <div className="flex items-center gap-1">
+                    <span>Start Date</span>
+                    {sortField === 'enteredAt' && (<span>{sortOrder === 'asc' ? '???' : '???'}</span>)}
+                  </div>
+                </th>
+                <th className="px-3 py-2.5 cursor-pointer hover:bg-slate-200/70 transition" onClick={() => handleSort('symbol')}>
+                  <div className="flex items-center gap-1">
+                    <span>Symbol</span>
+                    {sortField === 'symbol' && (<span>{sortOrder === 'asc' ? '???' : '???'}</span>)}
+                  </div>
+                </th>
+                <th className="px-3 py-2.5">Strategy</th>
+                <th className="px-3 py-2.5 text-center cursor-pointer hover:bg-slate-200/70 transition" onClick={() => handleSort('holdDays')}>
+                  <div className="flex items-center justify-center gap-1">
+                    <span>Days</span>
+                    {sortField === 'holdDays' && (<span>{sortOrder === 'asc' ? '???' : '???'}</span>)}
+                  </div>
+                </th>
+                <th className="px-3 py-2.5 text-right">Qty</th>
+                <th className="px-3 py-2.5 text-right">Entry Price</th>
+                <th className="px-3 py-2.5 text-right">Current Price</th>
+                <th className="px-3 py-2.5 text-right">Target</th>
+                <th className="px-3 py-2.5 text-right">Stop Loss</th>
+                <th className="px-3 py-2.5 text-right cursor-pointer hover:bg-slate-200/70 transition" onClick={() => handleSort('pnl')}>
+                  <div className="flex items-center justify-end gap-1">
+                    <span>P&amp;L (???)</span>
+                    {sortField === 'pnl' && (<span>{sortOrder === 'asc' ? '???' : '???'}</span>)}
+                  </div>
+                </th>
+                <th className="px-3 py-2.5 text-right cursor-pointer hover:bg-slate-200/70 transition" onClick={() => handleSort('pnlPct')}>
+                  <div className="flex items-center justify-end gap-1">
+                    <span>P&amp;L %</span>
+                    {sortField === 'pnlPct' && (<span>{sortOrder === 'asc' ? '???' : '???'}</span>)}
+                  </div>
+                </th>
+                <th className="px-3 py-2.5 text-center">Broker</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {positions.map(p => {
-                const pnl = p.currentPnl != null ? Number(p.currentPnl) : 0;
-                const pnlPct = p.pnlPct != null ? Number(p.pnlPct) : 0;
-                const holdDays = p.holdDays != null ? Number(p.holdDays) : 0;
-                const maxDays = p.strategyType === 'CASH_SURGE' ? 3 : 5;
-                const isStale = holdDays >= maxDays;
-                return (
-                  <tr key={p.id} className={`hover:bg-slate-50 ${isStale ? 'bg-amber-50' : ''}`}>
-                    <td className="px-3 py-2 font-bold text-slate-800">{p.symbol}</td>
-                    <td className="px-1.5 py-1">
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${p.strategyType === 'CASH_SURGE' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                        {p.strategyType === 'CASH_SURGE' ? 'SURGE' : 'SWING'}
-                      </span>
-                    </td>
-                    <td className={`px-3 py-2 text-center font-bold text-[10px] ${isStale ? 'text-amber-600' : 'text-slate-500'}`}>{holdDays}d{isStale ? ' ⚠' : ''}</td>
-                    <td className="px-3 py-2 text-right font-bold">{p.quantity}</td>
-                    <td className="px-3 py-2 text-right font-mono">₹{Number(p.entryPrice || 0).toFixed(1)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-bold">₹{Number(p.currentPrice || 0).toFixed(1)}</td>
-                    <td className="px-3 py-2 text-right font-mono text-emerald-600">₹{Number(p.targetPrice || 0).toFixed(1)}</td>
-                    <td className="px-3 py-2 text-right font-mono text-red-500">₹{Number(p.stopLossPrice || 0).toFixed(1)}</td>
-                    <td className={`px-3 py-2 text-right font-mono font-bold ${pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>₹{Math.round(pnl).toLocaleString('en-IN')}</td>
-                    <td className={`px-3 py-2 text-right font-mono font-bold text-[10px] ${pnlPct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%</td>
-                    <td className="px-3 py-2 text-center text-[10px] text-slate-500">{p.broker}</td>
-                  </tr>
-                );
-              })}
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {filteredAndSortedPositions.length === 0 ? (
+                <tr>
+                  <td colSpan="12" className="px-4 py-8 text-center text-slate-500 font-medium">
+                    No matching cash trades found for current filters.
+                  </td>
+                </tr>
+              ) : (
+                filteredAndSortedPositions.map(p => {
+                  const pnl = p.currentPnl != null ? Number(p.currentPnl) : 0;
+                  const pnlPct = p.pnlPct != null ? Number(p.pnlPct) : 0;
+                  const holdDays = p.holdDays != null ? Number(p.holdDays) : 0;
+                  const maxDays = p.strategyType === 'CASH_SURGE' ? 3 : 5;
+                  const isStale = holdDays >= maxDays;
+                  const formattedDate = formatCashDateTime(p.enteredAt);
+
+                  return (
+                    <tr key={p.id} className={`hover:bg-slate-50 transition-colors ${isStale ? 'bg-amber-50/60' : ''}`}>
+                      <td className="px-3 py-2.5 font-mono text-[10px] text-slate-600 font-bold whitespace-nowrap">
+                        {formattedDate}
+                      </td>
+                      <td className="px-3 py-2.5 font-extrabold text-slate-900">
+                        {p.symbol}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className={`px-2 py-0.5 rounded-md text-[9px] font-black tracking-wide ${p.strategyType === 'CASH_SURGE' ? 'bg-orange-100 text-orange-800 border border-orange-200' : 'bg-indigo-100 text-indigo-800 border border-indigo-200'}`}>
+                          {p.strategyType === 'CASH_SURGE' ? 'CASH SURGE' : 'CASH SWING'}
+                        </span>
+                      </td>
+                      <td className={`px-3 py-2.5 text-center font-bold text-[10px] ${isStale ? 'text-amber-700 font-black' : 'text-slate-600'}`}>
+                        {holdDays}d{isStale ? ' ???' : ''}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-bold text-slate-800 font-mono">
+                        {p.quantity}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-slate-700">
+                        ???{Number(p.entryPrice || 0).toFixed(1)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono font-black text-slate-900">
+                        ???{Number(p.currentPrice || 0).toFixed(1)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-emerald-600 font-bold">
+                        ???{Number(p.targetPrice || 0).toFixed(1)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-rose-600 font-bold">
+                        ???{Number(p.stopLossPrice || 0).toFixed(1)}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right font-mono font-black text-xs ${pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {pnl >= 0 ? '+' : ''}???{Math.round(pnl).toLocaleString('en-IN')}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right font-mono font-black text-[11px] ${pnlPct >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+                      </td>
+                      <td className="px-3 py-2.5 text-center text-[10px] font-bold text-slate-500">
+                        <span className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-600 border border-slate-200">
+                          {p.broker || 'PAPER'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -2028,6 +2251,7 @@ function CashPositionsSection() {
     </div>
   );
 }
+
 
 function SubTabButton({ id, label, active, onClick, count }) {
   const isSel = active === id;
