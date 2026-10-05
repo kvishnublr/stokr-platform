@@ -1431,6 +1431,16 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
 
     private boolean isMoneynessAndSpreadValid(OptionArbOpportunity opp) {
         if (opp == null) return true;
+        String stType = opp.getStrategyType() != null ? opp.getStrategyType() : "";
+        String act = opp.getAction() != null ? opp.getAction() : "";
+        if (stType.contains("BID_PARITY") || act.contains("BUY FUT") || act.contains("SELL FUT")) {
+            double edge = opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0.0;
+            if (edge < 1500.0) {
+                log.warn("PRE-EXEC REJECT: Bid Parity {} edge ₹{:.0f} < ₹1500 min threshold", opp.getUnderlying(), edge);
+                return false;
+            }
+        }
+        if (opp == null) return true;
         double spot = getSpotPrice(opp.getUnderlying());
         if (spot > 0 && opp.getStrike() != null && opp.getStrike() > 0) {
             double diffPct = Math.abs(opp.getStrike() - spot) / spot;
