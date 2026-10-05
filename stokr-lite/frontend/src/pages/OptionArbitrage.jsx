@@ -1381,7 +1381,8 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
             <table className="w-full text-[11px] text-left border-collapse">
               <thead className="bg-slate-900 text-slate-200 text-[9px] uppercase tracking-wider font-black border-b-2 border-slate-800 shadow-sm">
                 <tr>
-                  <SortTh col="enteredAt" className="px-1.5 py-2">Time</SortTh>
+                  <SortTh col="enteredAt" className="px-1.5 py-2">Entry Time</SortTh>
+                  <SortTh col="exitedAt" className="px-1.5 py-2">Exit Time</SortTh>
                   <SortTh col="broker" className="px-1.5 py-2">Broker</SortTh>
                   <SortTh col="strategy" className="px-1.5 py-2">Strategy</SortTh>
                   <SortTh col="underlying" className="px-1.5 py-2">Symbol</SortTh>
@@ -1410,7 +1411,22 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                     <React.Fragment key={p.id}>
                     <tr onClick={() => canShowPayoff && setExpandedPosId(isExpanded ? null : p.id)}
                       className={`${rowBg} hover:bg-indigo-50/60 transition-colors border-b border-slate-100 ${canShowPayoff ? 'cursor-pointer' : ''}`}>
-                      <td className="px-1.5 py-1 font-mono text-[10px] text-slate-500 whitespace-nowrap">{fmtTime(p.enteredAt)}</td>
+                      <td className="px-1.5 py-1 font-mono text-[10px] text-slate-600 font-medium whitespace-nowrap">
+                        <div>{fmtTime(p.enteredAt)}</div>
+                        <div className="text-[9px] text-slate-400">{fmtDate(p.enteredAt)}</div>
+                      </td>
+                      <td className="px-1.5 py-1 font-mono text-[10px] text-slate-600 font-medium whitespace-nowrap">
+                        {p.exitedAt ? (
+                          <div>
+                            <div>{fmtTime(p.exitedAt)}</div>
+                            <div className="text-[9px] text-slate-400">{fmtDate(p.exitedAt)}</div>
+                          </div>
+                        ) : p.status === 'OPEN' ? (
+                          <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[9px] font-bold border border-emerald-200">Running</span>
+                        ) : (
+                          '--'
+                        )}
+                      </td>
                       <td className="px-1.5 py-1">
                         {isPaper(p)
                           ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold border border-slate-200">📄 Paper</span>
@@ -1516,7 +1532,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                     </tr>
                     {isExpanded && canShowPayoff && (
                       <tr className="bg-indigo-50/30 border-b border-indigo-100">
-                        <td colSpan={14} className="p-3">
+                        <td colSpan={15} className="p-3">
                           <DetailedOpportunityExpandedRow item={p} executionBroker={executionBroker} title={`Open Position — ${p.underlying} ${p.action}`} />
                           {p.status === 'OPEN' && p.opportunityId && (
                             <PositionTriggersPanel positionId={p.opportunityId} />
@@ -1526,7 +1542,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                     )}
                     {goLiveResult && goLiveResult.posId === p.id && (
                       <tr className={goLiveResult.type === 'success' ? 'bg-emerald-50' : 'bg-red-50'}>
-                        <td colSpan={14} className="px-4 py-2.5">
+                        <td colSpan={15} className="px-4 py-2.5">
                           <div className="flex items-start gap-2">
                             <span className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-black ${goLiveResult.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`}>
                               {goLiveResult.type === 'success' ? '✓' : '✕'}
