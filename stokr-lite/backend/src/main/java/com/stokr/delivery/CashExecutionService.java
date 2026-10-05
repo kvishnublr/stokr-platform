@@ -21,7 +21,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CashExecutionService {
 
-    private static final int MAX_OPEN_PAPER = 99999; // Unlimited paper positions
+    private static final int MAX_OPEN_PAPER = 15; // Unlimited paper positions
     private static final double PAPER_CAPITAL = 10000.0;
     private static final int MAX_HOLD_DAYS_SURGE = 3;
     private static final int MAX_HOLD_DAYS_SWING = 2;
@@ -31,6 +31,7 @@ public class CashExecutionService {
     private final ZerodhaSpotPriceFetcher spotFetcher;
     private final BrokerService brokerService;
     private final BrokerAccountRepository brokerAccountRepo;
+    private final NseDeliveryDataRepository deliveryRepo;
     @org.springframework.context.annotation.Lazy @org.springframework.beans.factory.annotation.Autowired private CashScannerService cashScannerService;
 
     /** Minimum room between entry and stop; a tighter stop is hit by normal intraday noise. */
@@ -182,7 +183,15 @@ public class CashExecutionService {
             try {
                 double ltp = spotFetcher.getSpotPrice("NSE:" + p.getSymbol());
                 if (ltp <= 0 || (ltp >= 20000.0 && !p.getSymbol().contains("NIFTY"))) {
-                    ltp = p.getEntryPrice() != null ? p.getEntryPrice().doubleValue() : 0.0;
+                    try {
+                        List<NseDeliveryData> eodRows = deliveryRepo.findBySymbolOrderByDateDesc(p.getSymbol());
+                        if (eodRows != null && !eodRows.isEmpty() && eodRows.get(0).getClosePrice() != null) {
+                            ltp = eodRows.get(0).getClosePrice().doubleValue();
+                        }
+                    } catch (Exception ignored) {}
+                    if (ltp <= 0) {
+                        ltp = p.getEntryPrice() != null ? p.getEntryPrice().doubleValue() : 0.0;
+                    }
                 }
                 if (ltp > 0 && p.getEntryPrice() != null && p.getQuantity() != null) {
                     double pnl = (ltp - p.getEntryPrice().doubleValue()) * p.getQuantity();
