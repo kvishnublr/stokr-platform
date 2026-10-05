@@ -1062,8 +1062,13 @@ export default function Positions() {
   });
 
   const fnoActivePositions = useMemo(() => {
-    const raw = (livePositionsData?.positions || []).filter(p => ['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED', 'ENTERED', 'EXECUTED'].includes(p.status));
-    return raw.map(p => ({
+    const openRaw = (livePositionsData?.positions || []).filter(p => ['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED', 'ENTERED', 'EXECUTED'].includes(p.status));
+    const closedRaw = (livePositionsData?.todayClosedPositions || []);
+    const combined = [...openRaw];
+    for (const c of closedRaw) {
+      if (!combined.some(x => x.id === c.id)) combined.push(c);
+    }
+    return combined.map(p => ({
       ...p,
       assetClass: 'FNO',
       mode: p.broker || 'PAPER',
