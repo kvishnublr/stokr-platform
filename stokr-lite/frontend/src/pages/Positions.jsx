@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
-import { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS, strategyLabel, GlobalConfirmModal, DetailedOpportunityExpandedRow } from './OptionArbitrage';
+import { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS, strategyLabel, DetailedOpportunityExpandedRow } from './OptionArbitrage';
 
 function fmtDate(ts) {
   if (!ts) return '--';
