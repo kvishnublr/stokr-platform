@@ -352,7 +352,8 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
       avgHold: s.holdCount > 0 ? s.holdMins / s.holdCount : 0
     })).sort((a, b) => b.pnl - a.pnl);
 
-    return { totalPnl, winRate, expectancy, avgHold, trades, wins, losses, strategyList };
+    const approxNetProfit = totalPnl - (trades * 100);
+    return { totalPnl, approxNetProfit, winRate, expectancy, avgHold, trades, wins, losses, strategyList };
   }, [filteredHistory]);
 
   useEffect(() => {
@@ -509,7 +510,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
         
         {/* Total Realized P&L */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
@@ -557,6 +558,17 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
             </div>
           </div>
           <div className="text-xs text-slate-400 mt-2 font-medium">Average trade duration</div>
+        </div>
+
+        {/* Approx Net Profit */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Approx Net Profit</div>
+            <div className={`text-2xl font-extrabold font-mono ${metrics.approxNetProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {metrics.approxNetProfit >= 0 ? '+' : '-'}₹{Math.abs(Math.round(metrics.approxNetProfit)).toLocaleString('en-IN')}
+            </div>
+          </div>
+          <div className="text-xs text-slate-400 mt-2 font-medium">Est. after charges & slippage</div>
         </div>
 
       </div>
