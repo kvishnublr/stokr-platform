@@ -8,6 +8,39 @@
   </head>
   <body class="bg-gray-50">
     <div id="root"></div>
+    <!-- Startup watchdog: plain inline JS, so it works even when the app's own files fail to load.
+         If nothing has rendered after 10s, show the captured error and a clean reload instead of a
+         blank page. -->
+    <script>
+      (function () {
+        var errs = [];
+        window.addEventListener('error', function (e) {
+          errs.push((e.message || 'Failed to load ' + ((e.target && (e.target.src || e.target.href)) || 'resource')));
+        }, true);
+        window.addEventListener('unhandledrejection', function (e) {
+          errs.push('Unhandled: ' + ((e.reason && (e.reason.message || e.reason)) || ''));
+        });
+        window.__stokrHardReload = function () {
+          var jobs = [];
+          if ('serviceWorker' in navigator) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+          if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+          Promise.all(jobs).catch(function () {}).then(function () { location.reload(); });
+        };
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (!root || root.childElementCount > 0) return;
+          var esc = function (t) { return String(t).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); };
+          root.innerHTML =
+            '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f8fafc;padding:16px;font-family:system-ui,sans-serif">' +
+            '<div style="max-width:560px;width:100%;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:24px">' +
+            '<div style="font-size:18px;font-weight:800;color:#0f172a;margin-bottom:6px">Stokr did not load</div>' +
+            '<div style="font-size:13px;color:#475569;margin-bottom:12px">Your browser may be holding an old copy of the app. Clear it and reload.</div>' +
+            (errs.length ? '<pre style="font-size:11px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;white-space:pre-wrap;word-break:break-word;max-height:160px;overflow:auto">' + esc(errs.slice(0, 5).join('\n')) + '</pre>' : '') +
+            '<button onclick="window.__stokrHardReload()" style="margin-top:12px;padding:8px 14px;border-radius:10px;border:none;background:#4f46e5;color:#fff;font-weight:700;cursor:pointer">Clear cache &amp; reload</button>' +
+            '</div></div>';
+        }, 10000);
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   
     <script>
