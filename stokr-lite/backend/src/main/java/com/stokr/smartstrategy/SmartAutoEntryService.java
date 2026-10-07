@@ -310,8 +310,7 @@ public class SmartAutoEntryService {
 
     /** Score-based lot sizing: higher score = more conviction. */
     static int lotsForScore(Map<String, Object> opp) {
-        double score = opp.get("compositeScore") instanceof Number n ? n.doubleValue() : 0;
-        return score >= 80 ? 2 : 1;
+        return 1; // Strict 1-Lot Cap for all auto entries
     }
 
     /** Per-lot profit used for the target %, preferring the structure's true maximum. */

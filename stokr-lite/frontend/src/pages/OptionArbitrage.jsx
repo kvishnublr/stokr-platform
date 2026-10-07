@@ -7100,7 +7100,7 @@ function PaperTradesView() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-5 gap-3 mb-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
           <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 p-3 text-center">
             <div className="text-[10px] font-bold text-slate-500 uppercase">Total Trades</div>
             <div className="text-xl font-black text-slate-800">{positions.length}</div>
@@ -7112,6 +7112,10 @@ function PaperTradesView() {
           <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 p-3 text-center">
             <div className="text-[10px] font-bold text-slate-500 uppercase">Exited</div>
             <div className="text-xl font-black text-slate-600">{closedCount}</div>
+          </div>
+          <div className={`rounded-xl border p-3 text-center ${totalRealizedPnl >= 0 ? 'bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200 text-emerald-700' : 'bg-gradient-to-br from-rose-50 to-rose-100 border-rose-200 text-rose-700'}`}>
+            <div className="text-[10px] font-bold uppercase">Net Realized P&L</div>
+            <div className="text-xl font-black">{totalRealizedPnl >= 0 ? '+' : ''}₹{Math.abs(Math.round(totalRealizedPnl || 0)).toLocaleString('en-IN')}</div>
           </div>
           <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl border border-red-200 p-3 text-center">
             <div className="text-[10px] font-bold text-red-500 uppercase">Failed</div>

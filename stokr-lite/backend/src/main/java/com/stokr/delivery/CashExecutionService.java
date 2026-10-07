@@ -21,11 +21,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CashExecutionService {
 
-    private static final int MAX_OPEN_PAPER = 15; // Unlimited paper positions
+    private static final int MAX_OPEN_PAPER = 5; // Unlimited paper positions
     private static final double PAPER_CAPITAL = 10000.0;
     private static final int MAX_HOLD_DAYS_SURGE = 3;
     private static final int MAX_HOLD_DAYS_SWING = 2;
-    private static final int SYMBOL_COOLDOWN_HOURS = 24;
+    private static final int SYMBOL_COOLDOWN_HOURS = 72;
 
     private final CashPositionRepository positionRepo;
     private final ZerodhaSpotPriceFetcher spotFetcher;
@@ -294,6 +294,15 @@ public class CashExecutionService {
         List<CashPosition> openPositions = allPositions.stream().filter(p -> "OPEN".equals(p.getStatus())).toList();
         long openPaperCount = openPositions.stream().filter(p -> "PAPER".equals(p.getBroker())).count();
         if (openPaperCount >= MAX_OPEN_PAPER) return;
+
+        LocalDateTime todayStart = LocalDateTime.now().with(java.time.LocalTime.MIN);
+        long todayExecutedCash = positionRepo.findAll().stream()
+            .filter(p -> "PAPER".equals(p.getBroker()) && p.getEnteredAt() != null && p.getEnteredAt().isAfter(todayStart))
+            .count();
+        if (todayExecutedCash >= 5) {
+            log.info("Auto-exec cash skipped: today's cash trades {} reached daily limit 5", todayExecutedCash);
+            return;
+        }
 
         java.util.Set<String> openPaperSymbols = openPositions.stream()
                 .filter(p -> "PAPER".equals(p.getBroker()))

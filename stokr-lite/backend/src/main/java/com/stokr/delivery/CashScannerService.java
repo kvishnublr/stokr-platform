@@ -61,7 +61,7 @@ public class CashScannerService {
             double volumeRatio = todayQty / avgQty;
 
             double dailyTurnover = todayQty * closeP;
-            boolean qualifies = todayDelivPct >= 50.0 && delivRatio >= 1.5 && volumeRatio >= 1.5 && priceChangePct >= 2.0 && dailyTurnover >= 5000000.0 && closeP >= 30.0;
+            boolean qualifies = todayDelivPct >= 55.0 && delivRatio >= 1.5 && volumeRatio >= 2.5 && priceChangePct >= 3.5 && dailyTurnover >= 10000000.0 && closeP >= 30.0;
             if (!qualifies) continue;
 
             double atr = computeATR(rows, 14);
