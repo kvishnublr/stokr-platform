@@ -31,6 +31,13 @@ function bsPutPrice(S, K, T, r, sigma) {
   return K * Math.exp(-r * T) * bsNormCDF(-d2) - S * bsNormCDF(-d1);
 }
 
+function fmtDate(ts) {
+  if (!ts) return '--';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
 function fmtTime(dt) {
   if (!dt) return '--';
   const d = new Date(dt);
@@ -4271,7 +4278,7 @@ export function DetailedOpportunityExpandedRow({ item, executionBroker, setPendi
                     </td>
                     <td className="py-2 px-3 font-bold text-slate-700">{leg.strike || 'FUT'}</td>
                     <td className="py-2 px-3 font-bold text-slate-500">{leg.optionType}</td>
-                    <td className="py-2 px-3 font-bold text-slate-800 text-right">₹{leg.price.toFixed(2)}</td>
+                    <td className="py-2 px-3 font-bold text-slate-800 text-right">₹{leg.price != null ? Number(leg.price).toFixed(2) : "--"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -4463,19 +4470,19 @@ function ArbitrageSignalPayoffChart({ opp }) {
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5">
           <div className="text-[9px] font-bold text-emerald-700 uppercase">Max Profit</div>
           <div className="text-sm font-black text-emerald-700">₹{Math.round(totalMax).toLocaleString('en-IN')}</div>
-          <div className="text-[9px] text-emerald-600">₹{maxProfitPerShare.toFixed(2)}/share × {totalQty} ({lots} Lot{lots > 1 ? 's' : ''})</div>
+          <div className="text-[9px] text-emerald-600">₹{(maxProfitPerShare || 0).toFixed(2)}/share × {totalQty} ({lots} Lot{lots > 1 ? 's' : ''})</div>
         </div>
         <div className="bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
           <div className="text-[9px] font-bold text-red-700 uppercase">Max Loss</div>
           <div className="text-sm font-black text-red-700">₹{Math.round(totalMin).toLocaleString('en-IN')}</div>
-          <div className="text-[9px] text-red-600">₹{maxLossPerShare.toFixed(2)}/share × {totalQty} ({lots} Lot{lots > 1 ? 's' : ''})</div>
+          <div className="text-[9px] text-red-600">₹{(maxLossPerShare || 0).toFixed(2)}/share × {totalQty} ({lots} Lot{lots > 1 ? 's' : ''})</div>
         </div>
         <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1.5">
           <div className="text-[9px] font-bold text-indigo-700 uppercase">Breakeven</div>
           <div className="text-sm font-black text-indigo-700">
             {chart.breakevens.length > 0 ? chart.breakevens.map(b => Math.round(b).toLocaleString('en-IN')).join(' / ') : '--'}
           </div>
-          <div className="text-[9px] text-indigo-600">cost: ₹{chart.cost.toFixed(2)}/share</div>
+          <div className="text-[9px] text-indigo-600">cost: ₹{(chart?.cost || 0).toFixed(2)}/share</div>
         </div>
       </div>
       <div className="relative w-full flex flex-col items-center justify-center mx-auto my-3 overflow-x-auto text-center">

@@ -2412,4 +2412,70 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         }
     }
 
+
+    
+    public Map<String, Object> getStrategyConfigs() {
+        Map<String, Object> res = new LinkedHashMap<>();
+        String[] strategies = {
+            "BID_PARITY", "BOX_SPREAD_ARB", "CONDOR_SPREAD", "IRON_CONDOR", 
+            "BUTTERFLY", "RATIO_BUTTERFLY", "BROKEN_WING_BUTTERFLY", "VERTICAL", 
+            "MORNING_THETA", "JADE_LIZARD", "ADAPTIVE", "CASH_SURGE", "CASH_SWING"
+        };
+        for (String strat : strategies) {
+            Map<String, Object> cfg = new LinkedHashMap<>();
+            String prefix = "STRAT_" + strat + "_";
+            cfg.put("strategyId", strat);
+            cfg.put("paperEnabled", parseBoolean(getSettingRaw(prefix + "paperEnabled"), true));
+            cfg.put("liveEnabled", parseBoolean(getSettingRaw(prefix + "liveEnabled"), false));
+            cfg.put("lots", parseInt(getSettingRaw(prefix + "lots"), 1));
+            cfg.put("maxActiveTrades", parseInt(getSettingRaw(prefix + "maxActiveTrades"), strat.startsWith("CASH") ? 5 : 2));
+            cfg.put("minEdge", parseDouble(getSettingRaw(prefix + "minEdge"), strat.startsWith("CASH") ? 3.5 : 1500.0));
+            cfg.put("maxDailyLoss", parseDouble(getSettingRaw(prefix + "maxDailyLoss"), 3000.0));
+            res.put(strat, cfg);
+        }
+        return res;
+    }
+
+    public void updateStrategyConfig(String stratId, Map<String, Object> cfg) {
+        String prefix = "STRAT_" + stratId + "_";
+        if (cfg.containsKey("paperEnabled")) saveSettingRaw(prefix + "paperEnabled", String.valueOf(cfg.get("paperEnabled")));
+        if (cfg.containsKey("liveEnabled")) saveSettingRaw(prefix + "liveEnabled", String.valueOf(cfg.get("liveEnabled")));
+        if (cfg.containsKey("lots")) saveSettingRaw(prefix + "lots", String.valueOf(cfg.get("lots")));
+        if (cfg.containsKey("maxActiveTrades")) saveSettingRaw(prefix + "maxActiveTrades", String.valueOf(cfg.get("maxActiveTrades")));
+        if (cfg.containsKey("minEdge")) saveSettingRaw(prefix + "minEdge", String.valueOf(cfg.get("minEdge")));
+        if (cfg.containsKey("maxDailyLoss")) saveSettingRaw(prefix + "maxDailyLoss", String.valueOf(cfg.get("maxDailyLoss")));
+    }
+
+    public boolean isStrategyEnabledForMode(String stratId, String mode) {
+        if (stratId == null) return true;
+        String normalized = stratId.toUpperCase().replace(" ", "_");
+        boolean isLive = "LIVE".equalsIgnoreCase(mode) || "ZERODHA".equalsIgnoreCase(mode) || "NAVIA".equalsIgnoreCase(mode);
+        String key = "STRAT_" + normalized + "_" + (isLive ? "liveEnabled" : "paperEnabled");
+        String val = getSettingRaw(key);
+        if (val == null) return !isLive; // Default: Paper true, Live false
+        return "true".equalsIgnoreCase(val);
+    }
+
+    private String getSettingRaw(String key) {
+        AutoExecSetting s = autoExecSettingRepo.findBySettingKey(key).orElse(null);
+        return s != null ? s.getSettingValue() : null;
+    }
+
+    private void saveSettingRaw(String key, String value) {
+        AutoExecSetting s = autoExecSettingRepo.findBySettingKey(key).orElse(new AutoExecSetting());
+        s.setSettingKey(key);
+        s.setSettingValue(value);
+        autoExecSettingRepo.save(s);
+    }
+
+    private boolean parseBoolean(String v, boolean def) {
+        return v != null ? Boolean.parseBoolean(v) : def;
+    }
+    private int parseInt(String v, int def) {
+        try { return v != null ? Integer.parseInt(v) : def; } catch (Exception e) { return def; }
+    }
+    private double parseDouble(String v, double def) {
+        try { return v != null ? Double.parseDouble(v) : def; } catch (Exception e) { return def; }
+    }
+
 }

@@ -3144,4 +3144,21 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
         }
         return ResponseEntity.ok(resp);
     }
+
+    @GetMapping("/strategy-configs")
+    public ResponseEntity<Map<String, Object>> getStrategyConfigs() {
+        return ResponseEntity.ok(autoExecService.getStrategyConfigs());
+    }
+
+    @PostMapping("/strategy-configs")
+    public ResponseEntity<Map<String, Object>> saveStrategyConfigs(@RequestBody Map<String, Map<String, Object>> payload) {
+        if (payload != null) {
+            for (Map.Entry<String, Map<String, Object>> entry : payload.entrySet()) {
+                autoExecService.updateStrategyConfig(entry.getKey(), entry.getValue());
+            }
+        }
+        addAuditLog("STRATEGY_CONFIG", "INFO", "Bulk strategy configuration updated");
+        return ResponseEntity.ok(autoExecService.getStrategyConfigs());
+    }
+
 }

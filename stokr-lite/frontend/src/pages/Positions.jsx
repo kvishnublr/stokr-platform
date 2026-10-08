@@ -1177,6 +1177,13 @@ export default function Positions() {
           >
             <span>📜 History &amp; Performance</span>
           </button>
+
+          <button
+            onClick={() => setViewState('CONFIG')}
+            className={`flex-1 lg:px-6 py-2 rounded-lg text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${viewState === 'CONFIG' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            <span>⚙️ Strategy Configuration</span>
+          </button>
         </div>
 
         {/* Global Filters */}
@@ -1306,6 +1313,553 @@ export default function Positions() {
           setModeFilter={setModeFilter}
         />
       )}
+
+      {/* STRATEGY CONFIGURATION & RISK CONTROL VIEW */}
+      {viewState === 'CONFIG' && (
+        <StrategyConfigurationControlPanel 
+          fnoHistory={Array.isArray(fnoHistoryData) ? fnoHistoryData : (fnoHistoryData?.positions || [])}
+          cashHistory={Array.isArray(cashHistoryData) ? cashHistoryData : (cashHistoryData?.positions || cashHistoryData?.trades || [])}
+        />
+      )}
+    </div>
+  );
+}
+
+
+/* ⚙️ ADVANCED STRATEGY CONFIGURATION & RISK CONTROL PANEL */
+
+/* ⚙️ ADVANCED STRATEGY CONFIGURATION & RISK CONTROL PANEL (SEPARATE PAPER & LIVE) */
+function StrategyConfigurationControlPanel({ fnoHistory, cashHistory }) {
+  const [saveStatus, setSaveStatus] = useState(null);
+  const [liveConfirmStrat, setLiveConfirmStrat] = useState(null);
+  const [fnoExpanded, setFnoExpanded] = useState(true);
+  const [cashExpanded, setCashExpanded] = useState(true);
+
+  // Fetch Saved Strategy Configs from DB
+  const { data: serverConfigs, refetch: refetchConfigs } = useQuery({
+    queryKey: ['strategyConfigs'],
+    queryFn: () => client.get('/option-arbitrage/strategy-configs').then(r => r.data),
+    refetchInterval: 10000,
+  });
+
+  const defaultStrategies = useMemo(() => ({
+    BID_PARITY: { strategyId: 'BID_PARITY', name: 'Bid Parity Arbitrage', icon: '⚡', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Pure risk-free mispricing arbitrage between futures and synthetic options.' },
+    BOX_SPREAD_ARB: { strategyId: 'BOX_SPREAD_ARB', name: 'Box Spread Arbitrage', icon: '📦', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: '4-leg zero-delta convexity bound arbitrage.' },
+    CONDOR_SPREAD: { strategyId: 'CONDOR_SPREAD', name: 'Put/Call Condor Spread', icon: '🎯', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Defined-risk 4-leg range theta accumulation.' },
+    IRON_CONDOR: { strategyId: 'IRON_CONDOR', name: 'Iron Condor Spread', icon: '🛡️', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Symmetric OTM credit spread with tight wings.' },
+    BUTTERFLY: { strategyId: 'BUTTERFLY', name: 'Butterfly Spread', icon: '🦋', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'High win-rate centered pin butterfly.' },
+    RATIO_BUTTERFLY: { strategyId: 'RATIO_BUTTERFLY', name: 'Ratio Butterfly', icon: '🎀', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Asymmetric ratio butterfly for directional skew.' },
+    BROKEN_WING_BUTTERFLY: { strategyId: 'BROKEN_WING_BUTTERFLY', name: 'Broken Wing Butterfly', icon: '🔥', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Skews risk to zero on one side with credit buffer.' },
+    VERTICAL: { strategyId: 'VERTICAL', name: 'Vertical Spread', icon: '📐', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: '2-leg directional vertical spread.' },
+    MORNING_THETA: { strategyId: 'MORNING_THETA', name: 'Morning Theta Crush', icon: '🌅', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Early morning volatility crush entry.' },
+    JADE_LIZARD: { strategyId: 'JADE_LIZARD', name: 'Jade Lizard', icon: '🦎', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Short put + credit call spread.' },
+    ADAPTIVE: { strategyId: 'ADAPTIVE', name: 'Adaptive Multi-Leg', icon: '⚙️', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Dynamic score-based multi-leg selector.' },
+    CASH_SURGE: { strategyId: 'CASH_SURGE', name: 'Cash Institutional Surge', icon: '📈', category: 'CASH', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 5, minEdge: 3.5, maxDailyLoss: 5000, desc: 'High-volume delivery accumulation breakout.' },
+    CASH_SWING: { strategyId: 'CASH_SWING', name: 'Cash Swing Accumulation', icon: '📊', category: 'CASH', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 5, minEdge: 3.5, maxDailyLoss: 5000, desc: '3-day institutional swing momentum setup.' },
+  }), []);
+
+  const [configs, setConfigs] = useState(defaultStrategies);
+
+  useEffect(() => {
+    if (serverConfigs) {
+      setConfigs(prev => {
+        const next = { ...prev };
+        for (const [k, v] of Object.entries(serverConfigs)) {
+          if (next[k]) {
+            next[k] = { ...next[k], ...v };
+          }
+        }
+        return next;
+      });
+    }
+  }, [serverConfigs]);
+
+  // Compute Performance Badges from history
+  const perfMap = useMemo(() => {
+    const map = {};
+    const all = [...(fnoHistory || []), ...(cashHistory || [])];
+    for (const item of all) {
+      const strat = (item.strategyType || item.strategy || '').toUpperCase();
+      if (!strat) continue;
+      if (!map[strat]) map[strat] = { pnl: 0, wins: 0, total: 0 };
+      const pnl = Number(item.realizedPnl || item.currentPnl || item.pnl || 0);
+      map[strat].pnl += pnl;
+      map[strat].total += 1;
+      if (pnl > 0) map[strat].wins += 1;
+    }
+    return map;
+  }, [fnoHistory, cashHistory]);
+
+  const updateStrategyField = (stratId, field, val) => {
+    setConfigs(prev => ({
+      ...prev,
+      [stratId]: {
+        ...prev[stratId],
+        [field]: val
+      }
+    }));
+  };
+
+  const handleLiveToggle = (stratId, currentLiveState) => {
+    if (!currentLiveState) {
+      setLiveConfirmStrat(stratId);
+    } else {
+      updateStrategyField(stratId, 'liveEnabled', false);
+    }
+  };
+
+  const saveAllConfigs = async (customConfigObj = null) => {
+    const toSave = customConfigObj || configs;
+    try {
+      setSaveStatus('SAVING');
+      await client.post('/option-arbitrage/strategy-configs', toSave);
+      setSaveStatus('SUCCESS');
+      refetchConfigs();
+      setTimeout(() => setSaveStatus(null), 3000);
+    } catch (e) {
+      setSaveStatus('ERROR');
+      alert('Failed to save configs: ' + (e.response?.data?.message || e.message));
+    }
+  };
+
+  const applyPreset = (presetType) => {
+    const next = { ...configs };
+    if (presetType === 'PURE_ARB') {
+      Object.keys(next).forEach(k => {
+        const isArb = k === 'BID_PARITY' || k === 'BOX_SPREAD_ARB';
+        next[k] = { ...next[k], paperEnabled: isArb, liveEnabled: false };
+      });
+    } else if (presetType === 'ALL_PAPER') {
+      Object.keys(next).forEach(k => {
+        next[k] = { ...next[k], paperEnabled: true, liveEnabled: false, lots: 1 };
+      });
+    } else if (presetType === 'TOP_PERFORMERS') {
+      const topSet = new Set(['BUTTERFLY', 'CONDOR_SPREAD', 'BID_PARITY', 'BOX_SPREAD_ARB']);
+      Object.keys(next).forEach(k => {
+        next[k] = { ...next[k], paperEnabled: topSet.has(k), liveEnabled: false };
+      });
+    }
+    setConfigs(next);
+    saveAllConfigs(next);
+  };
+
+  const disableAllLive = () => {
+    const next = { ...configs };
+    Object.keys(next).forEach(k => { next[k] = { ...next[k], liveEnabled: false }; });
+    setConfigs(next);
+    saveAllConfigs(next);
+  };
+
+  const toggleCategoryMode = (category, modeType, targetState) => {
+    const next = { ...configs };
+    const field = modeType === 'PAPER' ? 'paperEnabled' : 'liveEnabled';
+    Object.keys(next).forEach(k => {
+      if (next[k].category === category) {
+        next[k] = { ...next[k], [field]: targetState };
+      }
+    });
+    setConfigs(next);
+  };
+
+  const fnoKeys = Object.keys(configs).filter(k => configs[k].category === 'FNO');
+  const cashKeys = Object.keys(configs).filter(k => configs[k].category === 'CASH');
+
+  const fnoPaperAll = fnoKeys.every(k => configs[k].paperEnabled);
+  const cashPaperAll = cashKeys.every(k => configs[k].paperEnabled);
+
+  return (
+    <div className="space-y-6 animate-fade-in-up pb-10">
+      
+      {/* Safety Confirmation Modal for LIVE Mode */}
+      {liveConfirmStrat && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-red-200 space-y-4 animate-brand-pop">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-12 h-12 rounded-2xl bg-red-100 flex items-center justify-center text-2xl animate-pulse">🔴</div>
+              <div>
+                <h3 className="text-base font-black text-slate-900">Enable LIVE Broker Trading?</h3>
+                <p className="text-xs text-slate-500 font-medium">{configs[liveConfirmStrat]?.name}</p>
+              </div>
+            </div>
+            <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-900 font-medium space-y-1.5">
+              <p>⚠️ <strong>LIVE TRADING NOTICE</strong>: Signal triggers will immediately route real market orders to your active broker account!</p>
+              <p className="font-mono text-[11px]">Allocation: <strong>{configs[liveConfirmStrat]?.lots || 1} Set(s)</strong> | Max Active: <strong>{configs[liveConfirmStrat]?.maxActiveTrades || 2} Trades</strong></p>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setLiveConfirmStrat(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  updateStrategyField(liveConfirmStrat, 'liveEnabled', true);
+                  setLiveConfirmStrat(null);
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold rounded-xl shadow-md transition"
+              >
+                🔴 Yes, Turn LIVE Broker ON
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top Banner: Global Command Center & Controls */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-5 text-white shadow-xl space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-3.5 h-3.5 rounded-full bg-emerald-400 animate-ping" />
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-wider text-indigo-300">Granular Strategy Execution &amp; Risk Control</div>
+              <h2 className="text-xl font-black tracking-tight">Independent Paper &amp; Live Strategy Toggles</h2>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={disableAllLive}
+              className="px-3.5 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-extrabold rounded-xl transition flex items-center gap-1.5"
+            >
+              <span>🔴</span> Disable ALL Live Broker Trading
+            </button>
+            <button
+              onClick={() => saveAllConfigs()}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md ${saveStatus === 'SUCCESS' ? 'bg-emerald-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}
+            >
+              <span>{saveStatus === 'SAVING' ? '⏳' : saveStatus === 'SUCCESS' ? '✅' : '💾'}</span>
+              {saveStatus === 'SAVING' ? 'Saving...' : saveStatus === 'SUCCESS' ? 'Saved to DB!' : 'Save Configurations'}
+            </button>
+          </div>
+        </div>
+
+        {/* Quick Presets Bar */}
+        <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Quick Presets:</div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => applyPreset('PURE_ARB')}
+              className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-200 border border-slate-700 rounded-lg text-[11px] font-bold transition"
+            >
+              🛡️ Pure Risk-Free Arbitrage Only
+            </button>
+            <button
+              onClick={() => applyPreset('TOP_PERFORMERS')}
+              className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-200 border border-slate-700 rounded-lg text-[11px] font-bold transition"
+            >
+              ⭐ Top Performers Only (&gt;75% Win)
+            </button>
+            <button
+              onClick={() => applyPreset('ALL_PAPER')}
+              className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-[11px] font-bold transition"
+            >
+              🧪 Enable All Paper Test
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 1: F&O ARBITRAGE & SPREAD STRATEGIES */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all">
+        {/* Accordion Header */}
+        <div className="px-5 py-4 bg-slate-900 flex flex-wrap items-center justify-between gap-3 select-none">
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setFnoExpanded(!fnoExpanded)}>
+            <span className="text-xl">⚡</span>
+            <div>
+              <h3 className="text-sm font-black text-white tracking-tight">F&amp;O Arbitrage &amp; Spread Strategies (11)</h3>
+              <p className="text-[11px] text-slate-400 font-medium">Independent Paper &amp; Live Broker controls per strategy</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Quick Category Master Switches */}
+            <div className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 text-[10px] font-bold">
+              <span className="text-slate-400">📄 Paper All:</span>
+              <button
+                onClick={() => toggleCategoryMode('FNO', 'PAPER', !fnoPaperAll)}
+                className={`px-2 py-0.5 rounded font-black transition ${fnoPaperAll ? 'bg-emerald-500 text-white' : 'bg-slate-700 text-slate-400'}`}
+              >
+                {fnoPaperAll ? 'ON' : 'OFF'}
+              </button>
+            </div>
+
+            <button onClick={() => setFnoExpanded(!fnoExpanded)} className="text-slate-400 hover:text-white text-xs font-bold">
+              {fnoExpanded ? '▼ Collapse' : '▲ Expand'}
+            </button>
+          </div>
+        </div>
+
+        {/* Strategy Grid Cards */}
+        {fnoExpanded && (
+          <div className="p-4 bg-slate-50 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {fnoKeys.map(key => {
+              const item = configs[key];
+              const perf = perfMap[key] || { pnl: 0, wins: 0, total: 0 };
+              const winRate = perf.total > 0 ? ((perf.wins / perf.total) * 100).toFixed(1) : null;
+              const isPaper = item.paperEnabled;
+              const isLive = item.liveEnabled;
+
+              return (
+                <div key={key} className={`bg-white rounded-2xl border p-4 shadow-sm space-y-3 transition-all transform hover:-translate-y-0.5 ${isLive ? 'border-rose-300 ring-2 ring-rose-500/20 bg-rose-50/10' : isPaper ? 'border-emerald-200 ring-1 ring-emerald-500/10' : 'border-slate-200 opacity-60 bg-slate-50/50'}`}>
+                  
+                  {/* Title & Description */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{item.icon}</span>
+                      <div>
+                        <h4 className="text-xs font-black text-slate-900 tracking-tight">{item.name}</h4>
+                        <p className="text-[10px] text-slate-500 line-clamp-1">{item.desc}</p>
+                      </div>
+                    </div>
+
+                    {/* Perf Badge */}
+                    {perf.total > 0 && (
+                      <div className="text-[10px] font-extrabold font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md whitespace-nowrap">
+                        {winRate != null ? `${winRate}% Win` : ''} | <span className={perf.pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}>{perf.pnl >= 0 ? '+' : ''}₹{Math.round(perf.pnl).toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* DUAL EXECUTION STATUS PANEL (SEPARATE PAPER & LIVE SWITCHES) */}
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                    
+                    {/* Paper Trading Toggle */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs">📄</span>
+                        <span className="text-xs font-extrabold text-slate-700">Paper Mode</span>
+                      </div>
+                      <div className="flex items-center bg-white p-0.5 rounded-lg border border-slate-200">
+                        <button
+                          onClick={() => updateStrategyField(key, 'paperEnabled', true)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-black transition ${isPaper ? 'bg-emerald-500 text-white shadow-2xs' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          ENABLED
+                        </button>
+                        <button
+                          onClick={() => updateStrategyField(key, 'paperEnabled', false)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-black transition ${!isPaper ? 'bg-slate-700 text-white shadow-2xs' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          DISABLED
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Live Broker Toggle */}
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/60">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs">🔴</span>
+                        <span className="text-xs font-extrabold text-slate-900">Live Broker</span>
+                      </div>
+                      <div className="flex items-center bg-white p-0.5 rounded-lg border border-slate-200">
+                        <button
+                          onClick={() => handleLiveToggle(key, isLive)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-black transition ${isLive ? 'bg-rose-600 text-white shadow-2xs animate-pulse' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          🔴 LIVE ON
+                        </button>
+                        <button
+                          onClick={() => updateStrategyField(key, 'liveEnabled', false)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-black transition ${!isLive ? 'bg-slate-700 text-white shadow-2xs' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          OFF
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Settings Grid Controls */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    {/* Size (Sets / Lots) */}
+                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Size / Allocation</label>
+                      <select
+                        value={item.lots || 1}
+                        onChange={(e) => updateStrategyField(key, 'lots', Number(e.target.value))}
+                        className="w-full text-xs font-black bg-white border border-slate-300 rounded-lg p-1 text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value={1}>1 Set (30 qty)</option>
+                        <option value={2}>2 Sets (60 qty)</option>
+                        <option value={3}>3 Sets (90 qty)</option>
+                        <option value={5}>5 Sets (150 qty)</option>
+                      </select>
+                    </div>
+
+                    {/* Max Concurrent Active Trades */}
+                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Max Active Trades</label>
+                      <select
+                        value={item.maxActiveTrades || 2}
+                        onChange={(e) => updateStrategyField(key, 'maxActiveTrades', Number(e.target.value))}
+                        className="w-full text-xs font-black bg-white border border-slate-300 rounded-lg p-1 text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value={1}>1 Trade Max</option>
+                        <option value={2}>2 Trades Max</option>
+                        <option value={3}>3 Trades Max</option>
+                        <option value={5}>5 Trades Max</option>
+                      </select>
+                    </div>
+
+                    {/* Min Edge Filter */}
+                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Min Net Edge (₹)</label>
+                      <input
+                        type="number"
+                        step={100}
+                        value={item.minEdge || 1500}
+                        onChange={(e) => updateStrategyField(key, 'minEdge', Number(e.target.value))}
+                        className="w-full text-xs font-black bg-white border border-slate-300 rounded-lg p-1 text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    {/* Max Daily Loss Cap */}
+                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Daily Loss Cap (₹)</label>
+                      <input
+                        type="number"
+                        step={500}
+                        value={item.maxDailyLoss || 3000}
+                        onChange={(e) => updateStrategyField(key, 'maxDailyLoss', Number(e.target.value))}
+                        className="w-full text-xs font-black bg-white border border-slate-300 rounded-lg p-1 text-rose-700 focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                  </div>
+
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* SECTION 2: CASH EQUITY MOMENTUM STRATEGIES */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all">
+        <div className="px-5 py-4 bg-slate-900 flex flex-wrap items-center justify-between gap-3 select-none">
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCashExpanded(!cashExpanded)}>
+            <span className="text-xl">📈</span>
+            <div>
+              <h3 className="text-sm font-black text-white tracking-tight">Cash Equity Momentum Strategies (2)</h3>
+              <p className="text-[11px] text-slate-400 font-medium">Independent Paper &amp; Live Broker controls per cash strategy</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 text-[10px] font-bold">
+              <span className="text-slate-400">📄 Paper All:</span>
+              <button
+                onClick={() => toggleCategoryMode('CASH', 'PAPER', !cashPaperAll)}
+                className={`px-2 py-0.5 rounded font-black transition ${cashPaperAll ? 'bg-emerald-500 text-white' : 'bg-slate-700 text-slate-400'}`}
+              >
+                {cashPaperAll ? 'ON' : 'OFF'}
+              </button>
+            </div>
+
+            <button onClick={() => setCashExpanded(!cashExpanded)} className="text-slate-400 hover:text-white text-xs font-bold">
+              {cashExpanded ? '▼ Collapse' : '▲ Expand'}
+            </button>
+          </div>
+        </div>
+
+        {cashExpanded && (
+          <div className="p-4 bg-slate-50 grid grid-cols-1 md:grid-cols-2 gap-4">
+            {cashKeys.map(key => {
+              const item = configs[key];
+              const isPaper = item.paperEnabled;
+              const isLive = item.liveEnabled;
+
+              return (
+                <div key={key} className={`bg-white rounded-2xl border p-4 shadow-sm space-y-3 transition-all ${isLive ? 'border-rose-300 ring-2 ring-rose-500/20 bg-rose-50/10' : isPaper ? 'border-orange-200 ring-1 ring-orange-500/10' : 'border-slate-200 opacity-60 bg-slate-50/50'}`}>
+                  
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{item.icon}</span>
+                      <div>
+                        <h4 className="text-xs font-black text-slate-900 tracking-tight">{item.name}</h4>
+                        <p className="text-[10px] text-slate-500 line-clamp-1">{item.desc}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs">📄</span>
+                        <span className="text-xs font-extrabold text-slate-700">Paper Mode</span>
+                      </div>
+                      <div className="flex items-center bg-white p-0.5 rounded-lg border border-slate-200">
+                        <button
+                          onClick={() => updateStrategyField(key, 'paperEnabled', true)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-black transition ${isPaper ? 'bg-emerald-500 text-white shadow-2xs' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          ENABLED
+                        </button>
+                        <button
+                          onClick={() => updateStrategyField(key, 'paperEnabled', false)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-black transition ${!isPaper ? 'bg-slate-700 text-white shadow-2xs' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          DISABLED
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/60">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs">🔴</span>
+                        <span className="text-xs font-extrabold text-slate-900">Live Broker</span>
+                      </div>
+                      <div className="flex items-center bg-white p-0.5 rounded-lg border border-slate-200">
+                        <button
+                          onClick={() => handleLiveToggle(key, isLive)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-black transition ${isLive ? 'bg-rose-600 text-white shadow-2xs animate-pulse' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          🔴 LIVE ON
+                        </button>
+                        <button
+                          onClick={() => updateStrategyField(key, 'liveEnabled', false)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-black transition ${!isLive ? 'bg-slate-700 text-white shadow-2xs' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          OFF
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Max Open Positions</label>
+                      <select
+                        value={item.maxActiveTrades || 5}
+                        onChange={(e) => updateStrategyField(key, 'maxActiveTrades', Number(e.target.value))}
+                        className="w-full text-xs font-black bg-white border border-slate-300 rounded-lg p-1 text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value={2}>2 Positions Max</option>
+                        <option value={3}>3 Positions Max</option>
+                        <option value={5}>5 Positions Max</option>
+                        <option value={8}>8 Positions Max</option>
+                      </select>
+                    </div>
+
+                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Min Price Surge %</label>
+                      <input
+                        type="number"
+                        step={0.5}
+                        value={item.minEdge || 3.5}
+                        onChange={(e) => updateStrategyField(key, 'minEdge', Number(e.target.value))}
+                        className="w-full text-xs font-black bg-white border border-slate-300 rounded-lg p-1 text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }

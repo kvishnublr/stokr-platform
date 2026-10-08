@@ -1,3 +1,4 @@
+import ErrorBoundary from './ErrorBoundary';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useEffect, useState, useRef } from 'react';
 import client from '../api/client';
@@ -305,7 +306,9 @@ export default function Layout() {
         <div className="p-4 md:p-8">
         <div key={pageKey} className="animate-fade-in-up" style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <GlobalExecutionBar showToast={(msg, type) => toast(msg, { type: type || 'info' })} title="Global Execution Control" subtitle="Universal API Routing & Mode Selector" />
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </div>
       </div>
       </main>

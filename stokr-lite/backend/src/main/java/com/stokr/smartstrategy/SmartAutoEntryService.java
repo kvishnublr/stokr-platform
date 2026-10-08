@@ -2,6 +2,8 @@ package com.stokr.smartstrategy;
 
 import com.stokr.arbitrage.LivePosition;
 import com.stokr.arbitrage.LivePositionRepository;
+import com.stokr.arbitrage.AutoExecSettingRepository;
+import com.stokr.arbitrage.AutoExecSetting;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -32,6 +34,7 @@ public class SmartAutoEntryService {
     private final PortfolioRiskManager riskManager;
     private final SmartStrategyExecutionService executionService;
     private final LivePositionRepository positionRepo;
+    private final AutoExecSettingRepository autoExecSettingRepo;
 
     private final AtomicBoolean enabled;
     private final ConcurrentHashMap<String, Long> recentEntries;
@@ -52,7 +55,7 @@ public class SmartAutoEntryService {
                                   StrategyScoreEngine scoreEngine,
                                   PortfolioRiskManager riskManager,
                                   SmartStrategyExecutionService executionService,
-                                  LivePositionRepository positionRepo) {
+                                  LivePositionRepository positionRepo, AutoExecSettingRepository autoExecSettingRepo) {
         this.ratioButterflyScanner = ratioButterflyScanner;
         this.bwbScanner = bwbScanner;
         this.skewHarvestScanner = skewHarvestScanner;
@@ -66,6 +69,7 @@ public class SmartAutoEntryService {
         this.riskManager = riskManager;
         this.executionService = executionService;
         this.positionRepo = positionRepo;
+        this.autoExecSettingRepo = autoExecSettingRepo;
         this.enabled = new AtomicBoolean(true);
         this.recentEntries = new ConcurrentHashMap<>();
     }
@@ -165,6 +169,11 @@ public class SmartAutoEntryService {
 
             // Apply timing multiplier to composite scores
             for (Map<String, Object> opp : ranked) {
+                String stratTypeCheck = String.valueOf(opp.get("strategyType"));
+                if (!isStrategyEnabled(stratTypeCheck)) {
+                    log.info("SMART_AUTO: Skipped disabled strategy in config: {}", stratTypeCheck);
+                    continue;
+                }
                 double raw = ((Number) opp.get("compositeScore")).doubleValue();
                 opp.put("compositeScore", Math.min(100, Math.round(raw * timing.scoreMultiplier * 100.0) / 100.0));
             }
@@ -183,6 +192,11 @@ public class SmartAutoEntryService {
             List<LivePosition> openPositions = positionRepo.findAllOpen();
             int entered = 0;
             for (Map<String, Object> opp : ranked) {
+                String stratTypeCheck = String.valueOf(opp.get("strategyType"));
+                if (!isStrategyEnabled(stratTypeCheck)) {
+                    log.info("SMART_AUTO: Skipped disabled strategy in config: {}", stratTypeCheck);
+                    continue;
+                }
                 String stratType = String.valueOf(opp.get("strategyType"));
                 String und = String.valueOf(opp.get("underlying"));
                 String expStr = String.valueOf(opp.getOrDefault("expiry", opp.getOrDefault("expiryDate", "")));
@@ -330,4 +344,13 @@ public class SmartAutoEntryService {
         return ZonedDateTime.now(ZoneId.of("Asia/Kolkata"))
             .format(DateTimeFormatter.ofPattern("hh:mm:ss a"));
     }
+
+    
+    private boolean isStrategyEnabled(String stratId) {
+        if (stratId == null) return true;
+        String normalized = stratId.toUpperCase().replace(" ", "_");
+        AutoExecSetting s = autoExecSettingRepo.findBySettingKey("STRAT_" + normalized + "_paperEnabled").orElse(null);
+        return s == null || "true".equalsIgnoreCase(s.getSettingValue());
+    }
+
 }
