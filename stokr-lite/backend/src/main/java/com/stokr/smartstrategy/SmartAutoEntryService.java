@@ -174,6 +174,12 @@ public class SmartAutoEntryService {
                     log.info("SMART_AUTO: Skipped disabled strategy in config: {}", stratTypeCheck);
                     continue;
                 }
+                double configuredMinEdge = getMinEdgeForStrategy(stratTypeCheck);
+                double actualOppEdge = getNetEdgeForOpp(opp);
+                if (actualOppEdge > 0 && actualOppEdge < configuredMinEdge) {
+                    log.info("SMART_AUTO: Skipped {} - Net Edge Rs.{} < Configured Min Net Edge Rs.{}", stratTypeCheck, String.format("%.0f", actualOppEdge), String.format("%.0f", configuredMinEdge));
+                    continue;
+                }
                 double raw = ((Number) opp.get("compositeScore")).doubleValue();
                 opp.put("compositeScore", Math.min(100, Math.round(raw * timing.scoreMultiplier * 100.0) / 100.0));
             }
@@ -195,6 +201,12 @@ public class SmartAutoEntryService {
                 String stratTypeCheck = String.valueOf(opp.get("strategyType"));
                 if (!isStrategyEnabled(stratTypeCheck)) {
                     log.info("SMART_AUTO: Skipped disabled strategy in config: {}", stratTypeCheck);
+                    continue;
+                }
+                double configuredMinEdge = getMinEdgeForStrategy(stratTypeCheck);
+                double actualOppEdge = getNetEdgeForOpp(opp);
+                if (actualOppEdge > 0 && actualOppEdge < configuredMinEdge) {
+                    log.info("SMART_AUTO: Skipped {} - Net Edge Rs.{} < Configured Min Net Edge Rs.{}", stratTypeCheck, String.format("%.0f", actualOppEdge), String.format("%.0f", configuredMinEdge));
                     continue;
                 }
                 String stratType = String.valueOf(opp.get("strategyType"));
@@ -346,6 +358,30 @@ public class SmartAutoEntryService {
     }
 
     
+        private double getMinEdgeForStrategy(String stratId) {
+        if (stratId == null) return 1500.0;
+        String norm = stratId.toUpperCase().trim().replace(" ", "_");
+        if (norm.equals("BOX_SPREAD") || norm.equals("BOX_SPREAD_ARBITRAGE")) norm = "BOX_SPREAD_ARB";
+        if (norm.equals("CONDOR") || norm.equals("PUT/CALL_CONDOR_SPREAD")) norm = "CONDOR_SPREAD";
+        if (norm.equals("BUTTERFLY_SPREAD")) norm = "BUTTERFLY";
+        if (norm.equals("BID_PARITY_ARBITRAGE")) norm = "BID_PARITY";
+
+        AutoExecSetting s = autoExecSettingRepo.findBySettingKey("STRAT_" + norm + "_minEdge").orElse(null);
+        if (s != null && s.getSettingValue() != null) {
+            try { return Double.parseDouble(s.getSettingValue()); } catch (Exception ignored) {}
+        }
+        return norm.startsWith("CASH") ? 3.5 : 1500.0;
+    }
+
+    private double getNetEdgeForOpp(Map<String, Object> opp) {
+        for (String k : List.of("edgeAfterCosts", "netEdgeRs", "maxProfit", "netCreditRs", "creditRs")) {
+            if (opp.containsKey(k) && opp.get(k) instanceof Number n) {
+                return n.doubleValue();
+            }
+        }
+        return 0.0;
+    }
+
     private boolean isStrategyEnabled(String stratId) {
         if (stratId == null) return true;
         String normalized = stratId.toUpperCase().replace(" ", "_");

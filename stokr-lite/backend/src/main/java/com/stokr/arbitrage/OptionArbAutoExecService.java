@@ -502,8 +502,9 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             boolean enabled = Boolean.TRUE.equals(settings.get(key + "Enabled"));
             if (!enabled) continue;
 
-            double minEdge = ((Number) settings.getOrDefault(key + "MinEdge", 800.0)).doubleValue();
-            if (opp.getEdgePoints().doubleValue() * getLotSize(opp.getUnderlying()) < minEdge) continue;
+            double minEdge = getMinEdgeForStrategy(opp.getStrategyType());
+            double totalEdge = opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : (opp.getEdgePoints().doubleValue() * getLotSize(opp.getUnderlying()));
+            if (totalEdge < minEdge) continue;
             if (opp.getExpiryDate() == null || opp.getStrike() == null) continue;
 
             if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
@@ -714,8 +715,9 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             boolean enabled = Boolean.TRUE.equals(settings.get(key + "Enabled"));
             if (!enabled) continue;
 
-            double minEdge = ((Number) settings.getOrDefault(key + "MinEdge", 800.0)).doubleValue();
-            if (opp.getEdgePoints().doubleValue() * getLotSize(opp.getUnderlying()) < minEdge) continue;
+            double minEdge = getMinEdgeForStrategy(opp.getStrategyType());
+            double totalEdge = opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : (opp.getEdgePoints().doubleValue() * getLotSize(opp.getUnderlying()));
+            if (totalEdge < minEdge) continue;
             if (opp.getExpiryDate() == null || opp.getStrike() == null) continue;
 
             if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(userId, "OPEN").stream()
@@ -2444,6 +2446,21 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         if (cfg.containsKey("maxActiveTrades")) saveSettingRaw(prefix + "maxActiveTrades", String.valueOf(cfg.get("maxActiveTrades")));
         if (cfg.containsKey("minEdge")) saveSettingRaw(prefix + "minEdge", String.valueOf(cfg.get("minEdge")));
         if (cfg.containsKey("maxDailyLoss")) saveSettingRaw(prefix + "maxDailyLoss", String.valueOf(cfg.get("maxDailyLoss")));
+    }
+
+        public double getMinEdgeForStrategy(String stratId) {
+        if (stratId == null) return 1500.0;
+        String norm = stratId.toUpperCase().trim().replace(" ", "_");
+        if (norm.equals("BOX_SPREAD") || norm.equals("BOX_SPREAD_ARBITRAGE")) norm = "BOX_SPREAD_ARB";
+        if (norm.equals("CONDOR") || norm.equals("PUT/CALL_CONDOR_SPREAD")) norm = "CONDOR_SPREAD";
+        if (norm.equals("BUTTERFLY_SPREAD")) norm = "BUTTERFLY";
+        if (norm.equals("BID_PARITY_ARBITRAGE")) norm = "BID_PARITY";
+
+        String val = getSettingRaw("STRAT_" + norm + "_minEdge");
+        if (val != null) {
+            try { return Double.parseDouble(val); } catch (Exception ignored) {}
+        }
+        return norm.startsWith("CASH") ? 3.5 : 1500.0;
     }
 
     public boolean isStrategyEnabledForMode(String stratId, String mode) {
