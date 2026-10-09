@@ -359,7 +359,7 @@ public class SmartAutoEntryService {
 
     
         private double getMinEdgeForStrategy(String stratId) {
-        if (stratId == null) return 1500.0;
+        if (stratId == null) return 500.0;
         String norm = stratId.toUpperCase().trim().replace(" ", "_");
         if (norm.equals("BOX_SPREAD") || norm.equals("BOX_SPREAD_ARBITRAGE")) norm = "BOX_SPREAD_ARB";
         if (norm.equals("CONDOR") || norm.equals("PUT/CALL_CONDOR_SPREAD")) norm = "CONDOR_SPREAD";
@@ -370,7 +370,8 @@ public class SmartAutoEntryService {
         if (s != null && s.getSettingValue() != null) {
             try { return Double.parseDouble(s.getSettingValue()); } catch (Exception ignored) {}
         }
-        return norm.startsWith("CASH") ? 3.5 : 1500.0;
+        if (norm.contains("BID_PARITY")) return 1500.0;
+        return norm.startsWith("CASH") ? 3.5 : 500.0;
     }
 
     private double getNetEdgeForOpp(Map<String, Object> opp) {

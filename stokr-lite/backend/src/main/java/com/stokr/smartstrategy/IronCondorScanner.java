@@ -72,8 +72,8 @@ public class IronCondorScanner {
 
         // Iron Condor = Sell OTM Put + Buy further OTM Put (bull put spread)
         //             + Sell OTM Call + Buy further OTM Call (bear call spread)
-        for (int putDist = 2; putDist <= 6; putDist++) {
-            for (int callDist = 2; callDist <= 6; callDist++) {
+        for (int putDist = 2; putDist <= 5; putDist++) {
+            for (int callDist = 2; callDist <= 5; callDist++) {
                 for (int wingWidth = 1; wingWidth <= 3; wingWidth++) {
                     int putSellStrike = atmStrike - putDist * step;
                     int putBuyStrike = putSellStrike - wingWidth * step;

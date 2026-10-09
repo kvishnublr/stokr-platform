@@ -59,7 +59,7 @@ public class BrokenWingButterflyScanner {
         int atmStrike = (int) (Math.round(spot / step) * step);
 
         List<String> instruments = new ArrayList<>();
-        for (int i = -6; i <= 6; i++) {
+        for (int i = -5; i <= 5; i++) {
             int s = atmStrike + i * step;
             instruments.addAll(optionChainService.buildNfoSymbolCandidates(underlying, expiry, s, "CE"));
             instruments.addAll(optionChainService.buildNfoSymbolCandidates(underlying, expiry, s, "PE"));

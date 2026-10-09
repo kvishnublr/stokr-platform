@@ -2449,7 +2449,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
     }
 
         public double getMinEdgeForStrategy(String stratId) {
-        if (stratId == null) return 1500.0;
+        if (stratId == null) return 500.0;
         String norm = stratId.toUpperCase().trim().replace(" ", "_");
         if (norm.equals("BOX_SPREAD") || norm.equals("BOX_SPREAD_ARBITRAGE")) norm = "BOX_SPREAD_ARB";
         if (norm.equals("CONDOR") || norm.equals("PUT/CALL_CONDOR_SPREAD")) norm = "CONDOR_SPREAD";
@@ -2460,7 +2460,8 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         if (val != null) {
             try { return Double.parseDouble(val); } catch (Exception ignored) {}
         }
-        return norm.startsWith("CASH") ? 3.5 : 1500.0;
+        if (norm.contains("BID_PARITY")) return 1500.0;
+        return norm.startsWith("CASH") ? 3.5 : 500.0;
     }
 
     public boolean isStrategyEnabledForMode(String stratId, String mode) {

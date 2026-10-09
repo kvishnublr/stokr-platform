@@ -2,16 +2,7 @@ package com.stokr.arbitrage;
 
 /**
  * Decides which option quotes a scanner may price from.
- *
- * <ul>
- *   <li><b>Market open</b> — only two-sided quotes (bid &gt; 0, ask &gt; 0, ask &ge; bid). A missing side
- *       means the strike cannot be traded at the shown price, so it is rejected rather than
- *       back-filled with LTP (that produced phantom edges on illiquid strikes).</li>
- *   <li><b>Market closed</b> — preview mode: bid and ask are both set to LTP so weekend/after-hours
- *       scans still show opportunities. Callers label these results as LTP based.</li>
- * </ul>
- *
- * Always returns a copy: quotes live in OptionChainService's shared cache and must not be mutated.
+ * Enforces strict liquidity and bid-ask spread limits to protect against live execution slippage.
  */
 public final class QuotePolicy {
 
@@ -22,6 +13,19 @@ public final class QuotePolicy {
         OptionChainService.OptionQuote c = copy(q);
         if (marketOpen) {
             if (q.bid <= 0 || q.ask <= 0 || q.ask < q.bid) return null;
+
+            // SOLUTION 1: Bid-Ask Spread Filter Guard
+            // Reject illiquid option contracts with wide bid-ask spread
+            double spreadPts = q.ask - q.bid;
+            double spreadPct = (spreadPts / q.bid) * 100.0;
+
+            // Maximum allowed spread: 4.0 points max for BANKNIFTY, 3.0 points max for NIFTY/FINNIFTY
+            boolean isBankNifty = q.symbol != null && q.symbol.contains("BANKNIFTY");
+            double maxAllowedSpreadPts = isBankNifty ? 4.0 : 3.0;
+
+            if (spreadPts > maxAllowedSpreadPts || spreadPct > 1.2) {
+                return null; // Reject wide, illiquid spread quotes
+            }
         } else {
             c.bid = q.lastPrice;
             c.ask = q.lastPrice;
