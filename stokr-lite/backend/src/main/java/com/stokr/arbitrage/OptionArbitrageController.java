@@ -1883,6 +1883,8 @@ public class OptionArbitrageController {
                 });
             }
 
+            map.put("isMultiLeg", isMultiLeg);
+
             // Compute max loss from legs
             String stratUpper = (p.getStrategyType() != null ? p.getStrategyType() : "").toUpperCase();
             String actionUpper = (p.getAction() != null ? p.getAction() : "").toUpperCase();
@@ -1894,6 +1896,8 @@ public class OptionArbitrageController {
             double maxLoss = 0;
             if (isRiskFreeArb) {
                 maxLoss = 0;
+            } else if (p.getMaxLossAmount() != null && p.getMaxLossAmount() > 0) {
+                maxLoss = p.getMaxLossAmount() * (lots > 0 ? lots : 1);
             } else if (isMultiLeg) {
                 var legs = p.getLegs();
                 if (legs != null && legs.size() >= 2) {
@@ -1901,24 +1905,22 @@ public class OptionArbitrageController {
                     java.util.List<Integer> strikes = new java.util.ArrayList<>();
                     for (var leg : legs) {
                         double price = leg.get("price") != null ? ((Number) leg.get("price")).doubleValue() : 0;
+                        int qty = leg.get("qty") != null ? ((Number) leg.get("qty")).intValue() : 1;
                         String side = (String) leg.get("side");
-                        if ("SELL".equals(side)) netPremium += price;
-                        else netPremium -= price;
+                        if ("SELL".equals(side)) netPremium += price * qty;
+                        else netPremium -= price * qty;
                         Object strikeObj = leg.get("strike");
                         if (strikeObj != null) strikes.add(((Number) strikeObj).intValue());
                     }
                     if (strikes.size() >= 2) {
                         java.util.Collections.sort(strikes);
-                        // Wing width = smallest gap between adjacent strikes
                         int wingWidth = Integer.MAX_VALUE;
                         for (int i = 1; i < strikes.size(); i++) {
                             wingWidth = Math.min(wingWidth, strikes.get(i) - strikes.get(i - 1));
                         }
                         if (netPremium > 0) {
-                            // Credit spread: max loss = wing width - net credit
                             maxLoss = (wingWidth - netPremium) * lotSize * lots;
                         } else {
-                            // Debit spread: max loss = net debit paid
                             maxLoss = Math.abs(netPremium) * lotSize * lots;
                         }
                         if (maxLoss < 0) maxLoss = 0;

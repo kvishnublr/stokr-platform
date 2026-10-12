@@ -1,3 +1,44 @@
+// Helper to extract structured legs for any position across all strategies
+function extractPositionLegs(p) {
+  if (Array.isArray(p.legList) && p.legList.length > 0) {
+    return p.legList.map(l => ({
+      side: l.side || (String(l.action || '').toUpperCase().includes('BUY') ? 'BUY' : 'SELL'),
+      strike: l.strike,
+      optionType: l.optionType || (String(l.symbol || '').endsWith('CE') ? 'CE' : String(l.symbol || '').endsWith('PE') ? 'PE' : ''),
+      qty: l.qty || 1,
+      price: l.price != null ? Number(l.price) : (l.entryPrice != null ? Number(l.entryPrice) : null)
+    }));
+  }
+  if (typeof p.action === 'string' && (p.action.includes('|') || p.action.includes('—'))) {
+    const rawParts = p.action.split(/[|—]/).map(s => s.trim()).filter(Boolean);
+    const parsed = [];
+    for (const part of rawParts) {
+      const m = part.match(/(BUY|SELL)\s+(?:(\d+)x)?\s*(\d+)?\s*(CE|PE)(?:\s*@\s*([\d.]+))?/i);
+      if (m) {
+        parsed.push({
+          side: m[1].toUpperCase(),
+          qty: m[2] ? parseInt(m[2], 10) : 1,
+          strike: m[3] ? parseInt(m[3], 10) : p.strike,
+          optionType: m[4].toUpperCase(),
+          price: m[5] ? parseFloat(m[5]) : null
+        });
+      }
+    }
+    if (parsed.length > 0) return parsed;
+  }
+  const legs = [];
+  if (p.ceEntryPrice != null && Number(p.ceEntryPrice) > 0) {
+    legs.push({ side: 'BUY', strike: p.strike, optionType: 'CE', qty: 1, price: Number(p.ceEntryPrice) });
+  }
+  if (p.peEntryPrice != null && Number(p.peEntryPrice) > 0) {
+    legs.push({ side: 'SELL', strike: p.strike, optionType: 'PE', qty: 1, price: Number(p.peEntryPrice) });
+  }
+  if (p.futEntryPrice != null && Number(p.futEntryPrice) > 0) {
+    legs.push({ side: 'BUY', strike: 'FUT', optionType: '', qty: 1, price: Number(p.futEntryPrice) });
+  }
+  return legs;
+}
+
 import ErrorBoundary from '../components/ErrorBoundary';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -1395,7 +1436,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                   <SortTh col="underlying" className="px-1.5 py-2">Symbol</SortTh>
                   <SortTh col="strike" className="px-1.5 py-2 text-right">Strike</SortTh>
                   <SortTh col="expiry" className="px-1.5 py-2">Expiry</SortTh>
-                  <th className="px-1.5 py-2 text-center">Legs</th>
+                  <th className="px-2 py-2 text-center min-w-[210px]">Legs</th>
                   <SortTh col="edge" className="px-1.5 py-2 text-right">Edge</SortTh>
                   <SortTh col="edgeProgress" className="px-1.5 py-2 text-center">Prog.</SortTh>
                   <SortTh col="pnl" className="px-1.5 py-2 text-right">P&amp;L</SortTh>
@@ -1410,7 +1451,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                   const pnl = p.currentPnl != null ? Number(p.currentPnl) : null;
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
-                  const mxLoss = p.maxLoss || 0;
+                  const mxLoss = (p.maxLossAmount != null && p.maxLossAmount > 0) ? p.maxLossAmount : (p.maxLoss || 0);
                   const canShowPayoff = true;
                   const isExpanded = expandedPosId === p.id;
                   const rowBg = isExpanded ? 'bg-indigo-50/40' : captured >= 90 ? 'bg-amber-50/50' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40';
@@ -1450,36 +1491,46 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                       <td className="px-1.5 py-1 text-[9px] font-mono text-slate-500 whitespace-nowrap">
                         {(p.expiryDate || p.expiry) ? new Date((p.expiryDate || p.expiry) + (String(p.expiryDate || p.expiry).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '--'}
                       </td>
-                      <td className="px-1.5 py-1">
-                        {p.isMultiLeg ? (
-                          <div className="flex flex-wrap gap-0.5 max-w-[160px]">
-                            {Array.isArray(p.legList) && p.legList.length > 0
-                              ? p.legList.map((leg, i) => {
-                                  const isBuy = leg.side === 'BUY';
-                                  return (
-                                    <span key={i} className={`inline-flex items-center justify-between px-2 py-0.5 rounded-md text-[10px] font-mono font-black whitespace-nowrap shadow-2xs border ${
-                                      isBuy 
-                                        ? 'bg-emerald-500/10 text-emerald-800 border-emerald-500/25' 
-                                        : 'bg-rose-500/10 text-rose-800 border-rose-500/25'
-                                    }`}>
-                                      <span className="flex items-center gap-1">
-                                        <span className={`w-1.5 h-1.5 rounded-full ${isBuy ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
-                                        <span>{isBuy ? 'B' : 'S'}</span>
-                                        <span className="font-black text-slate-900">{leg.strike}{leg.optionType?.charAt(0)}</span>
+                      <td className="px-2 py-1.5 min-w-[210px] max-w-[280px]">
+                        {(() => {
+                          const legs = extractPositionLegs(p);
+                          if (legs.length === 0) {
+                            return <span className="text-slate-400 text-[10px] font-mono">--</span>;
+                          }
+                          return (
+                            <div className="flex flex-wrap items-center gap-1">
+                              {legs.map((leg, i) => {
+                                const isBuy = leg.side === 'BUY';
+                                return (
+                                  <span
+                                    key={i}
+                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold whitespace-nowrap border shadow-2xs ${
+                                      isBuy
+                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300/80'
+                                        : 'bg-rose-50 text-rose-800 border-rose-300/80'
+                                    }`}
+                                  >
+                                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isBuy ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                                    {leg.qty > 1 && (
+                                      <span className="px-1 py-0.1 rounded bg-slate-200/90 text-slate-800 text-[9px] font-black">
+                                        {leg.qty}x
                                       </span>
-                                      <span className="text-[9px] opacity-75 font-normal ml-1">@{Number(leg.price || 0).toFixed(1)}</span>
+                                    )}
+                                    <span>{isBuy ? 'B' : 'S'}</span>
+                                    <span className="font-extrabold text-slate-900">
+                                      {leg.strike}{leg.optionType ? leg.optionType.charAt(0) : ''}
                                     </span>
-                                  );
-                                })
-                              : <span className="text-slate-400 text-[10px] font-mono">{p.legList?.length || 0}-leg</span>}
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 font-mono text-[10px]">
-                            {p.ceEntryPrice ? <span className="text-blue-600 font-bold">CE@{p.ceEntryPrice.toFixed(1)}</span> : null}
-                            {p.peEntryPrice ? <span className="text-purple-600 font-bold">PE@{p.peEntryPrice.toFixed(1)}</span> : null}
-                            {p.futEntryPrice ? <span className="text-slate-600 font-bold">FUT@{p.futEntryPrice.toFixed(1)}</span> : null}
-                          </div>
-                        )}
+                                    {leg.price != null && (
+                                      <span className="text-[9px] text-slate-500 font-normal ml-0.5">
+                                        @{Number(leg.price).toFixed(1)}
+                                      </span>
+                                    )}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-1.5 py-1 text-right font-mono font-black text-indigo-700 text-[10px]">₹{target?.toFixed(0) || '--'}</td>
                       <td className="px-1.5 py-1">
