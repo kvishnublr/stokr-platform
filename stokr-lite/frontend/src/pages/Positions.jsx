@@ -116,11 +116,11 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
         exitTime: fmtTime(p.exitedAt || p.createdAt),
         duration: calcDuration(p.enteredAt, p.exitedAt),
         timestamp: p.exitedAt || p.enteredAt || p.createdAt,
-        entryPriceVal: p.entryPrice || p.entryCost || (p.ceEntryPrice ? (Number(p.ceEntryPrice) + (Number(p.peEntryPrice) || 0)) : null),
-        exitPriceVal: p.exitPrice || (p.closeCePrice ? (Number(p.closeCePrice) + (Number(p.closePePrice) || 0)) : null),
-        slVal: p.slPrice || (p.slPct ? `${p.slPct}%` : null),
-        targetVal: p.targetPrice || (p.targetEdge ? `₹${p.targetEdge}` : (p.targetPct ? `${p.targetPct}%` : null)),
-        exitReasonVal: p.exitReason || p.reason || p.status || 'CLOSED'
+        entryPriceVal: p.entryPrice != null ? p.entryPrice : (p.entryCost || null),
+        exitPriceVal: p.exitPrice != null ? p.exitPrice : null,
+        slVal: p.stopLossPrice != null ? p.stopLossPrice : (p.slPrice || (p.slPct ? `${p.slPct}%` : null)),
+        targetVal: p.targetPrice != null ? p.targetPrice : (p.targetEdge ? `₹${p.targetEdge}` : (p.targetPct ? `${p.targetPct}%` : null)),
+        exitReasonVal: p.errorMessage || p.exitReason || p.reason || p.status || 'CLOSED'
       };
     });
 
@@ -207,7 +207,12 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
         exitDate: fmtDate(p.exitTime || p.exitedAt || p.createdAt),
         exitTime: fmtTime(p.exitTime || p.exitedAt || p.createdAt),
         duration: calcDuration(p.scanTime || p.createdAt, p.exitTime || p.exitedAt),
-        timestamp: p.exitTime || p.exitedAt || p.scanTime || p.createdAt
+        timestamp: p.exitTime || p.exitedAt || p.scanTime || p.createdAt,
+        entryPriceVal: p.entryPrice || p.netCredit || p.netDebit || null,
+        exitPriceVal: p.exitPrice || null,
+        slVal: p.slPrice || null,
+        targetVal: p.targetPrice || (p.targetEdge ? `₹${p.targetEdge}` : null),
+        exitReasonVal: p.exitReason || p.status || 'CLOSED'
       };
     });
 
@@ -930,6 +935,33 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
                           )}
                         </td>
 
+                        {/* Entry Price */}
+                        <td className="px-3 py-3 text-right font-mono text-slate-700 whitespace-nowrap">
+                          {p.entryPriceVal != null ? `₹${Number(p.entryPriceVal).toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}` : '--'}
+                        </td>
+
+                        {/* Exit Price */}
+                        <td className="px-3 py-3 text-right font-mono text-slate-700 whitespace-nowrap">
+                          {p.exitPriceVal != null ? `₹${Number(p.exitPriceVal).toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}` : '--'}
+                        </td>
+
+                        {/* SL / Target */}
+                        <td className="px-3 py-3 text-center whitespace-nowrap font-mono text-[11px]">
+                          <div className="flex flex-col items-center justify-center gap-0.5">
+                            {p.targetVal != null ? (
+                              <span className="text-emerald-700 font-semibold text-[10px]">
+                                T: {typeof p.targetVal === 'number' ? `₹${Number(p.targetVal).toLocaleString('en-IN', { maximumFractionDigits: 1 })}` : p.targetVal}
+                              </span>
+                            ) : null}
+                            {p.slVal != null ? (
+                              <span className="text-rose-600 font-medium text-[10px]">
+                                SL: {typeof p.slVal === 'number' ? `₹${Number(p.slVal).toLocaleString('en-IN', { maximumFractionDigits: 1 })}` : p.slVal}
+                              </span>
+                            ) : null}
+                            {p.targetVal == null && p.slVal == null && <span className="text-slate-400">--</span>}
+                          </div>
+                        </td>
+
                         {/* Qty / Lots */}
                         <td className="px-4 py-3 text-right font-mono font-medium text-slate-600 whitespace-nowrap">
                           {p.qtyDisplay}
@@ -953,7 +985,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
                       {/* Expandable Payoff & System Audit Drawer */}
                       {isExp && (
                         <tr className="bg-indigo-50/30 border-b border-indigo-100">
-                          <td colSpan={8} className="p-4 space-y-3">
+                          <td colSpan={11} className="p-4 space-y-3">
                             <div className={`p-3 rounded-xl text-xs space-y-1 border ${isLoss ? 'bg-rose-50/80 border-rose-200 text-rose-800' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
                               <div className="flex items-center justify-between font-bold">
                                 <span>🔍 Trade Execution Audit &amp; System Notes</span>

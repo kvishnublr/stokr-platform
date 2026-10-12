@@ -60,6 +60,25 @@ public class MarketCalendar {
         return isTradingDay(LocalDate.now(IST));
     }
 
+    /**
+     * Counts how many actual trading days have elapsed strictly between startDate and endDate
+     * (excluding startDate, including endDate if it is a trading day).
+     * Example: Entry on Friday, Checked on Monday -> 1 trading day (Monday).
+     * Example: Entry on Tuesday, Checked on Thursday -> 2 trading days (Wednesday, Thursday).
+     */
+    public static int getTradingDaysElapsed(LocalDate startDate, LocalDate endDate) {
+        if (startDate == null || endDate == null || !startDate.isBefore(endDate)) return 0;
+        int count = 0;
+        LocalDate curr = startDate.plusDays(1);
+        while (!curr.isAfter(endDate)) {
+            if (isTradingDay(curr)) {
+                count++;
+            }
+            curr = curr.plusDays(1);
+        }
+        return count;
+    }
+
     /** True when {@code at} falls on a trading day between 09:15 and 15:30 IST (inclusive). */
     public static boolean isMarketOpen(ZonedDateTime at) {
         ZonedDateTime ist = at.withZoneSameInstant(IST);

@@ -24,7 +24,7 @@ public class CashExecutionService {
     private static final int MAX_OPEN_PAPER = 5; // Unlimited paper positions
     private static final double PAPER_CAPITAL = 10000.0;
     private static final int MAX_HOLD_DAYS_SURGE = 3;
-    private static final int MAX_HOLD_DAYS_SWING = 2;
+    private static final int MAX_HOLD_DAYS_SWING = 5;
     private static final int SYMBOL_COOLDOWN_HOURS = 72;
 
     private final CashPositionRepository positionRepo;
@@ -47,6 +47,10 @@ public class CashExecutionService {
     }
 
     public Map<String, Object> execute(String symbol, String strategyType, double targetPrice, double stopLossPrice, String broker, double capital) {
+        return execute(symbol, strategyType, targetPrice, stopLossPrice, broker, capital, 0.0);
+    }
+
+    public Map<String, Object> execute(String symbol, String strategyType, double targetPrice, double stopLossPrice, String broker, double capital, double scanRefPrice) {
         Map<String, Object> result = new LinkedHashMap<>();
         if (symbol == null || symbol.isBlank()) {
             result.put("status", "ERROR");
@@ -68,10 +72,17 @@ public class CashExecutionService {
             return result;
         }
 
-        // Target/stop come from the scan's close (yesterday); skip the entry when today's price has
-        // already moved past them. On 30 Sep 2026 every cash trade was a stop-out, e.g. ESDS bought
-        // at 1509.50 with its stop at 1533.29 (above entry), others with stops 0.5% under entry.
-        String levelsProblem = entryLevelsProblem(ltp, targetPrice, stopLossPrice);
+        // Re-anchor target and stop-loss to actual execution LTP if scan reference price was provided
+        double effectiveTarget = targetPrice;
+        double effectiveSl = stopLossPrice;
+        if (scanRefPrice > 0 && targetPrice > scanRefPrice && stopLossPrice > 0 && stopLossPrice < scanRefPrice) {
+            double targetPct = (targetPrice - scanRefPrice) / scanRefPrice;
+            double slPct = (scanRefPrice - stopLossPrice) / scanRefPrice;
+            effectiveTarget = Math.round(ltp * (1.0 + targetPct) * 100.0) / 100.0;
+            effectiveSl = Math.round(ltp * (1.0 - slPct) * 100.0) / 100.0;
+        }
+
+        String levelsProblem = entryLevelsProblem(ltp, effectiveTarget, effectiveSl);
         if (levelsProblem != null) {
             result.put("status", "SKIPPED");
             result.put("message", symbol + ": " + levelsProblem);
@@ -88,8 +99,8 @@ public class CashExecutionService {
                 .side("BUY")
                 .quantity(qty)
                 .entryPrice(BigDecimal.valueOf(ltp))
-                .targetPrice(targetPrice > 0 ? BigDecimal.valueOf(targetPrice) : null)
-                .stopLossPrice(stopLossPrice > 0 ? BigDecimal.valueOf(stopLossPrice) : null)
+                .targetPrice(effectiveTarget > 0 ? BigDecimal.valueOf(effectiveTarget) : null)
+                .stopLossPrice(effectiveSl > 0 ? BigDecimal.valueOf(effectiveSl) : null)
                 .broker(broker)
                 .status("OPEN")
                 .enteredAt(LocalDateTime.now())
@@ -199,7 +210,7 @@ public class CashExecutionService {
                     m.put("currentPrice", ltp);
                     m.put("currentPnl", Math.round(pnl));
                     m.put("pnlPct", Math.round(pnlPct * 100.0) / 100.0);
-                    long holdDays = p.getEnteredAt() != null ? ChronoUnit.DAYS.between(p.getEnteredAt().toLocalDate(), LocalDateTime.now().toLocalDate()) : 0;
+                    int holdDays = p.getEnteredAt() != null ? com.stokr.marketdata.MarketCalendar.getTradingDaysElapsed(p.getEnteredAt().toLocalDate(), java.time.LocalDate.now(ZoneId.of("Asia/Kolkata"))) : 0;
                     m.put("holdDays", holdDays);
                 }
             } catch (Exception ignored) {}
@@ -227,13 +238,44 @@ public class CashExecutionService {
 
             double target = pos.getTargetPrice() != null ? pos.getTargetPrice().doubleValue() : 0;
             double stopLoss = pos.getStopLossPrice() != null ? pos.getStopLossPrice().doubleValue() : 0;
-            boolean hitTarget = target > 0 && ltp >= target;
             double entryP = pos.getEntryPrice() != null ? pos.getEntryPrice().doubleValue() : 0;
+
+            // 1. Dynamic Trailing Stop-Loss for Profit Protection
+            if (entryP > 0 && target > entryP) {
+                double targetGain = target - entryP;
+                double currentGain = ltp - entryP;
+                double newSl = stopLoss;
+
+                // If reached >= 75% of target gain, trail stop to lock in 50% profit
+                if (currentGain >= 0.75 * targetGain) {
+                    double lockedSl = Math.round((entryP + 0.50 * targetGain) * 100.0) / 100.0;
+                    if (lockedSl > newSl) newSl = lockedSl;
+                }
+                // If reached >= 40% of target gain, trail stop to Breakeven (+0.5% buffer for transaction costs)
+                else if (currentGain >= 0.40 * targetGain) {
+                    double beSl = Math.round((entryP * 1.005) * 100.0) / 100.0;
+                    if (beSl > newSl) newSl = beSl;
+                }
+
+                if (newSl > stopLoss) {
+                    pos.setStopLossPrice(BigDecimal.valueOf(newSl));
+                    positionRepo.save(pos);
+                    stopLoss = newSl;
+                    log.info("Trailing SL updated for {}: new SL={} (Entry={}, LTP={}, Target={})",
+                            pos.getSymbol(), newSl, entryP, ltp, target);
+                }
+            }
+
+            boolean hitTarget = target > 0 && ltp >= target;
             boolean hitStop = stopLoss > 0 && ltp <= stopLoss;
 
+            // 2. Trading days calculation (excludes weekends & market holidays)
             int maxHoldDays = "CASH_SURGE".equals(pos.getStrategyType()) ? MAX_HOLD_DAYS_SURGE : MAX_HOLD_DAYS_SWING;
-            long holdDays = pos.getEnteredAt() != null ? ChronoUnit.DAYS.between(pos.getEnteredAt().toLocalDate(), LocalDateTime.now().toLocalDate()) : 0;
-            boolean holdExpired = holdDays >= maxHoldDays;
+            int tradingDaysHeld = pos.getEnteredAt() != null
+                    ? com.stokr.marketdata.MarketCalendar.getTradingDaysElapsed(pos.getEnteredAt().toLocalDate(), java.time.LocalDate.now(ZoneId.of("Asia/Kolkata")))
+                    : 0;
+            // Hold expires only after tradingDaysHeld > maxHoldDays OR on maxHoldDay near market close (after 15:15 IST)
+            boolean holdExpired = tradingDaysHeld > maxHoldDays || (tradingDaysHeld >= maxHoldDays && nowIST.isAfter(LocalTime.of(15, 15)));
 
             if (!hitTarget && !hitStop && !holdExpired) continue;
 
@@ -279,8 +321,8 @@ public class CashExecutionService {
             pos.setCurrentPnl(BigDecimal.valueOf(pnl));
             pos.setErrorMessage(exitReason);
             positionRepo.save(pos);
-            log.info("{}: {} {} squared off @ {} -- P&L Rs{} (held {}d)", exitReason,
-                    pos.getSymbol(), pos.getQuantity(), ltp, Math.round(pnl), holdDays);
+            log.info("{}: {} {} squared off @ {} -- P&L Rs{} (held {} trading days)", exitReason,
+                    pos.getSymbol(), pos.getQuantity(), ltp, Math.round(pnl), tradingDaysHeld);
         }
     }
 
@@ -288,7 +330,7 @@ public class CashExecutionService {
     @Scheduled(fixedDelayString = "60000", initialDelay = 60000)
     public void autoPaperTradeCashSignals() {
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 20)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
 
         List<CashPosition> allPositions = positionRepo.findAllByOrderByEnteredAtDesc();
         List<CashPosition> openPositions = allPositions.stream().filter(p -> "OPEN".equals(p.getStatus())).toList();
@@ -326,7 +368,8 @@ public class CashExecutionService {
                 if (openPaperSymbols.contains(symbol) || recentlyClosedSymbols.contains(symbol)) continue;
                 double target = opp.get("targetPrice") instanceof Number n ? n.doubleValue() : 0;
                 double sl = opp.get("stopLossPrice") instanceof Number n ? n.doubleValue() : 0;
-                execute(symbol, "CASH_SURGE", target, sl, "PAPER", PAPER_CAPITAL);
+                double scanRef = opp.get("entryPrice") instanceof Number n ? n.doubleValue() : 0;
+                execute(symbol, "CASH_SURGE", target, sl, "PAPER", PAPER_CAPITAL, scanRef);
                 openPaperCount++;
                 openPaperSymbols.add(symbol);
             }
@@ -337,7 +380,8 @@ public class CashExecutionService {
                 if (openPaperSymbols.contains(symbol) || recentlyClosedSymbols.contains(symbol)) continue;
                 double target = opp.get("targetPrice") instanceof Number n ? n.doubleValue() : 0;
                 double sl = opp.get("stopLossPrice") instanceof Number n ? n.doubleValue() : 0;
-                execute(symbol, "CASH_SWING", target, sl, "PAPER", PAPER_CAPITAL);
+                double scanRef = opp.get("entryPrice") instanceof Number n ? n.doubleValue() : 0;
+                execute(symbol, "CASH_SWING", target, sl, "PAPER", PAPER_CAPITAL, scanRef);
                 openPaperCount++;
                 openPaperSymbols.add(symbol);
             }
