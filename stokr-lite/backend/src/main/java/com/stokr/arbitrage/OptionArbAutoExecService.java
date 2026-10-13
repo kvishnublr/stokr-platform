@@ -1874,10 +1874,9 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             }
             int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
             String side = (String) leg.get("side");
-            boolean isPaper = pos.getBroker() == null || "PAPER".equalsIgnoreCase(pos.getBroker());
-            double currentMark = isPaper 
-                ? (q.lastPrice > 0 ? q.lastPrice : (bid > 0 && ask > 0 ? (bid + ask) / 2.0 : (bid > 0 ? bid : ask)))
-                : ("BUY".equals(side) ? bid : ask);
+            // Consistent executable exit pricing for both live and paper:
+            // BUY legs exit at bid, SELL legs exit at ask
+            double currentMark = "BUY".equals(side) ? (bid > 0 ? bid : q.lastPrice) : (ask > 0 ? ask : q.lastPrice);
             double legPnl = "BUY".equals(side) ? (currentMark - entry) : (entry - currentMark);
             pnl += legPnl * qtyMult;
         }

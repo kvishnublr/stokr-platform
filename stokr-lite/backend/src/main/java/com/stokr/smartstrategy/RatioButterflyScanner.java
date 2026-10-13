@@ -82,6 +82,13 @@ public class RatioButterflyScanner {
                 OptionChainService.OptionQuote sellQ = getQuote(quotes, underlying, expiry, sellStrike, optType);
                 OptionChainService.OptionQuote farBuyQ = getQuote(quotes, underlying, expiry, farBuyStrike, optType);
                 if (buyQ == null || sellQ == null || farBuyQ == null) continue;
+
+                // Monotonicity check
+                if ("PE".equals(optType)) {
+                    if (!OptionChainService.strikeOrdered("PE", farBuyQ, sellQ, buyQ)) continue;
+                } else {
+                    if (!OptionChainService.strikeOrdered("CE", buyQ, sellQ, farBuyQ)) continue;
+                }
                 double buyAsk = buyQ.effectiveAsk(), sellBid = sellQ.effectiveBid(), farAsk = farBuyQ.effectiveAsk();
                 if (buyAsk <= 0 || sellBid <= 0 || farAsk <= 0) continue;
 
@@ -133,11 +140,11 @@ public class RatioButterflyScanner {
                     buyStrike, optType, buyAsk, sellStrike, optType, sellBid, farBuyStrike, optType, farAsk));
                 opp.put("legList", List.of(
                     Map.of("strike", buyStrike, "optionType", optType, "side", "BUY", "qty", 1, "price", buyAsk,
-                        "symbol", getSymbol(quotes, underlying, expiry, buyStrike, optType)),
+                        "symbol", buyQ.symbol != null ? buyQ.symbol : getSymbol(quotes, underlying, expiry, buyStrike, optType)),
                     Map.of("strike", sellStrike, "optionType", optType, "side", "SELL", "qty", 3, "price", sellBid,
-                        "symbol", getSymbol(quotes, underlying, expiry, sellStrike, optType)),
+                        "symbol", sellQ.symbol != null ? sellQ.symbol : getSymbol(quotes, underlying, expiry, sellStrike, optType)),
                     Map.of("strike", farBuyStrike, "optionType", optType, "side", "BUY", "qty", 2, "price", farAsk,
-                        "symbol", getSymbol(quotes, underlying, expiry, farBuyStrike, optType))
+                        "symbol", farBuyQ.symbol != null ? farBuyQ.symbol : getSymbol(quotes, underlying, expiry, farBuyStrike, optType))
                 ));
                 double distPct = Math.abs(sellStrike - spot) / spot * 100;
                 double estimatedWinRate = Math.min(80, 50 + riskReward * 12);

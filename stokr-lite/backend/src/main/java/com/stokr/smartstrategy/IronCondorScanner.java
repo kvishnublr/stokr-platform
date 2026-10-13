@@ -85,6 +85,10 @@ public class IronCondorScanner {
                     OptionChainService.OptionQuote callSellQ = getQuote(quotes, underlying, expiry, callSellStrike, "CE");
                     OptionChainService.OptionQuote callBuyQ = getQuote(quotes, underlying, expiry, callBuyStrike, "CE");
                     if (putSellQ == null || putBuyQ == null || callSellQ == null || callBuyQ == null) continue;
+
+                    // Monotonicity check
+                    if (!OptionChainService.strikeOrdered("PE", putBuyQ, putSellQ)) continue;
+                    if (!OptionChainService.strikeOrdered("CE", callSellQ, callBuyQ)) continue;
                     if (putSellQ.bid <= 0 || callSellQ.bid <= 0) continue;
 
                     double netCredit = (putSellQ.bid - putBuyQ.ask) + (callSellQ.bid - callBuyQ.ask);
@@ -164,13 +168,13 @@ public class IronCondorScanner {
                         putBuyStrike, putSellStrike, callSellStrike, callBuyStrike, netCredit));
                     opp.put("legList", List.of(
                         Map.of("strike", putBuyStrike, "optionType", "PE", "side", "BUY", "qty", 1, "price", putBuyQ.ask,
-                            "symbol", getSymbol(quotes, underlying, expiry, putBuyStrike, "PE")),
+                            "symbol", putBuyQ.symbol != null ? putBuyQ.symbol : getSymbol(quotes, underlying, expiry, putBuyStrike, "PE")),
                         Map.of("strike", putSellStrike, "optionType", "PE", "side", "SELL", "qty", 1, "price", putSellQ.bid,
-                            "symbol", getSymbol(quotes, underlying, expiry, putSellStrike, "PE")),
+                            "symbol", putSellQ.symbol != null ? putSellQ.symbol : getSymbol(quotes, underlying, expiry, putSellStrike, "PE")),
                         Map.of("strike", callSellStrike, "optionType", "CE", "side", "SELL", "qty", 1, "price", callSellQ.bid,
-                            "symbol", getSymbol(quotes, underlying, expiry, callSellStrike, "CE")),
+                            "symbol", callSellQ.symbol != null ? callSellQ.symbol : getSymbol(quotes, underlying, expiry, callSellStrike, "CE")),
                         Map.of("strike", callBuyStrike, "optionType", "CE", "side", "BUY", "qty", 1, "price", callBuyQ.ask,
-                            "symbol", getSymbol(quotes, underlying, expiry, callBuyStrike, "CE"))
+                            "symbol", callBuyQ.symbol != null ? callBuyQ.symbol : getSymbol(quotes, underlying, expiry, callBuyStrike, "CE"))
                     ));
                     opp.put("edgePoints", round2(netCredit));
                     opp.put("edgeAfterCosts", round2(creditRs - txnCost));

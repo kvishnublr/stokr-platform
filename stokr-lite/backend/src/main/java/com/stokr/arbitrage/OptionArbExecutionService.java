@@ -246,7 +246,8 @@ public class OptionArbExecutionService {
         } else {
             int month = expiry.getMonthValue();
             int day = expiry.getDayOfMonth();
-            return String.format("%s%02d%d%02d%d%s", clean, yy, month, day, strike, type);
+            String mCode = (month == 10) ? "O" : (month == 11) ? "N" : (month == 12) ? "D" : String.valueOf(month);
+            return String.format("%s%02d%s%02d%d%s", clean, yy, mCode, day, strike, type);
         }
     }
 

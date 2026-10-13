@@ -114,12 +114,25 @@ public class SmartStrategyExecutionService {
                 .createdAt(LocalDateTime.now())
                 .build();
 
+        // Refresh leg quotes at entry time
+        List<String> entrySymbols = new ArrayList<>();
+        for (Map<String, Object> leg : legList) {
+            int strike = ((Number) leg.get("strike")).intValue();
+            String optType = (String) leg.get("optionType");
+            String legExpiry = leg.get("expiry") instanceof String s ? s : (expiry != null ? expiry : "");
+            LocalDate legExpiryDate = !legExpiry.isEmpty() ? LocalDate.parse(legExpiry) : expiryDate;
+            String symbol = leg.get("symbol") instanceof String s ? s :
+                optionChainService.buildNfoSymbol(underlying, legExpiryDate, strike, optType);
+            if (symbol != null) entrySymbols.add(symbol);
+        }
+        Map<String, OptionChainService.OptionQuote> entryQuotes = entrySymbols.isEmpty()
+            ? Map.of() : optionChainService.fetchQuotes(entrySymbols);
+
         if (isPaper) {
             List<Map<String, Object>> filledLegs = new ArrayList<>();
             double totalCost = 0;
             for (Map<String, Object> leg : legList) {
                 Map<String, Object> filled = new LinkedHashMap<>(leg);
-                double price = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
                 String side = (String) leg.get("side");
                 int strike = ((Number) leg.get("strike")).intValue();
                 String optType = (String) leg.get("optionType");
@@ -127,6 +140,12 @@ public class SmartStrategyExecutionService {
                 LocalDate legExpiryDate = !legExpiry.isEmpty() ? LocalDate.parse(legExpiry) : expiryDate;
                 String symbol = leg.get("symbol") instanceof String s ? s :
                     optionChainService.buildNfoSymbol(underlying, legExpiryDate, strike, optType);
+                OptionChainService.OptionQuote eq = entryQuotes.get(symbol);
+                double price = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
+                if (eq != null) {
+                    double realPrice = "BUY".equals(side) ? (eq.ask > 0 ? eq.ask : eq.lastPrice) : (eq.bid > 0 ? eq.bid : eq.lastPrice);
+                    if (realPrice > 0) price = realPrice;
+                }
                 int qty = leg.get("qty") instanceof Number n ? n.intValue() : 1;
 
                 filled.put("symbol", symbol);
@@ -170,7 +189,12 @@ public class SmartStrategyExecutionService {
                 String symbol = optionChainService.buildNfoSymbol(underlying, legExpiryDate, strike, optType);
                 int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
                 int qty = lots * lotSize * qtyMult;
+                OptionChainService.OptionQuote eq = entryQuotes.get(symbol);
                 double price = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
+                if (eq != null) {
+                    double realPrice = "BUY".equals(side) ? (eq.ask > 0 ? eq.ask : eq.lastPrice) : (eq.bid > 0 ? eq.bid : eq.lastPrice);
+                    if (realPrice > 0) price = realPrice;
+                }
 
                 // Cap live order slippage buffer to max 1% or Rs 3.00 to protect against wide spreads on heavy options
                 double bufAmt = Math.min(price * 0.01, 3.0);
@@ -339,6 +363,21 @@ public class SmartStrategyExecutionService {
             pos.setExitReason("MANUAL");
             pos.setCurrentPnl(BigDecimal.valueOf(pnl));
             pos.setExitedAt(LocalDateTime.now());
+            if (pos.getLegs() != null) {
+                List<Map<String, Object>> closedLegs = new ArrayList<>();
+                for (Map<String, Object> leg : pos.getLegs()) {
+                    Map<String, Object> m = new LinkedHashMap<>(leg);
+                    String sym = (String) leg.get("symbol");
+                    OptionChainService.OptionQuote q = sym != null ? quotes.get(sym) : null;
+                    if (q != null) {
+                        boolean isBuy = "BUY".equals(leg.get("side"));
+                        double exitPx = isBuy ? (q.bid > 0 ? q.bid : q.lastPrice) : (q.ask > 0 ? q.ask : q.lastPrice);
+                        m.put("exitPrice", exitPx);
+                    }
+                    closedLegs.add(m);
+                }
+                pos.setLegs(closedLegs);
+            }
             positionRepo.save(pos);
             result.put("status", "SUCCESS");
             result.put("pnl", pnl);
@@ -408,9 +447,8 @@ public class SmartStrategyExecutionService {
                 }
             }
 
-            boolean isPaper = pos.getBroker() == null || "PAPER".equalsIgnoreCase(pos.getBroker());
             double evalPrice = currentPrice;
-            if (isPaper && q != null && q.lastPrice > 0) {
+            if (evalPrice <= 0 && q != null && q.lastPrice > 0) {
                 evalPrice = q.lastPrice;
             }
             double legPnl;

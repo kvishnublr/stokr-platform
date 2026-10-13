@@ -4332,20 +4332,42 @@ export function DetailedOpportunityExpandedRow({ item, executionBroker, setPendi
                   <th className="py-2 px-3">Action</th>
                   <th className="py-2 px-3">Strike</th>
                   <th className="py-2 px-3">Type</th>
-                  <th className="py-2 px-3 text-right">Price</th>
+                  <th className="py-2 px-3 text-right">Entry Price</th>
+                  <th className="py-2 px-3 text-right">Curr / Exit</th>
+                  <th className="py-2 px-3 text-right">Leg P&L</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-mono">
-                {oppToPass.legList.map((leg, i) => (
-                  <tr key={i} className={leg.side === 'BUY' ? 'bg-blue-50/30' : 'bg-red-50/30'}>
-                    <td className="py-2 px-3 font-bold text-slate-700">
-                      <span className={leg.side === 'BUY' ? 'text-blue-600' : 'text-red-600'}>{leg.side}</span>
-                    </td>
-                    <td className="py-2 px-3 font-bold text-slate-700">{leg.strike || 'FUT'}</td>
-                    <td className="py-2 px-3 font-bold text-slate-500">{leg.optionType}</td>
-                    <td className="py-2 px-3 font-bold text-slate-800 text-right">₹{leg.price != null ? Number(leg.price).toFixed(2) : "--"}</td>
-                  </tr>
-                ))}
+                {oppToPass.legList.map((leg, i) => {
+                  const entryPrice = Number(leg.entryPrice != null ? leg.entryPrice : leg.price);
+                  const exitPrice = leg.exitPrice != null ? Number(leg.exitPrice) : (leg.currentPrice != null ? Number(leg.currentPrice) : null);
+                  const legQty = Number(leg.qty || 1);
+                  let legPnl = leg.pnl != null ? Number(leg.pnl) : null;
+                  if (legPnl == null && exitPrice != null && entryPrice > 0) {
+                    const diff = leg.side === 'BUY' ? (exitPrice - entryPrice) : (entryPrice - exitPrice);
+                    legPnl = diff * legQty * lotSize * lots;
+                  }
+                  return (
+                    <tr key={i} className={leg.side === 'BUY' ? 'bg-blue-50/30' : 'bg-red-50/30'}>
+                      <td className="py-2 px-3 font-bold text-slate-700">
+                        <span className={leg.side === 'BUY' ? 'text-blue-600' : 'text-red-600'}>
+                          {leg.side} {legQty > 1 ? `${legQty}x` : ''}
+                        </span>
+                      </td>
+                      <td className="py-2 px-3 font-bold text-slate-700">{leg.strike || 'FUT'}</td>
+                      <td className="py-2 px-3 font-bold text-slate-500">{leg.optionType}</td>
+                      <td className="py-2 px-3 font-bold text-slate-800 text-right">
+                        ₹{entryPrice > 0 ? entryPrice.toFixed(2) : '--'}
+                      </td>
+                      <td className="py-2 px-3 font-bold text-slate-800 text-right">
+                        {exitPrice != null ? `₹${exitPrice.toFixed(2)}` : '--'}
+                      </td>
+                      <td className={`py-2 px-3 font-black text-right ${legPnl > 0 ? 'text-emerald-600' : legPnl < 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                        {legPnl != null ? `${legPnl >= 0 ? '+' : ''}₹${legPnl.toFixed(2)}` : '--'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : (

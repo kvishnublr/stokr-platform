@@ -1856,6 +1856,25 @@ public class OptionArbitrageController {
                 map.put("ceCurrent", 0);
                 map.put("peCurrent", 0);
                 map.put("futCurrent", 0);
+                if (p.getLegs() != null) {
+                    List<Map<String, Object>> enrichedLegs = new ArrayList<>();
+                    for (Map<String, Object> leg : p.getLegs()) {
+                        Map<String, Object> em = new LinkedHashMap<>(leg);
+                        String sym = (String) leg.get("symbol");
+                        OptionChainService.OptionQuote lq = sym != null ? quotes.get(sym) : null;
+                        double entry = leg.get("price") instanceof Number n ? n.doubleValue() : (leg.get("entryPrice") instanceof Number n2 ? n2.doubleValue() : 0);
+                        int qty = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+                        String side = (String) leg.get("side");
+                        double cur = lq != null ? ("BUY".equals(side) ? (lq.bid > 0 ? lq.bid : lq.lastPrice) : (lq.ask > 0 ? lq.ask : lq.lastPrice)) : entry;
+                        double legPnlVal = ("BUY".equals(side) ? (cur - entry) : (entry - cur)) * qty * lotSize * lots;
+                        em.put("entryPrice", entry);
+                        em.put("currentPrice", cur);
+                        em.put("pnl", Math.round(legPnlVal * 100.0) / 100.0);
+                        enrichedLegs.add(em);
+                    }
+                    map.put("legList", enrichedLegs);
+                    map.put("legs", enrichedLegs);
+                }
             } else {
                 pnl = autoExecService.computePnl(p, quotes);
                 var ceQ = p.getCeSymbol() != null ? quotes.get(p.getCeSymbol()) : null;
@@ -1943,7 +1962,28 @@ public class OptionArbitrageController {
             Map<String, Object> map = p.toMap();
             double pnl = p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0;
             map.put("currentPnl", Math.round(pnl));
-            map.put("isMultiLeg", p.getLegs() != null && !p.getLegs().isEmpty());
+            boolean isMultiLegClosed = p.getLegs() != null && !p.getLegs().isEmpty();
+            map.put("isMultiLeg", isMultiLegClosed);
+            if (isMultiLegClosed) {
+                int lotSize = p.getLotSize() != null ? p.getLotSize() : getLotSize(p.getUnderlying());
+                int lots = p.getLots() != null ? p.getLots() : 1;
+                List<Map<String, Object>> enrichedLegs = new ArrayList<>();
+                for (Map<String, Object> leg : p.getLegs()) {
+                    Map<String, Object> em = new LinkedHashMap<>(leg);
+                    double entry = leg.get("price") instanceof Number n ? n.doubleValue() : (leg.get("entryPrice") instanceof Number n2 ? n2.doubleValue() : 0);
+                    double exit = leg.get("exitPrice") instanceof Number n ? n.doubleValue() : entry;
+                    int qty = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+                    String side = (String) leg.get("side");
+                    double legPnlVal = ("BUY".equals(side) ? (exit - entry) : (entry - exit)) * qty * lotSize * lots;
+                    em.put("entryPrice", entry);
+                    em.put("currentPrice", exit);
+                    em.put("exitPrice", exit);
+                    em.put("pnl", Math.round(legPnlVal * 100.0) / 100.0);
+                    enrichedLegs.add(em);
+                }
+                map.put("legList", enrichedLegs);
+                map.put("legs", enrichedLegs);
+            }
             return map;
         }).toList();
 

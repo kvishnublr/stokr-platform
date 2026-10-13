@@ -92,6 +92,20 @@ public class BrokenWingButterflyScanner {
                     OptionChainService.OptionQuote bodyQ = getQuote(quotes, underlying, expiry, bodyStrike, optType);
                     OptionChainService.OptionQuote farQ = getQuote(quotes, underlying, expiry, farWingStrike, optType);
                     if (nearQ == null || bodyQ == null || farQ == null) continue;
+
+                    // Monotonicity check: Ascending strike order must have monotonic pricing
+                    if ("PE".equals(optType)) {
+                        if (!OptionChainService.strikeOrdered("PE", farQ, bodyQ, nearQ)) continue;
+                    } else {
+                        if (!OptionChainService.strikeOrdered("CE", nearQ, bodyQ, farQ)) continue;
+                    }
+
+                    // Monotonicity check: Ascending strike order must have monotonic pricing
+                    if ("PE".equals(optType)) {
+                        if (!OptionChainService.strikeOrdered("PE", farQ, bodyQ, nearQ)) continue;
+                    } else {
+                        if (!OptionChainService.strikeOrdered("CE", nearQ, bodyQ, farQ)) continue;
+                    }
                     double nAsk = nearQ.effectiveAsk(), bBid = bodyQ.effectiveBid(), fAsk = farQ.effectiveAsk();
                     if (nAsk <= 0 || bBid <= 0 || fAsk <= 0) continue;
 
@@ -143,11 +157,11 @@ public class BrokenWingButterflyScanner {
                         nearWingStrike, optType, nAsk, bodyStrike, optType, bBid, farWingStrike, optType, fAsk));
                     opp.put("legList", List.of(
                         Map.of("strike", nearWingStrike, "optionType", optType, "side", "BUY", "qty", 1, "price", nAsk,
-                            "symbol", getSymbol(quotes, underlying, expiry, nearWingStrike, optType)),
+                            "symbol", nearQ.symbol != null ? nearQ.symbol : getSymbol(quotes, underlying, expiry, nearWingStrike, optType)),
                         Map.of("strike", bodyStrike, "optionType", optType, "side", "SELL", "qty", 2, "price", bBid,
-                            "symbol", getSymbol(quotes, underlying, expiry, bodyStrike, optType)),
+                            "symbol", bodyQ.symbol != null ? bodyQ.symbol : getSymbol(quotes, underlying, expiry, bodyStrike, optType)),
                         Map.of("strike", farWingStrike, "optionType", optType, "side", "BUY", "qty", 1, "price", fAsk,
-                            "symbol", getSymbol(quotes, underlying, expiry, farWingStrike, optType))
+                            "symbol", farQ.symbol != null ? farQ.symbol : getSymbol(quotes, underlying, expiry, farWingStrike, optType))
                     ));
                     opp.put("edgePoints", round2(credit));
                     opp.put("edgeAfterCosts", round2(credit * lotSize - txnCost));

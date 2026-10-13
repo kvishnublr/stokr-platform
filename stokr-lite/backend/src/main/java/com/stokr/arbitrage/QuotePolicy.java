@@ -17,13 +17,16 @@ public final class QuotePolicy {
             // SOLUTION 1: Bid-Ask Spread Filter Guard
             // Reject illiquid option contracts with wide bid-ask spread
             double spreadPts = q.ask - q.bid;
-            double spreadPct = (spreadPts / q.bid) * 100.0;
 
             // Maximum allowed spread: 4.0 points max for BANKNIFTY, 3.0 points max for NIFTY/FINNIFTY
             boolean isBankNifty = q.symbol != null && q.symbol.contains("BANKNIFTY");
             double maxAllowedSpreadPts = isBankNifty ? 4.0 : 3.0;
 
-            if (spreadPts > maxAllowedSpreadPts || spreadPct > 1.2) {
+            // Adaptive spread limit: allow normal tick spread (min 0.75 pts) for low premium options,
+            // or 1.5% of bid, capped at maxAllowedSpreadPts.
+            double allowedSpread = Math.min(maxAllowedSpreadPts, Math.max(0.75, q.bid * 0.015));
+
+            if (spreadPts > allowedSpread) {
                 return null; // Reject wide, illiquid spread quotes
             }
         } else {
