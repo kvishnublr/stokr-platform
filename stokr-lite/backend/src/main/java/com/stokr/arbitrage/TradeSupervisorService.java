@@ -432,7 +432,7 @@ public class TradeSupervisorService {
         for (BrokerAccount acc : activeAccounts) {
             Map<String, Object> bData = new LinkedHashMap<>();
             bData.put("status", "ACTIVE");
-            bData.put("clientCode", acc.getClientCode());
+            bData.put("clientCode", acc.getClientId());
             try {
                 BrokerAdapter adapter = brokerService.getAdapter(acc.getBrokerName());
                 BigDecimal margin = adapter.getAvailableMargin(acc.getAccessToken());
