@@ -217,8 +217,8 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
     });
 
     const activeSet = new Set(['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED', 'ENTERED']);
-    return [...fno, ...cash, ...arb].filter(p => !activeSet.has(p.status));
-  }, [fnoHistory, cashHistory, arbHistory, lotScaleMode]);
+    return [...fno, ...cash].filter(p => !activeSet.has(p.status));
+  }, [fnoHistory, cashHistory, lotScaleMode]);
 
   // Date Filtering Logic
   const filteredHistory = useMemo(() => {
@@ -1001,7 +1001,31 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
                               </p>
                             </div>
 
-                            <DetailedOpportunityExpandedRow item={{ ...p, lots: p.lots || 1 }} title={`Trade Payoff Chart & Execution Breakdown (${p.lots || 1} Lot${(p.lots || 1) > 1 ? 's' : ''}) — ${p.displaySymbol}`} />
+                            {p.assetClass === 'CASH' ? (
+                              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                                <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 mb-3">Equity Trade Execution Breakdown — {p.displaySymbol}</h4>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                    <div className="text-[10px] text-slate-400 font-bold uppercase">Side / Quantity</div>
+                                    <div className="font-extrabold text-slate-800">{p.side || 'BUY'} {p.quantity || p.qty || '--'} shares</div>
+                                  </div>
+                                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                    <div className="text-[10px] text-slate-400 font-bold uppercase">Entry Price</div>
+                                    <div className="font-extrabold text-slate-800">₹{Number(p.entryPriceVal || p.entryPrice || 0).toFixed(2)}</div>
+                                  </div>
+                                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                    <div className="text-[10px] text-slate-400 font-bold uppercase">Exit Price</div>
+                                    <div className="font-extrabold text-slate-800">₹{Number(p.exitPriceVal || p.exitPrice || 0).toFixed(2)}</div>
+                                  </div>
+                                  <div className={`p-2.5 rounded-lg border ${p.realPnl >= 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
+                                    <div className="text-[10px] font-bold uppercase opacity-75">Realized P&amp;L</div>
+                                    <div className="font-extrabold text-sm">{p.realPnl >= 0 ? '+' : ''}₹{Number(p.realPnl || 0).toFixed(2)}</div>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <DetailedOpportunityExpandedRow item={{ ...p, lots: p.lots || 1 }} title={`Trade Payoff Chart & Execution Breakdown (${p.lots || 1} Lot${(p.lots || 1) > 1 ? 's' : ''}) — ${p.displaySymbol}`} />
+                            )}
                           </td>
                         </tr>
                       )}
@@ -1013,12 +1037,14 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
               {/* Table Bottom Cumulative Totals Footer Row */}
               <tfoot className="bg-slate-900 text-white font-mono text-xs font-bold border-t-2 border-slate-700">
                 <tr>
-                  <td colSpan={4} className="px-4 py-3 text-left tracking-wider uppercase font-sans">
+                  <td colSpan={5} className="px-4 py-3 text-left tracking-wider uppercase font-sans">
                     TOTALS ({sortedHistory.length} Filtered Trades — {datePreset === 'ALL' ? 'All Time' : datePreset})
                   </td>
-                  <td className="px-4 py-3 text-slate-300 font-sans">Filtered Volume Summary</td>
+                  <td className="px-3 py-3 text-right text-slate-400 font-sans">--</td>
+                  <td className="px-3 py-3 text-right text-slate-400 font-sans">--</td>
+                  <td className="px-3 py-3 text-center text-slate-400 font-sans">--</td>
                   <td className="px-4 py-3 text-right text-indigo-300">
-                    {sortedHistory.length} Trades Total
+                    {sortedHistory.length} Trades
                   </td>
                   <td className={`px-4 py-3 text-right text-sm font-extrabold ${metrics.totalPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {metrics.totalPnl >= 0 ? '+' : ''}₹{Math.round(metrics.totalPnl).toLocaleString('en-IN')}

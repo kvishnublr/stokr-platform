@@ -4278,13 +4278,24 @@ export function DetailedOpportunityExpandedRow({ item, executionBroker, setPendi
     return { points, lo, hi, minY: Math.min(minY, 0), maxY: Math.max(maxY, 0), k1, k2, cost, breakevens };
   }, [hasLegs, oppToPass.legList]);
 
-  let displayMaxProfit = oppToPass.maxProfit || oppToPass.edgeAfterCosts || (oppToPass.edgePoints * lotSize) || 0;
-  let displayMaxLoss = oppToPass.maxLoss || 0;
-  
-  if (chart) {
-      displayMaxProfit = chart.maxY * lotSize;
-      displayMaxLoss = chart.minY * lotSize;
-  }
+  const stratName = String(oppToPass.strategyType || oppToPass.strategy || item.strategyType || item.strategy || '').toUpperCase();
+  const isPureArb = stratName.includes('PARITY') || stratName.includes('ARBITRAGE') || stratName.includes('CONVERSION') || stratName.includes('REVERSAL') || stratName.includes('BOX');
+
+  const analyticalMaxProfit = (oppToPass.maxProfitAmount != null && oppToPass.maxProfitAmount > 0)
+    ? Number(oppToPass.maxProfitAmount)
+    : (oppToPass.maxProfit != null && oppToPass.maxProfit > 0 ? Number(oppToPass.maxProfit) : null);
+
+  const analyticalMaxLoss = (oppToPass.maxLossAmount != null && oppToPass.maxLossAmount > 0)
+    ? -Math.abs(Number(oppToPass.maxLossAmount))
+    : (oppToPass.maxLoss != null && oppToPass.maxLoss > 0 ? -Math.abs(Number(oppToPass.maxLoss)) : null);
+
+  let displayMaxProfit = isPureArb 
+    ? (oppToPass.targetEdge || oppToPass.edgeAfterCosts || (oppToPass.edgePoints * lotSize) || (chart ? chart.maxY * lotSize : 0))
+    : (analyticalMaxProfit != null ? analyticalMaxProfit : (chart ? chart.maxY * lotSize : (oppToPass.maxProfit || 0)));
+
+  let displayMaxLoss = isPureArb 
+    ? 0 
+    : (analyticalMaxLoss != null ? analyticalMaxLoss : (chart ? chart.minY * lotSize : 0));
   
   let riskReward = '--';
   if (displayMaxProfit > 0 && displayMaxLoss < 0) {

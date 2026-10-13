@@ -2304,6 +2304,31 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                     }
                 }
 
+                if (pos.getLegs() != null && !pos.getLegs().isEmpty()) {
+                    List<Map<String, Object>> legs = new ArrayList<>(pos.getLegs());
+                    for (Map<String, Object> leg : legs) {
+                        String symbol = (String) leg.get("symbol");
+                        if (symbol != null && quotes.containsKey(symbol)) {
+                            var q = quotes.get(symbol);
+                            boolean isBuy = "BUY".equals(leg.get("side"));
+                            double exitPrice = isBuy ? (q.bid > 0 ? q.bid : q.lastPrice) : (q.ask > 0 ? q.ask : q.lastPrice);
+                            leg.put("exitPrice", exitPrice);
+                        }
+                    }
+                    pos.setLegs(legs);
+                } else {
+                    boolean ceLong = pos.getAction() != null && pos.getAction().toUpperCase().contains("BUY CE");
+                    var ceQ = pos.getCeSymbol() != null ? quotes.get(pos.getCeSymbol()) : null;
+                    var peQ = pos.getPeSymbol() != null ? quotes.get(pos.getPeSymbol()) : null;
+                    var futQ = pos.getFutSymbol() != null ? quotes.get(pos.getFutSymbol()) : null;
+                    double ceExit = ceQ != null ? (ceLong ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice)) : 0;
+                    double peExit = peQ != null ? (ceLong ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice)) : 0;
+                    double futExit = futQ != null ? (ceLong ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice)) : 0;
+                    if (ceExit > 0) pos.setCeExitPrice(BigDecimal.valueOf(ceExit));
+                    if (peExit > 0) pos.setPeExitPrice(BigDecimal.valueOf(peExit));
+                    if (futExit > 0) pos.setFutExitPrice(BigDecimal.valueOf(futExit));
+                }
+
                 pos.setStatus("EXITED");
                 pos.setExitReason("EOD_320_SQUAREOFF");
                 pos.setExitedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
@@ -2373,6 +2398,31 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                         log.error("Auto-expire live close failed for {}: {}", pos.getId(), e.getMessage());
                         continue;
                     }
+                }
+
+                if (pos.getLegs() != null && !pos.getLegs().isEmpty()) {
+                    List<Map<String, Object>> legs = new ArrayList<>(pos.getLegs());
+                    for (Map<String, Object> leg : legs) {
+                        String symbol = (String) leg.get("symbol");
+                        if (symbol != null && quotes.containsKey(symbol)) {
+                            var q = quotes.get(symbol);
+                            boolean isBuy = "BUY".equals(leg.get("side"));
+                            double exitPrice = isBuy ? (q.bid > 0 ? q.bid : q.lastPrice) : (q.ask > 0 ? q.ask : q.lastPrice);
+                            leg.put("exitPrice", exitPrice);
+                        }
+                    }
+                    pos.setLegs(legs);
+                } else {
+                    boolean ceLong = pos.getAction() != null && pos.getAction().toUpperCase().contains("BUY CE");
+                    var ceQ = pos.getCeSymbol() != null ? quotes.get(pos.getCeSymbol()) : null;
+                    var peQ = pos.getPeSymbol() != null ? quotes.get(pos.getPeSymbol()) : null;
+                    var futQ = pos.getFutSymbol() != null ? quotes.get(pos.getFutSymbol()) : null;
+                    double ceExit = ceQ != null ? (ceLong ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice)) : 0;
+                    double peExit = peQ != null ? (ceLong ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice)) : 0;
+                    double futExit = futQ != null ? (ceLong ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice)) : 0;
+                    if (ceExit > 0) pos.setCeExitPrice(BigDecimal.valueOf(ceExit));
+                    if (peExit > 0) pos.setPeExitPrice(BigDecimal.valueOf(peExit));
+                    if (futExit > 0) pos.setFutExitPrice(BigDecimal.valueOf(futExit));
                 }
 
                 pos.setStatus("CLOSED");

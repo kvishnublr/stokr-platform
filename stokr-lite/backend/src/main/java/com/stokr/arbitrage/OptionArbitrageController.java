@@ -2175,6 +2175,24 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                 m.put("peCurrent", peCurrent);
                 m.put("futCurrent", futCurrent);
             }
+            if (isMultiLeg) {
+                List<Map<String, Object>> enrichedLegs = new ArrayList<>();
+                for (Map<String, Object> leg : p.getLegs()) {
+                    Map<String, Object> em = new LinkedHashMap<>(leg);
+                    double entry = leg.get("price") instanceof Number n ? n.doubleValue() : (leg.get("entryPrice") instanceof Number n2 ? n2.doubleValue() : 0);
+                    double exit = leg.get("exitPrice") instanceof Number n ? n.doubleValue() : (leg.get("currentPrice") instanceof Number n3 ? n3.doubleValue() : entry);
+                    int qty = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+                    String side = (String) leg.get("side");
+                    double legPnlVal = ("BUY".equals(side) ? (exit - entry) : (entry - exit)) * qty * lotSize * lots;
+                    em.put("entryPrice", entry);
+                    em.put("currentPrice", exit);
+                    em.put("exitPrice", exit);
+                    em.put("pnl", Math.round(legPnlVal * 100.0) / 100.0);
+                    enrichedLegs.add(em);
+                }
+                m.put("legList", enrichedLegs);
+                m.put("legs", enrichedLegs);
+            }
             m.put("pnl", Math.round(pnl));
             return m;
         }).toList();
