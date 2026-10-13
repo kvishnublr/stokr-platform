@@ -1,1 +1,25 @@
-if(!self.define){let s,e={};const r=(r,l)=>(r=new URL(r+".js",l).href,e[r]||new Promise(e=>{if("document"in self){const s=document.createElement("script");s.src=r,s.onload=e,document.head.appendChild(s)}else s=r,importScripts(r),e()}).then(()=>{let s=e[r];if(!s)throw new Error(`Module ${r} didn’t register its module`);return s}));self.define=(l,n)=>{const i=s||("document"in self?document.currentScript.src:"")||location.href;if(e[i])return;let u={};const t=s=>r(s,i),o={module:{uri:i},exports:u,require:t};e[i]=Promise.all(l.map(s=>o[s]||t(s))).then(s=>(n(...s),u))}}define(["./workbox-9c191d2f"],function(s){"use strict";self.skipWaiting(),s.clientsClaim(),s.precacheAndRoute([{url:"registerSW.js",revision:"1872c500de691dce40960bb85481de07"},{url:"index.html",revision:"06f211f03de982a337a192d13ffcbf25"},{url:"assets/useQuery-BCwUlfYn.js",revision:null},{url:"assets/useMutation-BHLsbuu-.js",revision:null},{url:"assets/rolldown-runtime-QTnfLwEv.js",revision:null},{url:"assets/react-vendor-qcT314-W.css",revision:null},{url:"assets/react-vendor-34rOAECt.js",revision:null},{url:"assets/index-a0t4TqWS.js",revision:null},{url:"assets/index-Bm3eRXCW.css",revision:null},{url:"assets/chart-vendor-DJG5Qgkw.js",revision:null},{url:"assets/TraderDashboard-B9xA_TFh.js",revision:null},{url:"assets/StrategyBuilder-CrCl0yFF.js",revision:null},{url:"assets/Strategies-YsI8haG4.js",revision:null},{url:"assets/SmartStrategies-DNwVj-55.js",revision:null},{url:"assets/Signals-D1J7MOws.js",revision:null},{url:"assets/Settings-C9fIbFBW.js",revision:null},{url:"assets/Positions-Dl05v2wx.js",revision:null},{url:"assets/Orders-DpJKRKoV.js",revision:null},{url:"assets/OptionArbitrage-BV7s634J.js",revision:null},{url:"assets/MorningTheta-BBogpQm-.js",revision:null},{url:"assets/Deployments-D23fZQ8a.js",revision:null},{url:"assets/Dashboard-S4w61T6P.js",revision:null},{url:"assets/Brokers-BQKjEdbL.js",revision:null},{url:"assets/AdvancedBacktest-BINMhW2C.js",revision:null},{url:"assets/AdminUsers-umFtIQr4.js",revision:null},{url:"assets/AdminUniverseGroups-CRUIEcD2.js",revision:null},{url:"assets/AdminStrategyMappings-Bcu19gE3.js",revision:null},{url:"assets/AdminStrategyConfigs-afQn_Lz3.js",revision:null},{url:"assets/AdminOrders-D5QlNHGm.js",revision:null},{url:"assets/AdminKillSwitch-dhLL17wA.js",revision:null},{url:"assets/AdminErrorLogs-BO7AuoYs.js",revision:null},{url:"assets/AdminDeployments-pUjjGEU6.js",revision:null},{url:"assets/AdminDashboard-BQZSIY4j.js",revision:null},{url:"assets/AdminBrokerHealth-D4ArkRd9.js",revision:null},{url:"assets/AdminAuditLog-BH1l7bRL.js",revision:null},{url:"pwa-192x192.png",revision:"788537399c1de15c050939e85227e9dd"},{url:"pwa-512x512.png",revision:"98e50dfb01f7f6af5ac018647190a4f6"},{url:"manifest.webmanifest",revision:"ec679bb118ed5d513822fac0ec941b45"}],{}),s.cleanupOutdatedCaches(),s.registerRoute(new s.NavigationRoute(s.createHandlerBoundToURL("index.html")))});
+
+self.addEventListener('install', (e) => {
+  self.skipWaiting();
+});
+self.addEventListener('activate', (e) => {
+  self.registration.unregister()
+    .then(() => self.clients.matchAll())
+    .then((clients) => {
+      clients.forEach((client) => {
+        if (client instanceof WindowClient)
+          client.navigate(client.url);
+      });
+      return Promise.resolve();
+    })
+    .then(() => {
+      self.caches.keys().then((cacheNames) => {
+        Promise.all(
+          cacheNames.map((cacheName) => {
+            return self.caches.delete(cacheName);
+          }),
+        );
+      })
+    });
+});
+    
