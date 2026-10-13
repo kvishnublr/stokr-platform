@@ -8,6 +8,10 @@ export default defineConfig({
   plugins: [react(), tailwindcss(),
 
     VitePWA({
+      // The service worker cached index.html and served stale builds after deploys (blank pages);
+      // index.html also unregisters workers, so the two fought. selfDestroying ships a worker that
+      // clears its caches and unregisters itself on every browser that still has the old one.
+      selfDestroying: true,
       registerType: 'autoUpdate',
       devOptions: {
         enabled: true
