@@ -1,10 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import client from '../api/client';
 import { useGlobalExecutionBroker } from '../context/ExecutionBrokerContext';
+import TradeSentinelModal from './TradeSentinelModal';
 
 export default function GlobalExecutionBar({ showToast, title, subtitle }) {
   const { executionBroker, changeExecutionBroker, mofslModalOpen, setMofslModalOpen } = useGlobalExecutionBroker();
   const [isTestingBroker, setIsTestingBroker] = useState(false);
+  const [sentinelOpen, setSentinelOpen] = useState(false);
+  const [sentinelStatus, setSentinelStatus] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchStatus = () => {
+      client.get('/sentinel/status')
+        .then(res => { if (mounted) setSentinelStatus(res.data); })
+        .catch(() => {});
+    };
+    fetchStatus();
+    const t = setInterval(fetchStatus, 30000);
+    return () => { mounted = false; clearInterval(t); };
+  }, []);
   
   const [mofslForm, setMofslForm] = useState({ clientCode: '', password: '', totpSecret: '', apiKey: '', apiSecret: '', dob: '' });
   const [mofslSaving, setMofslSaving] = useState(false);
@@ -180,6 +195,20 @@ export default function GlobalExecutionBar({ showToast, title, subtitle }) {
           )}
 
           <button
+            onClick={() => setSentinelOpen(true)}
+            className="bg-slate-800/80 hover:bg-slate-700/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs transition cursor-pointer"
+            title="Click to view Trade Sentinel Audit & Reconcile"
+          >
+            <span className={`w-2.5 h-2.5 rounded-full ${
+              sentinelStatus?.overallStatus === 'GREEN' ? 'bg-emerald-400 animate-pulse' :
+              sentinelStatus?.overallStatus === 'YELLOW' ? 'bg-amber-400 animate-pulse' :
+              'bg-rose-500 animate-ping'
+            }`} />
+            <span className="text-slate-300 font-medium">Sentinel:</span>
+            <span className="font-bold text-white">{sentinelStatus?.statusLabel || 'Online'}</span>
+          </button>
+
+          <button
             onClick={testBrokerConnection}
             disabled={isTestingBroker}
             className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition shadow-lg disabled:opacity-50"
@@ -188,6 +217,12 @@ export default function GlobalExecutionBar({ showToast, title, subtitle }) {
           </button>
         </div>
       </div>
+
+      <TradeSentinelModal 
+        isOpen={sentinelOpen} 
+        onClose={() => setSentinelOpen(false)} 
+        showToast={showToast} 
+      />
     </>
   );
 }

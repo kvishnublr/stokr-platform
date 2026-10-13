@@ -32,6 +32,7 @@ public class OptionArbAutoExecService {
     private final BrokerService brokerService;
     private final BrokerAccountRepository brokerAccountRepo;
     private final OptionChainService optionChainService;
+    private final TradeSupervisorService tradeSupervisorService;
 
     private final ConcurrentHashMap<String, Map<String, Object>> autoExecSettings = new ConcurrentHashMap<>();
     private final AutoExecSettingRepository autoExecSettingRepo;
@@ -1635,6 +1636,13 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 .createdAt(LocalDateTime.now())
                 .build();
 
+        TradeSupervisorService.GatekeeperResult gatekeeper = tradeSupervisorService.validatePreOrder(opp, lots, account.getBrokerName(), false);
+        if (!gatekeeper.isApproved()) {
+            log.warn("Sentinel Gatekeeper rejected live trade for {} {}: {}", opp.getUnderlying(), opp.getStrike(), gatekeeper.getSummary());
+            addLog("GATEKEEPER", "REJECTED", gatekeeper.getSummary());
+            return false;
+        }
+
         try {
             List<LegPair> pairs = new ArrayList<>();
             for (Map<String, Object> spec : rawLegs) {
@@ -1739,6 +1747,13 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
 
             position.setStatus("OPEN");
             position.setLegs(buildLegsJson(pairs, placedLegs));
+
+            // Sentinel In-Flight Watchdog: audit fill prices and slippage
+            for (LegPair pair : pairs) {
+                double expected = pair.spec().get("price") instanceof Number n ? n.doubleValue() : 0.0;
+                double fill = pair.planned().price();
+                tradeSupervisorService.auditLegExecution(pair.planned().symbol(), pair.planned().side().name(), expected, fill, pair.planned().quantity());
+            }
             double costPerShare = pairs.stream().mapToDouble(p -> {
                 double price = p.spec().get("price") instanceof Number n ? n.doubleValue() : 0;
                 int qtyMult = p.spec().get("qty") instanceof Number n ? n.intValue() : 1;

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
 import { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS, strategyLabel, DetailedOpportunityExpandedRow, GlobalConfirmModal } from './OptionArbitrage';
+import TradeSentinelModal from '../components/TradeSentinelModal';
 
 function fmtDate(ts) {
   if (!ts) return '--';
@@ -1091,6 +1092,7 @@ function UnifiedPerformanceAndHistory({ fnoHistory, cashHistory, arbHistory, ass
 
 export default function Positions() {
   const [executionBroker, setExecutionBroker] = useState('PAPER');
+  const [sentinelModalOpen, setSentinelModalOpen] = useState(false);
   
   // Dashboard Controls
   const [viewState, setViewState] = useState('ACTIVE'); // ACTIVE | HISTORY
@@ -1203,6 +1205,12 @@ export default function Positions() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSentinelModalOpen(true)}
+            className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-2 cursor-pointer"
+          >
+            <span>🛡️</span> Sentinel Reconcile &amp; Audit
+          </button>
           <button
             onClick={() => { refetchFno(); refetchCash(); refetchLiveActive(); refetchCashActive(); }}
             className="px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-2"
@@ -1918,6 +1926,10 @@ function StrategyConfigurationControlPanel({ fnoHistory, cashHistory }) {
         )}
       </div>
 
+      <TradeSentinelModal 
+        isOpen={sentinelModalOpen} 
+        onClose={() => setSentinelModalOpen(false)} 
+      />
     </div>
   );
 }
