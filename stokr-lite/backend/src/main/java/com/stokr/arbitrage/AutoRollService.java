@@ -432,8 +432,6 @@ public class AutoRollService {
                 .lots(lots)
                 .lotSize(lotSize)
                 .targetEdge(opp.getEdgeAfterCosts())
-                .maxLossAmount(opp.getMaxLossAmount())
-                .maxProfitAmount(opp.getMaxProfitAmount())
                 .entryCost(BigDecimal.valueOf(entryCost))
                 .status("OPEN")
                 .enteredAt(LocalDateTime.now())
