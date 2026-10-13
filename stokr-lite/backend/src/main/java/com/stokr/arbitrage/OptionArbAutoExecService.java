@@ -468,6 +468,10 @@ public class OptionArbAutoExecService {
                 if (roi instanceof Number n) opp.setRoiPct(BigDecimal.valueOf(n.doubleValue()));
                 Object risk = m.get("riskProfile");
                 if (risk instanceof String s) opp.setRiskProfile(s);
+                Object mla = m.get("maxLossAmount");
+                if (mla instanceof Number n) opp.setMaxLossAmount(BigDecimal.valueOf(n.doubleValue()));
+                Object mpa = m.get("maxProfitAmount");
+                if (mpa instanceof Number n) opp.setMaxProfitAmount(BigDecimal.valueOf(n.doubleValue()));
                 Object id = m.get("id");
                 if (id instanceof Number n) opp.setId(n.longValue());
                 Object legListObj = m.get("legList");
@@ -575,6 +579,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                     }
                     if (live <= 0) live = (leg.get("price") instanceof Number n ? n.doubleValue() : 0);
                     leg.put("price", live);
+                    leg.put("entryPrice", live);
                     int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
                     entryCost += (isBuy ? live : -live) * qtyMult;
                 }
@@ -584,7 +589,10 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                     .userId(1L).broker("PAPER").opportunityId(opp.getId())
                     .underlying(opp.getUnderlying()).strike(opp.getStrike()).action(opp.getAction())
                     .strategyType(opp.getStrategyType()).expiryDate(opp.getExpiryDate()).lots(lots).lotSize(lotSize)
-                    .targetEdge(opp.getEdgeAfterCosts()).entryCost(BigDecimal.valueOf(entryCost))
+                    .targetEdge(opp.getEdgeAfterCosts())
+                    .maxLossAmount(opp.getMaxLossAmount())
+                    .maxProfitAmount(opp.getMaxProfitAmount())
+                    .entryCost(BigDecimal.valueOf(entryCost))
                     .status("OPEN").enteredAt(LocalDateTime.now()).createdAt(LocalDateTime.now()).build();
                 livePos.setLegs(resolvedLegs);
                 positionRepo.save(livePos);
@@ -625,6 +633,8 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                     .futEntryPrice(futLive > 0 ? BigDecimal.valueOf(futLive) : null)
                     .futSymbol(futSymbol).ceSymbol(ceSymbol).peSymbol(peSymbol)
                     .targetEdge(opp.getEdgeAfterCosts())
+                    .maxLossAmount(opp.getMaxLossAmount())
+                    .maxProfitAmount(opp.getMaxProfitAmount())
                     .entryCost(BigDecimal.valueOf((ceLive + peLive + futLive) * lotSize))
                     .status("OPEN").enteredAt(LocalDateTime.now()).createdAt(LocalDateTime.now()).build();
                 positionRepo.save(livePos);
@@ -1483,6 +1493,8 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                     opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() : 0,
                     opp.getStrike(), opp.getAction(), opp.getUnderlying(),
                     opp.getExpiryDate() != null ? java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), opp.getExpiryDate()) : 0)))
+                .maxLossAmount(opp.getMaxLossAmount())
+                .maxProfitAmount(opp.getMaxProfitAmount())
                 .status("EXECUTING")
                 .enteredAt(LocalDateTime.now())
                 .createdAt(LocalDateTime.now())
@@ -1629,6 +1641,8 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 .lots(lots)
                 .lotSize(lotSize)
                 .targetEdge(BigDecimal.valueOf(targetEdge))
+                .maxLossAmount(opp.getMaxLossAmount())
+                .maxProfitAmount(opp.getMaxProfitAmount())
                 .status("EXECUTING")
                 .enteredAt(LocalDateTime.now())
                 .createdAt(LocalDateTime.now())
@@ -1805,6 +1819,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             m.put("side", p.spec().get("side"));
             m.put("qty", p.spec().get("qty"));
             m.put("price", p.spec().get("price"));
+            m.put("entryPrice", p.spec().get("price"));
             m.put("symbol", p.planned().symbol());
             m.put("orderId", placed != null ? placed.orderId : null);
             m.put("status", placed != null ? placed.status : null);

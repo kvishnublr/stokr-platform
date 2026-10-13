@@ -413,6 +413,7 @@ public class AutoRollService {
                     ? quotes.get(sym).lastPrice
                     : (leg.get("price") instanceof Number n ? n.doubleValue() : 0);
                 leg.put("price", live);
+                leg.put("entryPrice", live);
                 int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
                 boolean isBuy = "BUY".equals(leg.get("side"));
                 entryCost += (isBuy ? live : -live) * qtyMult;
@@ -427,9 +428,12 @@ public class AutoRollService {
                 .strike(opp.getStrike())
                 .action(opp.getAction())
                 .strategyType(opp.getStrategyType())
+                .expiryDate(opp.getExpiryDate())
                 .lots(lots)
                 .lotSize(lotSize)
                 .targetEdge(opp.getEdgeAfterCosts())
+                .maxLossAmount(opp.getMaxLossAmount())
+                .maxProfitAmount(opp.getMaxProfitAmount())
                 .entryCost(BigDecimal.valueOf(entryCost))
                 .status("OPEN")
                 .enteredAt(LocalDateTime.now())

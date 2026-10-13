@@ -2460,6 +2460,7 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                         }
                         if (live <= 0) live = (leg.get("price") instanceof Number n ? n.doubleValue() : 0);
                         leg.put("price", live);
+                        leg.put("entryPrice", live);
                         int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
                         boolean isBuy = "BUY".equals(leg.get("side"));
                         entryCost += (isBuy ? live : -live) * qtyMult;
@@ -2468,15 +2469,18 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
 
                     LivePosition livePos = LivePosition.builder()
                         .userId(1L)
-                        
+                        .broker("PAPER")
                         .opportunityId(opp.getId())
                         .underlying(opp.getUnderlying())
                         .strike(opp.getStrike())
                         .action(opp.getAction())
                         .strategyType(opp.getStrategyType())
+                        .expiryDate(opp.getExpiryDate())
                         .lots(lots)
                         .lotSize(lotSize)
                         .targetEdge(opp.getEdgeAfterCosts())
+                        .maxLossAmount(opp.getMaxLossAmount())
+                        .maxProfitAmount(opp.getMaxProfitAmount())
                         .entryCost(BigDecimal.valueOf(entryCost))
                         .status("OPEN")
                         .enteredAt(LocalDateTime.now())
@@ -2532,14 +2536,17 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
 
                 LivePosition livePos = LivePosition.builder()
                     .userId(1L)
-
+                    .broker("PAPER")
                     .opportunityId(opp.getId())
                     .underlying(opp.getUnderlying())
                     .strike(opp.getStrike())
                     .action(opp.getAction())
                     .strategyType(opp.getStrategyType())
+                    .expiryDate(opp.getExpiryDate())
                     .lots(lots)
                     .lotSize(lotSize)
+                    .maxLossAmount(opp.getMaxLossAmount())
+                    .maxProfitAmount(opp.getMaxProfitAmount())
                     .ceEntryPrice(ceLive > 0 ? BigDecimal.valueOf(ceLive) : null)
                     .peEntryPrice(peLive > 0 ? BigDecimal.valueOf(peLive) : null)
                     .futEntryPrice(futLive > 0 ? BigDecimal.valueOf(futLive) : null)
