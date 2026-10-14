@@ -19,10 +19,10 @@ public class PortfolioRiskManager {
 
     private final LivePositionRepository positionRepo;
 
-    private static final int MAX_CONCURRENT_POSITIONS = 5;
-    private static final double MAX_DAILY_LOSS = 15000.0;
-    private static final int MAX_PER_UNDERLYING = 2;
-    private static final int MAX_SAME_STRATEGY = 2;
+    private static final int MAX_CONCURRENT_POSITIONS = 15;
+    private static final double MAX_DAILY_LOSS = 25000.0;
+    private static final int MAX_PER_UNDERLYING = 8;
+    private static final int MAX_SAME_STRATEGY = 6;
 
     // Correlated underlying groups — ~85% correlation within each group
     private static final List<Set<String>> CORRELATION_GROUPS = List.of(
@@ -71,12 +71,18 @@ public class PortfolioRiskManager {
             return new RiskCheck(false, "Max " + MAX_PER_UNDERLYING + " positions per underlying reached for " + underlying);
         }
 
-        // 4. No duplicate strategy type
+        // 4. Exact duplicate strike set guard (single strategy CAN have multiple sets, but not identical strike sets)
+        boolean sameSetAlreadyOpen = openPositions.stream()
+            .anyMatch(p -> com.stokr.arbitrage.SetDeduplicationHelper.isSameSet(p, opportunity));
+        if (sameSetAlreadyOpen) {
+            return new RiskCheck(false, "Exact strike set already open for " + strategyType + " " + underlying);
+        }
+
         long sameStratCount = openPositions.stream()
             .filter(p -> strategyType.equals(p.getStrategyType()))
             .count();
         if (sameStratCount >= MAX_SAME_STRATEGY) {
-            return new RiskCheck(false, "Already have " + sameStratCount + " open " + strategyType + " position(s)");
+            return new RiskCheck(false, "Max " + MAX_SAME_STRATEGY + " sets reached for " + strategyType + " (" + sameStratCount + " open)");
         }
 
         // 5. Direction stacking check — don't stack 3+ same-direction bets

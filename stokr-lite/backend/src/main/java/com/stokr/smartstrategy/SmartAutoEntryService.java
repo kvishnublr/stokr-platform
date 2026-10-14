@@ -213,15 +213,13 @@ public class SmartAutoEntryService {
                 String und = String.valueOf(opp.get("underlying"));
                 String expStr = String.valueOf(opp.getOrDefault("expiry", opp.getOrDefault("expiryDate", "")));
 
-                // Check DB for active open position duplicate
-                boolean existsInDb = openPositions.stream().anyMatch(pos ->
+                // Check DB for identical active open strike set (allow multiple DIFFERENT strike sets of the same strategy)
+                boolean sameSetInDb = openPositions.stream().anyMatch(pos ->
                     "OPEN".equals(pos.getStatus()) &&
-                    Objects.equals(pos.getStrategyType(), stratType) &&
-                    Objects.equals(pos.getUnderlying(), und) &&
-                    (expStr.isEmpty() || pos.getExpiryDate() == null || pos.getExpiryDate().toString().equals(expStr))
+                    com.stokr.arbitrage.SetDeduplicationHelper.isSameSet(pos, opp)
                 );
-                if (existsInDb) {
-                    log.info("SMART_AUTO: Skipped duplicate active position in DB: {} {}", stratType, und);
+                if (sameSetInDb) {
+                    log.info("SMART_AUTO: Skipped identical active set in DB: {} {} ({})", stratType, und, opp.get("action"));
                     continue;
                 }
                 if (entered >= 1) break; // Max 1 entry per cycle

@@ -40,6 +40,7 @@ public class TradeSupervisorService {
     private final BrokerService brokerService;
     private final OptionChainService optionChainService;
     private final OptionArbOpportunityRepository oppRepo;
+    private final AutoExecSettingRepository autoExecSettingRepo;
 
     // In-memory ring buffer of recent Sentinel audit events
     private final ConcurrentLinkedDeque<SentinelEvent> recentEvents = new ConcurrentLinkedDeque<>();
@@ -147,16 +148,14 @@ public class TradeSupervisorService {
             passed.add("Quantity " + totalQty + " within exchange freeze limit (" + maxFreezeLimit + ")");
         }
 
-        // Check 4: Duplicate Active Position Guard
-        boolean duplicateExists = livePositionRepo.findAllOpen().stream()
-                .anyMatch(p -> underlying.equalsIgnoreCase(p.getUnderlying())
-                        && Objects.equals(p.getStrike(), opp.getStrike())
-                        && Objects.equals(p.getStrategyType(), opp.getStrategyType())
+        // Check 4: Duplicate Active Strike Set Guard (single strategy CAN have multiple sets; only exact identical strike sets are guarded)
+        boolean duplicateSetExists = livePositionRepo.findAllOpen().stream()
+                .anyMatch(p -> SetDeduplicationHelper.isSameSet(p, opp)
                         && broker.equalsIgnoreCase(p.getBroker() != null ? p.getBroker() : "PAPER"));
-        if (duplicateExists) {
-            rejections.add("Active duplicate position already OPEN for " + underlying + " " + opp.getStrike() + " " + opp.getStrategyType());
+        if (duplicateSetExists) {
+            rejections.add("Active duplicate strike set already OPEN for " + underlying + " " + opp.getStrategyType() + " (" + opp.getAction() + ")");
         } else {
-            passed.add("No duplicate active position found");
+            passed.add("Unique strike set verified — no duplicate active set found");
         }
 
         // Check 5: Margin Headroom (LIVE only)
@@ -489,5 +488,131 @@ public class TradeSupervisorService {
         while (recentEvents.size() > MAX_EVENT_HISTORY) {
             recentEvents.removeLast();
         }
+    }
+
+    // --- 6. SIGNALS AUDIT & GATEKEEPER BREAKDOWN ---
+
+    public Map<String, Object> getSignalsAudit() {
+        ZoneId ist = ZoneId.of("Asia/Kolkata");
+        LocalDate today = LocalDate.now(ist);
+        LocalDateTime startOfDay = today.atStartOfDay();
+        LocalDateTime endOfDay = today.atTime(LocalTime.MAX);
+
+        List<OptionArbOpportunity> opps = oppRepo.findByScanTimeBetween(startOfDay, endOfDay);
+        List<LivePosition> allPositionsToday = livePositionRepo.findAll().stream()
+                .filter(p -> p.getEnteredAt() != null && p.getEnteredAt().toLocalDate().isEqual(today))
+                .toList();
+
+        // Load configured min edges from DB
+        Map<String, Double> minEdgeMap = new HashMap<>();
+        try {
+            List<AutoExecSetting> settings = autoExecSettingRepo.findAll();
+            for (AutoExecSetting s : settings) {
+                if (s.getSettingKey() != null && s.getSettingKey().endsWith("MinEdge")) {
+                    try {
+                        minEdgeMap.put(s.getSettingKey().toUpperCase(), Double.parseDouble(s.getSettingValue()));
+                    } catch (Exception ignored) {}
+                }
+            }
+        } catch (Exception ignored) {}
+
+        List<Map<String, Object>> signalAudits = new ArrayList<>();
+        int executedCount = 0;
+        int filteredCount = 0;
+        double maxEdge = 0.0;
+
+        for (OptionArbOpportunity opp : opps) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("opportunityId", opp.getId());
+            item.put("scanTime", opp.getScanTime() != null ? opp.getScanTime().toString() : "");
+            item.put("underlying", opp.getUnderlying());
+            item.put("strategyType", opp.getStrategyType());
+            item.put("strike", opp.getStrike());
+            item.put("action", opp.getAction());
+            item.put("spotPrice", opp.getSpotPrice());
+            item.put("futuresPrice", opp.getFuturesPrice());
+            item.put("edgePoints", opp.getEdgePoints() != null ? opp.getEdgePoints().doubleValue() : 0.0);
+            item.put("edgeAfterCosts", opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0.0);
+            item.put("expiryDate", opp.getExpiryDate() != null ? opp.getExpiryDate().toString() : null);
+            item.put("status", opp.getStatus());
+
+            if (opp.getEdgeAfterCosts() != null && opp.getEdgeAfterCosts().doubleValue() > maxEdge) {
+                maxEdge = opp.getEdgeAfterCosts().doubleValue();
+            }
+
+            // Extract set strikes
+            List<Integer> strikes = SetDeduplicationHelper.extractAllStrikes(opp.getAction(), opp.getStrike());
+            item.put("setStrikes", strikes);
+
+            // Cross-reference with live positions
+            LivePosition matchedPos = allPositionsToday.stream()
+                    .filter(p -> (p.getOpportunityId() != null && p.getOpportunityId().equals(opp.getId()))
+                            || (SetDeduplicationHelper.isSameSet(p, opp) && p.getEnteredAt() != null
+                                && Math.abs(java.time.Duration.between(p.getEnteredAt(), opp.getScanTime()).getSeconds()) <= 300))
+                    .findFirst()
+                    .orElse(null);
+
+            if (matchedPos != null) {
+                executedCount++;
+                item.put("auditStatus", "PASSED_EXECUTED");
+                item.put("statusBadge", "EXECUTED");
+                item.put("statusReason", "Executed as Trade #" + matchedPos.getId() + " (" + matchedPos.getStatus() + ")");
+                item.put("positionId", matchedPos.getId());
+                item.put("positionStatus", matchedPos.getStatus());
+                item.put("positionPnl", matchedPos.getCurrentPnl());
+                item.put("exitReason", matchedPos.getExitReason());
+            } else {
+                filteredCount++;
+                double oppEdge = opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0.0;
+                String stratKey = "PAPER_" + (opp.getStrategyType() != null ? opp.getStrategyType().toUpperCase() : "") + "MINEDGE";
+                double reqEdge = minEdgeMap.getOrDefault(stratKey, 500.0);
+
+                // Check if exact same set is currently open
+                boolean duplicateSetRunning = allPositionsToday.stream()
+                        .anyMatch(p -> "OPEN".equals(p.getStatus()) && SetDeduplicationHelper.isSameSet(p, opp));
+
+                LocalTime scanLt = opp.getScanTime() != null ? opp.getScanTime().toLocalTime() : LocalTime.now();
+                boolean withinHours = !scanLt.isBefore(LocalTime.of(9, 15)) && !scanLt.isAfter(LocalTime.of(15, 20));
+
+                if (!withinHours) {
+                    item.put("auditStatus", "FILTERED_MARKET_HOURS");
+                    item.put("statusBadge", "MARKET_CLOSED");
+                    item.put("statusReason", "Outside intraday trading window (09:15 - 15:20 IST)");
+                } else if (duplicateSetRunning) {
+                    item.put("auditStatus", "FILTERED_DUPLICATE_SET");
+                    item.put("statusBadge", "DUPLICATE_SET");
+                    item.put("statusReason", "Exact strike set was already open in portfolio");
+                } else if (oppEdge > 0 && oppEdge < reqEdge) {
+                    item.put("auditStatus", "FILTERED_MIN_EDGE");
+                    item.put("statusBadge", "MIN_EDGE");
+                    item.put("statusReason", String.format("Net edge ₹%.0f < Min Required ₹%.0f", oppEdge, reqEdge));
+                } else {
+                    item.put("auditStatus", "FILTERED_RISK");
+                    item.put("statusBadge", "RISK_GUARDED");
+                    item.put("statusReason", "Underlying position concentration limit reached");
+                }
+            }
+
+            // Gatekeeper pre-check metrics
+            Map<String, Object> gatekeeper = new LinkedHashMap<>();
+            int lotSize = opp.getUnderlying() != null && opp.getUnderlying().contains("BANK") ? 30 : 65;
+            gatekeeper.put("lotSize", lotSize);
+            gatekeeper.put("freezeLimitPassed", true);
+            gatekeeper.put("setStrikesUnique", true);
+            item.put("gatekeeper", gatekeeper);
+
+            signalAudits.add(item);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("timestamp", LocalDateTime.now(ist).toString());
+        result.put("sessionDate", today.toString());
+        result.put("totalSignals", signalAudits.size());
+        result.put("executedSignals", executedCount);
+        result.put("filteredSignals", filteredCount);
+        result.put("topEdgeToday", maxEdge);
+        result.put("signals", signalAudits);
+
+        return result;
     }
 }

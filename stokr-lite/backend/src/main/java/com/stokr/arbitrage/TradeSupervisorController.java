@@ -21,6 +21,11 @@ public class TradeSupervisorController {
         return ResponseEntity.ok(supervisorService.getSentinelStatus());
     }
 
+    @GetMapping("/signals-audit")
+    public ResponseEntity<Map<String, Object>> getSignalsAudit() {
+        return ResponseEntity.ok(supervisorService.getSignalsAudit());
+    }
+
     @PostMapping("/reconcile")
     public ResponseEntity<TradeSupervisorService.ReconciliationReport> reconcile(
             @RequestParam(defaultValue = "true") boolean autoHeal) {

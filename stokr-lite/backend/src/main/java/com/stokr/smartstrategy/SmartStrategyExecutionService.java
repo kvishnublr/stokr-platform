@@ -31,17 +31,15 @@ public class SmartStrategyExecutionService {
         int lots = request.get("lots") instanceof Number n ? n.intValue() : 1;
         String broker = (String) request.getOrDefault("broker", "PAPER");
 
-        // DB Deduplication check
-        boolean duplicateInDb = positionRepo.findAllOpen().stream().anyMatch(p ->
+        // DB Deduplication check: only block if the exact same strike set is already active in DB
+        boolean duplicateSetInDb = positionRepo.findAllOpen().stream().anyMatch(p ->
             "OPEN".equals(p.getStatus()) &&
-            Objects.equals(p.getStrategyType(), strategyType) &&
-            Objects.equals(p.getUnderlying(), underlying) &&
-            (expiry == null || p.getExpiryDate() == null || p.getExpiryDate().toString().equals(expiry))
+            com.stokr.arbitrage.SetDeduplicationHelper.isSameSet(p, request)
         );
-        if (duplicateInDb) {
-            log.warn("SMART_ENTRY blocked duplicate: {} {} {}", strategyType, underlying, expiry);
+        if (duplicateSetInDb) {
+            log.warn("SMART_ENTRY blocked identical set: {} {} {}", strategyType, underlying, request.get("action"));
             result.put("status", "SKIPPED");
-            result.put("message", "Duplicate active trade already exists for " + strategyType + " " + underlying);
+            result.put("message", "Identical strike set already active in DB for " + strategyType + " " + underlying);
             return result;
         }
         Double slPct = request.get("slPct") instanceof Number n ? n.doubleValue() : null;
