@@ -1,11 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import client from '../api/client';
+import { toast } from 'react-toastify';
 
 export default function TradeSentinelModal({ isOpen, onClose, showToast }) {
   const [loading, setLoading] = useState(false);
   const [reconciling, setReconciling] = useState(false);
   const [statusData, setStatusData] = useState(null);
   const [error, setError] = useState(null);
+
+  const notify = (msg, type = 'info') => {
+    if (showToast) {
+      showToast(msg, type);
+    } else {
+      try {
+        if (type === 'success') toast.success(msg);
+        else if (type === 'error') toast.error(msg);
+        else if (type === 'warning') toast.warn(msg);
+        else toast.info(msg);
+      } catch (e) {
+        console.log(type, msg);
+      }
+    }
+  };
 
   const fetchSentinelStatus = async () => {
     try {
@@ -24,15 +40,13 @@ export default function TradeSentinelModal({ isOpen, onClose, showToast }) {
     try {
       setReconciling(true);
       const res = await client.post('/sentinel/reconcile?autoHeal=true');
-      if (showToast) {
-        showToast(
-          `Reconciliation complete: ${res.data.status} (${res.data.autoHealedCount} positions auto-healed)`,
-          res.data.status === 'IN_SYNC' ? 'success' : 'warning'
-        );
-      }
+      notify(
+        `Reconciliation complete: ${res.data.status} (${res.data.autoHealedCount} positions auto-healed)`,
+        res.data.status === 'IN_SYNC' ? 'success' : 'warning'
+      );
       fetchSentinelStatus();
     } catch (e) {
-      if (showToast) showToast('Reconciliation failed: ' + e.message, 'error');
+      notify('Reconciliation failed: ' + e.message, 'error');
     } finally {
       setReconciling(false);
     }
@@ -42,27 +56,32 @@ export default function TradeSentinelModal({ isOpen, onClose, showToast }) {
     try {
       setReconciling(true);
       const res = await client.post('/sentinel/certify-eod');
-      if (showToast) {
-        showToast(
-          res.data.allRealPositionsFlat
-            ? 'EOD Flat-Book Certified: 100% Flat across all brokers'
-            : `Warning: ${res.data.openRealDbPositions} open positions detected!`,
-          res.data.allRealPositionsFlat ? 'success' : 'error'
-        );
-      }
+      notify(
+        res.data.allRealPositionsFlat
+          ? 'EOD Flat-Book Certified: 100% Flat across all brokers'
+          : `Warning: ${res.data.openRealDbPositions} open positions detected!`,
+        res.data.allRealPositionsFlat ? 'success' : 'error'
+      );
       fetchSentinelStatus();
     } catch (e) {
-      if (showToast) showToast('EOD certification failed: ' + e.message, 'error');
+      notify('EOD certification failed: ' + e.message, 'error');
     } finally {
       setReconciling(false);
     }
   };
 
   useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
     if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
       fetchSentinelStatus();
       const interval = setInterval(fetchSentinelStatus, 15000);
-      return () => clearInterval(interval);
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        clearInterval(interval);
+      };
     }
   }, [isOpen]);
 
@@ -73,7 +92,10 @@ export default function TradeSentinelModal({ isOpen, onClose, showToast }) {
   const isRed = statusData?.overallStatus === 'RED';
 
   return (
-    <div className="fixed inset-0 z-[70] bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-3 md:p-6 animate-fade-in">
+    <div 
+      className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 md:p-6"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div className="bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden text-slate-100">
         
         {/* Modal Header */}
@@ -258,7 +280,15 @@ export default function TradeSentinelModal({ isOpen, onClose, showToast }) {
                     <div className="flex-1 space-y-0.5">
                       <p className="text-slate-200 font-medium text-xs leading-snug">{event.message}</p>
                       <span className="text-[10px] text-slate-500 block">
-                        {new Date(event.timestamp).toLocaleTimeString('en-IN')}
+                        {(() => {
+                          if (!event.timestamp) return '--';
+                          try {
+                            const d = new Date(event.timestamp);
+                            return isNaN(d.getTime()) ? String(event.timestamp) : d.toLocaleTimeString('en-IN');
+                          } catch {
+                            return String(event.timestamp);
+                          }
+                        })()}
                       </span>
                     </div>
                   </div>

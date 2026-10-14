@@ -1387,6 +1387,12 @@ export default function Positions() {
           cashHistory={Array.isArray(cashHistoryData) ? cashHistoryData : (cashHistoryData?.positions || cashHistoryData?.trades || [])}
         />
       )}
+
+      {/* Trade Sentinel Execution Supervisor Modal */}
+      <TradeSentinelModal 
+        isOpen={sentinelModalOpen} 
+        onClose={() => setSentinelModalOpen(false)} 
+      />
     </div>
   );
 }
@@ -1925,11 +1931,6 @@ function StrategyConfigurationControlPanel({ fnoHistory, cashHistory }) {
           </div>
         )}
       </div>
-
-      <TradeSentinelModal 
-        isOpen={sentinelModalOpen} 
-        onClose={() => setSentinelModalOpen(false)} 
-      />
     </div>
   );
 }
