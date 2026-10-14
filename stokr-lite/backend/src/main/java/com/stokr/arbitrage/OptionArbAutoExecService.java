@@ -1490,6 +1490,13 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 .createdAt(LocalDateTime.now())
                 .build();
 
+        TradeSupervisorService.GatekeeperResult gatekeeper = tradeSupervisorService.validatePreOrder(opp, lots, account.getBrokerName(), false);
+        if (!gatekeeper.isApproved()) {
+            log.warn("Sentinel Gatekeeper rejected live trade for {} {}: {}", opp.getUnderlying(), opp.getStrike(), gatekeeper.getSummary());
+            addLog("GATEKEEPER", "REJECTED", gatekeeper.getSummary());
+            return false;
+        }
+
         try {
             String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
             String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");

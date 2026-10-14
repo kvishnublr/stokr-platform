@@ -13,7 +13,7 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
   const [error, setError] = useState(null);
 
   // Filters for Signals tab
-  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'EXECUTED' | 'FILTERED'
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'EXECUTED' | 'SCANNED' | 'DUPLICATE'
   const [symbolFilter, setSymbolFilter] = useState('ALL'); // 'ALL' | 'BANKNIFTY' | 'NIFTY'
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -113,7 +113,8 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
     return signalsData.signals.filter((s) => {
       // Status filter
       if (statusFilter === 'EXECUTED' && s.auditStatus !== 'PASSED_EXECUTED') return false;
-      if (statusFilter === 'FILTERED' && s.auditStatus === 'PASSED_EXECUTED') return false;
+      if (statusFilter === 'SCANNED' && s.auditStatus === 'PASSED_EXECUTED') return false;
+      if (statusFilter === 'DUPLICATE' && s.auditStatus !== 'DUPLICATE_SET') return false;
 
       // Symbol filter
       if (symbolFilter !== 'ALL') {
@@ -174,7 +175,7 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
   };
 
   // Helper to parse action string into discrete legs styled like Image 2
-  const parseLegTokens = (actionStr, strikes) => {
+  const parseLegTokens = (actionStr) => {
     if (!actionStr) return null;
     if (actionStr.includes(',')) {
       return actionStr.split(',').map((part, idx) => {
@@ -201,6 +202,11 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
       </span>
     );
   };
+
+  const totalScanned = signalsData?.totalSignals ?? 0;
+  const totalExecuted = signalsData?.executedSignals ?? 0;
+  const totalWaiting = signalsData?.scannedSignals ?? (totalScanned >= totalExecuted ? totalScanned - totalExecuted : 0);
+  const totalDuplicates = signalsData?.duplicateSignals ?? 0;
 
   return (
     <div className={`bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col transition-all ${inline ? '' : 'p-1'}`}>
@@ -229,7 +235,7 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
               </span>
             </div>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Live Signal Gatekeeper • Multi-Set Strategy Deduplication • DB vs. Broker Reconciler
+              Live Signal Gatekeeper • Pre-Order Margin &amp; Strike Checks Just Before Live Orders • DB vs. Broker Reconciler
             </p>
           </div>
         </div>
@@ -268,11 +274,11 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
           >
             <span>📡</span>
             <span>Received Signals &amp; Gatekeeper Audit</span>
-            {signalsData?.totalSignals !== undefined && (
+            {totalScanned > 0 && (
               <span className={`px-2 py-0.2 rounded-full text-[10px] font-extrabold ${
                 activeTab === 'signals' ? 'bg-indigo-700 text-white' : 'bg-slate-200 text-slate-700'
               }`}>
-                {signalsData.totalSignals}
+                {totalScanned}
               </span>
             )}
           </button>
@@ -345,7 +351,7 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
         )}
 
         {/* ========================================================================= */}
-        {/* TAB 1: SIGNALS AUDIT & GATEKEEPER VIEW (LIGHT THEME)                     */}
+        {/* TAB 1: SIGNALS AUDIT & GATEKEEPER VIEW (CLEAN LIGHT THEME - NO MIN EDGE)  */}
         {/* ========================================================================= */}
         {activeTab === 'signals' && (
           <div className="space-y-4">
@@ -354,17 +360,17 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
             <div className="bg-gradient-to-r from-indigo-50 via-white to-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-start gap-3 shadow-2xs">
               <span className="text-2xl shrink-0 mt-0.5">💡</span>
               <div className="text-xs leading-relaxed text-slate-700">
-                <span className="font-extrabold text-indigo-900">Multi-Set Strategy Engine Active: </span>
-                A single strategy (e.g. Iron Condor, Butterfly) can have <strong>multiple active sets</strong> across different strikes concurrently. The Sentinel Gatekeeper only guards against <strong>identical duplicate strike sets</strong>, allowing diversified strikes to execute freely while preventing double allocation.
+                <span className="font-extrabold text-indigo-900">Pre-Order Gatekeeper Architecture: </span>
+                Strategy configuration filters (edge, triggers, lots) are managed by the execution engine. The Sentinel Gatekeeper executes <strong>strictly just before live order dispatch</strong> to verify +15% margin headroom, lot freeze limits, and ensure <strong>distinct strike sets</strong> without duplicate identical set entry.
               </div>
             </div>
 
             {/* Signals KPI Summary Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
-                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Total Signals Scanned</span>
+                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Total Scanned Signals</span>
                 <div className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">
-                  {signalsData?.totalSignals ?? '--'}
+                  {totalScanned}
                 </div>
                 <span className="text-[11px] text-slate-500 font-medium mt-0.5">Scanned signals today</span>
               </div>
@@ -375,25 +381,25 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 </div>
                 <div className="text-2xl sm:text-3xl font-black text-emerald-700 mt-1">
-                  {signalsData?.executedSignals ?? '--'}
+                  {totalExecuted}
                 </div>
-                <span className="text-[11px] text-emerald-700 font-semibold mt-0.5">Passed all gatekeeper checks</span>
-              </div>
-
-              <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
-                <span className="text-[11px] font-black uppercase tracking-wider text-amber-800">Filtered / Guarded</span>
-                <div className="text-2xl sm:text-3xl font-black text-amber-700 mt-1">
-                  {signalsData?.filteredSignals ?? '--'}
-                </div>
-                <span className="text-[11px] text-amber-700 font-medium mt-0.5">Edge, duplicate set, or hours</span>
+                <span className="text-[11px] text-emerald-700 font-semibold mt-0.5">Cleared all pre-order gatekeeper checks</span>
               </div>
 
               <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
-                <span className="text-[11px] font-black uppercase tracking-wider text-indigo-800">Top Net Edge</span>
+                <span className="text-[11px] font-black uppercase tracking-wider text-indigo-800">Scanned &amp; Ready</span>
                 <div className="text-2xl sm:text-3xl font-black text-indigo-700 mt-1">
+                  {totalWaiting}
+                </div>
+                <span className="text-[11px] text-indigo-700 font-medium mt-0.5">Awaiting live trigger criteria</span>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
+                <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">Top Net Edge</span>
+                <div className="text-2xl sm:text-3xl font-black text-slate-800 mt-1">
                   ₹{Number(signalsData?.topEdgeToday || 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })}
                 </div>
-                <span className="text-[11px] text-indigo-600 font-medium mt-0.5">Highest edge captured today</span>
+                <span className="text-[11px] text-slate-500 font-medium mt-0.5">Highest edge captured today</span>
               </div>
             </div>
 
@@ -409,7 +415,7 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
-                  All ({signalsData?.totalSignals || 0})
+                  All ({totalScanned})
                 </button>
                 <button
                   onClick={() => setStatusFilter('EXECUTED')}
@@ -419,18 +425,30 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                       : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
                   }`}
                 >
-                  <span>✓</span> Executed ({signalsData?.executedSignals || 0})
+                  <span>✓</span> Executed ({totalExecuted})
                 </button>
                 <button
-                  onClick={() => setStatusFilter('FILTERED')}
+                  onClick={() => setStatusFilter('SCANNED')}
                   className={`px-3 py-1 rounded-xl text-xs font-extrabold transition flex items-center gap-1 cursor-pointer ${
-                    statusFilter === 'FILTERED'
-                      ? 'bg-amber-600 text-white shadow-xs'
-                      : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+                    statusFilter === 'SCANNED'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
                   }`}
                 >
-                  <span>🛡️</span> Guarded ({signalsData?.filteredSignals || 0})
+                  <span>📡</span> Scanned ({totalWaiting})
                 </button>
+                {totalDuplicates > 0 && (
+                  <button
+                    onClick={() => setStatusFilter('DUPLICATE')}
+                    className={`px-3 py-1 rounded-xl text-xs font-extrabold transition flex items-center gap-1 cursor-pointer ${
+                      statusFilter === 'DUPLICATE'
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100'
+                    }`}
+                  >
+                    <span>🛡️</span> Duplicate Sets ({totalDuplicates})
+                  </button>
+                )}
 
                 <div className="h-4 w-[1px] bg-slate-300 mx-1" />
 
@@ -494,7 +512,7 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                 </p>
               </div>
             ) : viewMode === 'table' ? (
-              /* STRUCTURED TABLE VIEW (Styled exactly like Image 2) */
+              /* STRUCTURED TABLE VIEW */
               <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs">
@@ -513,9 +531,8 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                     <tbody className="divide-y divide-slate-100">
                       {filteredSignals.map((sig) => {
                         const isExecuted = sig.auditStatus === 'PASSED_EXECUTED';
-                        const isDuplicate = sig.auditStatus === 'FILTERED_DUPLICATE_SET';
-                        const isMinEdge = sig.auditStatus === 'FILTERED_MIN_EDGE';
-                        const isHours = sig.auditStatus === 'FILTERED_MARKET_HOURS';
+                        const isDuplicate = sig.auditStatus === 'DUPLICATE_SET';
+                        const isHours = sig.auditStatus === 'MARKET_CLOSED';
 
                         return (
                           <tr
@@ -571,10 +588,10 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                               </div>
                             </td>
 
-                            {/* Legs Breakdown (like Image 2) */}
+                            {/* Legs Breakdown */}
                             <td className="py-3 px-3">
                               <div className="flex items-center gap-1.5 flex-wrap max-w-md">
-                                {parseLegTokens(sig.action, sig.setStrikes)}
+                                {parseLegTokens(sig.action)}
                               </div>
                             </td>
 
@@ -596,15 +613,13 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                                     : isDuplicate
                                     ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                                    : isMinEdge
-                                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
                                     : isHours
                                     ? 'bg-slate-100 text-slate-700 border border-slate-300'
-                                    : 'bg-orange-100 text-orange-800 border border-orange-300'
+                                    : 'bg-slate-100 text-slate-700 border border-slate-300'
                                 }`}
                               >
-                                <span>{isExecuted ? '✓' : isDuplicate ? '🛡️' : isMinEdge ? '⚠️' : 'ℹ️'}</span>
-                                <span>{sig.statusBadge || 'GUARDED'}</span>
+                                <span>{isExecuted ? '✓' : isDuplicate ? '🛡️' : isHours ? '⏰' : '📡'}</span>
+                                <span>{sig.statusBadge || 'SCANNED'}</span>
                               </span>
                             </td>
 
@@ -637,13 +652,12 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                 </div>
               </div>
             ) : (
-              /* DETAILED CARDS VIEW (Clean Light Theme) */
+              /* DETAILED CARDS VIEW */
               <div className="space-y-3">
                 {filteredSignals.map((sig) => {
                   const isExecuted = sig.auditStatus === 'PASSED_EXECUTED';
-                  const isDuplicate = sig.auditStatus === 'FILTERED_DUPLICATE_SET';
-                  const isMinEdge = sig.auditStatus === 'FILTERED_MIN_EDGE';
-                  const isHours = sig.auditStatus === 'FILTERED_MARKET_HOURS';
+                  const isDuplicate = sig.auditStatus === 'DUPLICATE_SET';
+                  const isHours = sig.auditStatus === 'MARKET_CLOSED';
 
                   return (
                     <div
@@ -653,8 +667,6 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                           ? 'border-emerald-300 bg-emerald-50/20'
                           : isDuplicate
                           ? 'border-rose-200'
-                          : isMinEdge
-                          ? 'border-amber-200'
                           : 'border-slate-200'
                       }`}
                     >
@@ -687,15 +699,13 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                                 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                                 : isDuplicate
                                 ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                                : isMinEdge
-                                ? 'bg-amber-100 text-amber-800 border border-amber-300'
                                 : isHours
                                 ? 'bg-slate-100 text-slate-700 border border-slate-300'
-                                : 'bg-orange-100 text-orange-800 border border-orange-300'
+                                : 'bg-slate-100 text-slate-700 border border-slate-300'
                             }`}
                           >
-                            <span>{isExecuted ? '✓' : isDuplicate ? '🛡️' : isMinEdge ? '⚠️' : 'ℹ️'}</span>
-                            <span>{sig.statusBadge || 'GUARDED'}</span>
+                            <span>{isExecuted ? '✓' : isDuplicate ? '🛡️' : isHours ? '⏰' : '📡'}</span>
+                            <span>{sig.statusBadge || 'SCANNED'}</span>
                           </span>
                         </div>
                       </div>
@@ -722,7 +732,7 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                           </div>
 
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            {parseLegTokens(sig.action, sig.setStrikes)}
+                            {parseLegTokens(sig.action)}
                           </div>
 
                           <div className="text-[11px] text-slate-500 flex items-center gap-3">
@@ -745,17 +755,15 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                         </div>
                       </div>
 
-                      {/* Card Bottom: Gatekeeper reason & pills */}
+                      {/* Card Bottom */}
                       <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
                         <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-slate-500">Gatekeeper Reason:</span>
+                          <span className="font-extrabold text-slate-500">Gatekeeper Status:</span>
                           <span className={`font-bold ${
                             isExecuted
                               ? 'text-emerald-800'
                               : isDuplicate
                               ? 'text-rose-700'
-                              : isMinEdge
-                              ? 'text-amber-800'
                               : 'text-slate-700'
                           }`}>
                             {sig.statusReason}
@@ -831,10 +839,10 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                 </div>
                 <h4 className="font-black text-sm text-slate-900">Pre-Order Checks</h4>
                 <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
-                  Requires +15% margin buffer headroom, validates exchange lot freeze limits &amp; unique strike sets.
+                  Executes strictly just before LIVE order placement: validates +15% margin headroom, lot freeze limits &amp; unique strike sets.
                 </p>
                 <div className="pt-1 text-[10px] text-emerald-700 font-bold flex items-center gap-1">
-                  <span>✓ Multi-Set Strike Deduplication Active</span>
+                  <span>✓ Active Pre-Order Gatekeeper</span>
                 </div>
               </div>
 
@@ -1009,7 +1017,7 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
           </div>
           <span>•</span>
           <div>
-            Total Signals Scanned: <strong className="text-slate-900">{signalsData?.totalSignals || 0}</strong>
+            Total Signals Scanned: <strong className="text-slate-900">{totalScanned}</strong>
           </div>
         </div>
 

@@ -503,22 +503,9 @@ public class TradeSupervisorService {
                 .filter(p -> p.getEnteredAt() != null && p.getEnteredAt().toLocalDate().isEqual(today))
                 .toList();
 
-        // Load configured min edges from DB
-        Map<String, Double> minEdgeMap = new HashMap<>();
-        try {
-            List<AutoExecSetting> settings = autoExecSettingRepo.findAll();
-            for (AutoExecSetting s : settings) {
-                if (s.getSettingKey() != null && s.getSettingKey().endsWith("MinEdge")) {
-                    try {
-                        minEdgeMap.put(s.getSettingKey().toUpperCase(), Double.parseDouble(s.getSettingValue()));
-                    } catch (Exception ignored) {}
-                }
-            }
-        } catch (Exception ignored) {}
-
         List<Map<String, Object>> signalAudits = new ArrayList<>();
         int executedCount = 0;
-        int filteredCount = 0;
+        int duplicateCount = 0;
         double maxEdge = 0.0;
 
         for (OptionArbOpportunity opp : opps) {
@@ -562,34 +549,26 @@ public class TradeSupervisorService {
                 item.put("positionPnl", matchedPos.getCurrentPnl());
                 item.put("exitReason", matchedPos.getExitReason());
             } else {
-                filteredCount++;
-                double oppEdge = opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0.0;
-                String stratKey = "PAPER_" + (opp.getStrategyType() != null ? opp.getStrategyType().toUpperCase() : "") + "MINEDGE";
-                double reqEdge = minEdgeMap.getOrDefault(stratKey, 500.0);
-
-                // Check if exact same set is currently open
+                // Check if exact same set is currently open in active portfolio
                 boolean duplicateSetRunning = allPositionsToday.stream()
                         .anyMatch(p -> "OPEN".equals(p.getStatus()) && SetDeduplicationHelper.isSameSet(p, opp));
 
                 LocalTime scanLt = opp.getScanTime() != null ? opp.getScanTime().toLocalTime() : LocalTime.now();
                 boolean withinHours = !scanLt.isBefore(LocalTime.of(9, 15)) && !scanLt.isAfter(LocalTime.of(15, 20));
 
-                if (!withinHours) {
-                    item.put("auditStatus", "FILTERED_MARKET_HOURS");
+                if (duplicateSetRunning) {
+                    duplicateCount++;
+                    item.put("auditStatus", "DUPLICATE_SET");
+                    item.put("statusBadge", "DUPLICATE_SET");
+                    item.put("statusReason", "Identical strike set already active in portfolio");
+                } else if (!withinHours) {
+                    item.put("auditStatus", "MARKET_CLOSED");
                     item.put("statusBadge", "MARKET_CLOSED");
                     item.put("statusReason", "Outside intraday trading window (09:15 - 15:20 IST)");
-                } else if (duplicateSetRunning) {
-                    item.put("auditStatus", "FILTERED_DUPLICATE_SET");
-                    item.put("statusBadge", "DUPLICATE_SET");
-                    item.put("statusReason", "Exact strike set was already open in portfolio");
-                } else if (oppEdge > 0 && oppEdge < reqEdge) {
-                    item.put("auditStatus", "FILTERED_MIN_EDGE");
-                    item.put("statusBadge", "MIN_EDGE");
-                    item.put("statusReason", String.format("Net edge ₹%.0f < Min Required ₹%.0f", oppEdge, reqEdge));
                 } else {
-                    item.put("auditStatus", "FILTERED_RISK");
-                    item.put("statusBadge", "RISK_GUARDED");
-                    item.put("statusReason", "Underlying position concentration limit reached");
+                    item.put("auditStatus", "SCANNED");
+                    item.put("statusBadge", "SCANNED");
+                    item.put("statusReason", "Market opportunity scanned & ready — Pre-order gatekeeper runs just before live order");
                 }
             }
 
@@ -609,7 +588,8 @@ public class TradeSupervisorService {
         result.put("sessionDate", today.toString());
         result.put("totalSignals", signalAudits.size());
         result.put("executedSignals", executedCount);
-        result.put("filteredSignals", filteredCount);
+        result.put("scannedSignals", signalAudits.size() - executedCount);
+        result.put("duplicateSignals", duplicateCount);
         result.put("topEdgeToday", maxEdge);
         result.put("signals", signalAudits);
 
