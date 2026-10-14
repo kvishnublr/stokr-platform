@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
 import { LivePositionsSection, BrokerPositionsPanel, CashPositionsSection, STRATEGY_LABELS, strategyLabel, DetailedOpportunityExpandedRow, GlobalConfirmModal } from './OptionArbitrage';
 import TradeSentinelModal from '../components/TradeSentinelModal';
+import TradeSentinelPanel from '../components/TradeSentinelPanel';
 
 function fmtDate(ts) {
   if (!ts) return '--';
@@ -1206,10 +1207,14 @@ export default function Positions() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setSentinelModalOpen(true)}
-            className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-2 cursor-pointer"
+            onClick={() => setViewState(viewState === 'SENTINEL' ? 'ACTIVE' : 'SENTINEL')}
+            className={`px-3.5 py-2 text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer ${
+              viewState === 'SENTINEL'
+                ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-400/40'
+                : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+            }`}
           >
-            <span>🛡️</span> Sentinel Reconcile &amp; Audit
+            <span>🛡️</span> {viewState === 'SENTINEL' ? '🔥 View Active Trades' : 'Sentinel Reconcile & Audit'}
           </button>
           <button
             onClick={() => { refetchFno(); refetchCash(); refetchLiveActive(); refetchCashActive(); }}
@@ -1224,10 +1229,10 @@ export default function Positions() {
       <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-col lg:flex-row gap-4 justify-between items-center">
         
         {/* Main Tabs */}
-        <div className="flex bg-slate-100 p-1 rounded-xl w-full lg:w-auto">
+        <div className="flex bg-slate-100 p-1 rounded-xl w-full lg:w-auto overflow-x-auto">
           <button
             onClick={() => setViewState('ACTIVE')}
-            className={`flex-1 lg:px-6 py-2 rounded-lg text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${viewState === 'ACTIVE' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+            className={`flex-1 lg:px-5 py-2 rounded-lg text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 cursor-pointer ${viewState === 'ACTIVE' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
             <span>🔥 Active Trades</span>
             {openPositions.length > 0 && (
@@ -1239,16 +1244,23 @@ export default function Positions() {
 
           <button
             onClick={() => setViewState('HISTORY')}
-            className={`flex-1 lg:px-6 py-2 rounded-lg text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${viewState === 'HISTORY' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+            className={`flex-1 lg:px-5 py-2 rounded-lg text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 cursor-pointer ${viewState === 'HISTORY' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
             <span>📜 History &amp; Performance</span>
           </button>
 
           <button
             onClick={() => setViewState('CONFIG')}
-            className={`flex-1 lg:px-6 py-2 rounded-lg text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${viewState === 'CONFIG' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+            className={`flex-1 lg:px-5 py-2 rounded-lg text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 cursor-pointer ${viewState === 'CONFIG' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
             <span>⚙️ Strategy Configuration</span>
+          </button>
+
+          <button
+            onClick={() => setViewState('SENTINEL')}
+            className={`flex-1 lg:px-5 py-2 rounded-lg text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 cursor-pointer ${viewState === 'SENTINEL' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            <span>🛡️ Sentinel &amp; Signals Audit</span>
           </button>
         </div>
 
@@ -1358,6 +1370,16 @@ export default function Positions() {
             <BrokerPositionsPanel executionBroker={executionBroker} defaultExpanded={false} />
           </AccordionCard>
 
+          {/* Foldable Group 4: Trade Sentinel & Signals Gatekeeper Audit (In-Place) */}
+          <AccordionCard
+            title="Trade Sentinel & Real-Time Signals Gatekeeper Audit"
+            icon="🛡️"
+            defaultOpen={false}
+            badgeColor="bg-emerald-100 text-emerald-800"
+          >
+            <TradeSentinelPanel inline={true} />
+          </AccordionCard>
+
         </div>
       )}
 
@@ -1388,7 +1410,14 @@ export default function Positions() {
         />
       )}
 
-      {/* Trade Sentinel Execution Supervisor Modal */}
+      {/* TRADE SENTINEL & RECONCILIATION AUDIT VIEW (IN PLACE) */}
+      {viewState === 'SENTINEL' && (
+        <div className="space-y-6">
+          <TradeSentinelPanel inline={false} />
+        </div>
+      )}
+
+      {/* Trade Sentinel Execution Supervisor Modal (if opened via external shortcut) */}
       <TradeSentinelModal 
         isOpen={sentinelModalOpen} 
         onClose={() => setSentinelModalOpen(false)} 
