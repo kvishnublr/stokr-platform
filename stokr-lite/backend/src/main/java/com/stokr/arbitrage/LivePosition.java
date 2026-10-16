@@ -94,6 +94,9 @@ public class LivePosition {
     private Double trailingSlLevel;
     private Double peakPnl;
 
+    @Column(length = 50)
+    private String holdType; // "INTRADAY" or "OVERNIGHT_SWING"
+
     private LocalDateTime enteredAt;
     private LocalDateTime exitedAt;
     private LocalDateTime createdAt;
@@ -157,6 +160,7 @@ public class LivePosition {
         map.put("exitReason", exitReason);
         map.put("trailingSlLevel", trailingSlLevel);
         map.put("peakPnl", peakPnl);
+        map.put("holdType", holdType != null ? holdType : "INTRADAY");
         map.put("enteredAt", enteredAt != null ? enteredAt.toString() : null);
         map.put("exitedAt", exitedAt != null ? exitedAt.toString() : null);
         map.put("createdAt", createdAt != null ? createdAt.toString() : null);

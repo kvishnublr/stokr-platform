@@ -299,33 +299,51 @@ public class SmartAutoEntryService {
         switch (strategyType) {
             case "BOX_SPREAD_ARB" -> {
                 // Payoff is locked at expiry — no SL/target (an early exit only pays the spread twice)
+                req.put("holdType", "INTRADAY");
                 req.put("slPct", 0.0);
                 req.put("targetPct", 0.0);
                 req.put("timeExitMinutes", 0);
             }
-            case "ADAPTIVE", "IRON_CONDOR", "JADE_LIZARD" -> {
-                // Premium sellers — book profit at 50-60% of credit, tight SL
+            case "IRON_CONDOR" -> {
+                // Multi-day defined risk swing — capture multi-day and weekend theta decay
+                req.put("holdType", "OVERNIGHT_SWING");
                 req.put("slPct", "THETA_BOOST".equals(timing.phase) ? 35.0 : 45.0);
-                req.put("targetPct", "THETA_BOOST".equals(timing.phase) ? 50.0 : 60.0);
+                req.put("targetPct", "THETA_BOOST".equals(timing.phase) ? 40.0 : 45.0);
                 req.put("timeExitMinutes", 0);
+            }
+            case "ADAPTIVE", "JADE_LIZARD" -> {
+                req.put("holdType", "INTRADAY");
+                req.put("slPct", 40.0);
+                req.put("targetPct", 45.0);
+                req.put("timeExitMinutes", 75); // 14:15 IST exit
             }
             case "EXPIRY_THETA_CRUSH" -> {
                 // Expiry-day trade — book fast, and be flat 3 minutes before close
+                req.put("holdType", "INTRADAY");
                 req.put("slPct", 30.0);
                 req.put("targetPct", 40.0);
                 req.put("timeExitMinutes", 3);
             }
-            case "RATIO_BUTTERFLY", "BROKEN_WING_BUTTERFLY" -> {
-                // Butterflies — let winners run more, defined risk
-                req.put("slPct", 60.0);
-                req.put("targetPct", 70.0);
-                req.put("timeExitMinutes", 0);
+            case "RATIO_BUTTERFLY" -> {
+                // Asymmetric risk — strictly intraday with tight SL and 14:15 PM exit to avoid afternoon trend blowouts
+                req.put("holdType", "INTRADAY");
+                req.put("slPct", 35.0);
+                req.put("targetPct", 40.0);
+                req.put("timeExitMinutes", 75); // 14:15 IST exit
+            }
+            case "BROKEN_WING_BUTTERFLY" -> {
+                // Broken wing — intraday with defined risk and 14:15 PM exit
+                req.put("holdType", "INTRADAY");
+                req.put("slPct", 40.0);
+                req.put("targetPct", 40.0);
+                req.put("timeExitMinutes", 75); // 14:15 IST exit
             }
             default -> {
-                // SKEW_HARVEST, CALENDAR_SPREAD_EDGE — moderate
-                req.put("slPct", 50.0);
-                req.put("targetPct", 60.0);
-                req.put("timeExitMinutes", 0);
+                // SKEW_HARVEST, CALENDAR_SPREAD_EDGE
+                req.put("holdType", "INTRADAY");
+                req.put("slPct", 45.0);
+                req.put("targetPct", 45.0);
+                req.put("timeExitMinutes", 75);
             }
         }
 

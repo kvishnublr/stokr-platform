@@ -93,6 +93,8 @@ public class SmartStrategyExecutionService {
             }
         }
 
+        String holdType = request.get("holdType") instanceof String s ? s : ("IRON_CONDOR".equals(strategyType) ? "OVERNIGHT_SWING" : "INTRADAY");
+
         LivePosition position = LivePosition.builder()
                 .userId(userId)
                 .broker(broker)
@@ -105,6 +107,7 @@ public class SmartStrategyExecutionService {
                 .slPct(slPct)
                 .targetPct(targetPct)
                 .timeExitMinutes(timeExitMinutes)
+                .holdType(holdType)
                 .maxLossAmount(maxLoss * lots)
                 .maxProfitAmount(maxProfit * lots)
                 .status("EXECUTING")

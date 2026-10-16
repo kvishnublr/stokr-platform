@@ -13,7 +13,7 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
   const [error, setError] = useState(null);
 
   // Filters for Signals tab
-  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'EXECUTED' | 'SCANNED' | 'DUPLICATE'
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'EXECUTED' | 'REJECTED' | 'BALANCE' | 'DUPLICATE' | 'BROKER'
   const [symbolFilter, setSymbolFilter] = useState('ALL'); // 'ALL' | 'BANKNIFTY' | 'NIFTY'
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -113,8 +113,10 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
     return signalsData.signals.filter((s) => {
       // Status filter
       if (statusFilter === 'EXECUTED' && s.auditStatus !== 'PASSED_EXECUTED') return false;
-      if (statusFilter === 'SCANNED' && s.auditStatus === 'PASSED_EXECUTED') return false;
-      if (statusFilter === 'DUPLICATE' && s.auditStatus !== 'DUPLICATE_SET') return false;
+      if (statusFilter === 'REJECTED' && s.auditStatus === 'PASSED_EXECUTED') return false;
+      if (statusFilter === 'BALANCE' && s.auditStatus !== 'REJECTED_BALANCE') return false;
+      if (statusFilter === 'DUPLICATE' && s.auditStatus !== 'REJECTED_DUPLICATE_SET' && s.auditStatus !== 'DUPLICATE_SET') return false;
+      if (statusFilter === 'BROKER' && !['REJECTED_BROKER', 'REJECTED_LIMIT', 'REJECTED_COOLDOWN', 'REJECTED_FREEZE'].includes(s.auditStatus)) return false;
 
       // Symbol filter
       if (symbolFilter !== 'ALL') {
@@ -203,10 +205,12 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
     );
   };
 
-  const totalScanned = signalsData?.totalSignals ?? 0;
+  const totalSignals = signalsData?.totalSignals ?? 0;
   const totalExecuted = signalsData?.executedSignals ?? 0;
-  const totalWaiting = signalsData?.scannedSignals ?? (totalScanned >= totalExecuted ? totalScanned - totalExecuted : 0);
-  const totalDuplicates = signalsData?.duplicateSignals ?? 0;
+  const totalRejected = signalsData?.rejectedSignals ?? 0;
+  const balanceRejections = signalsData?.balanceRejections ?? 0;
+  const duplicateRejections = signalsData?.duplicateRejections ?? 0;
+  const brokerRejections = signalsData?.brokerRejections ?? 0;
 
   return (
     <div className={`bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col transition-all ${inline ? '' : 'p-1'}`}>
@@ -274,11 +278,11 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
           >
             <span>📡</span>
             <span>Received Signals &amp; Gatekeeper Audit</span>
-            {totalScanned > 0 && (
+            {totalSignals > 0 && (
               <span className={`px-2 py-0.2 rounded-full text-[10px] font-extrabold ${
                 activeTab === 'signals' ? 'bg-indigo-700 text-white' : 'bg-slate-200 text-slate-700'
               }`}>
-                {totalScanned}
+                {totalSignals}
               </span>
             )}
           </button>
@@ -368,11 +372,11 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
             {/* Signals KPI Summary Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
-                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Total Scanned Signals</span>
+                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">Total Evaluated Signals</span>
                 <div className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">
-                  {totalScanned}
+                  {totalSignals}
                 </div>
-                <span className="text-[11px] text-slate-500 font-medium mt-0.5">Scanned signals today</span>
+                <span className="text-[11px] text-slate-500 font-medium mt-0.5">Evaluated before order entry</span>
               </div>
 
               <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
@@ -383,15 +387,37 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                 <div className="text-2xl sm:text-3xl font-black text-emerald-700 mt-1">
                   {totalExecuted}
                 </div>
-                <span className="text-[11px] text-emerald-700 font-semibold mt-0.5">Cleared all pre-order gatekeeper checks</span>
+                <span className="text-[11px] text-emerald-700 font-semibold mt-0.5">Cleared checks &amp; positions entered</span>
               </div>
 
-              <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
-                <span className="text-[11px] font-black uppercase tracking-wider text-indigo-800">Scanned &amp; Ready</span>
-                <div className="text-2xl sm:text-3xl font-black text-indigo-700 mt-1">
-                  {totalWaiting}
+              <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-amber-800">Pre-Order Rejections</span>
+                  <span className="text-xs">🛡️</span>
                 </div>
-                <span className="text-[11px] text-indigo-700 font-medium mt-0.5">Awaiting live trigger criteria</span>
+                <div className="text-2xl sm:text-3xl font-black text-amber-800 mt-1">
+                  {totalRejected}
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                  {balanceRejections > 0 && (
+                    <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded text-[9px] font-bold">
+                      Bal: {balanceRejections}
+                    </span>
+                  )}
+                  {duplicateRejections > 0 && (
+                    <span className="px-1.5 py-0.2 bg-purple-100 text-purple-800 rounded text-[9px] font-bold">
+                      Dup: {duplicateRejections}
+                    </span>
+                  )}
+                  {brokerRejections > 0 && (
+                    <span className="px-1.5 py-0.2 bg-rose-100 text-rose-800 rounded text-[9px] font-bold">
+                      Broker: {brokerRejections}
+                    </span>
+                  )}
+                  {totalRejected === 0 && (
+                    <span className="text-[11px] text-amber-700 font-medium">All signals cleared checks</span>
+                  )}
+                </div>
               </div>
 
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
@@ -415,7 +441,7 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
-                  All ({totalScanned})
+                  All ({totalSignals})
                 </button>
                 <button
                   onClick={() => setStatusFilter('EXECUTED')}
@@ -427,26 +453,52 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                 >
                   <span>✓</span> Executed ({totalExecuted})
                 </button>
-                <button
-                  onClick={() => setStatusFilter('SCANNED')}
-                  className={`px-3 py-1 rounded-xl text-xs font-extrabold transition flex items-center gap-1 cursor-pointer ${
-                    statusFilter === 'SCANNED'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
-                  }`}
-                >
-                  <span>📡</span> Scanned ({totalWaiting})
-                </button>
-                {totalDuplicates > 0 && (
+                {totalRejected > 0 && (
+                  <button
+                    onClick={() => setStatusFilter('REJECTED')}
+                    className={`px-3 py-1 rounded-xl text-xs font-extrabold transition flex items-center gap-1 cursor-pointer ${
+                      statusFilter === 'REJECTED'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+                    }`}
+                  >
+                    <span>🛡️</span> Rejections ({totalRejected})
+                  </button>
+                )}
+                {balanceRejections > 0 && (
+                  <button
+                    onClick={() => setStatusFilter('BALANCE')}
+                    className={`px-2.5 py-1 rounded-xl text-xs font-extrabold transition flex items-center gap-1 cursor-pointer ${
+                      statusFilter === 'BALANCE'
+                        ? 'bg-amber-700 text-white shadow-xs'
+                        : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                    }`}
+                  >
+                    <span>💰</span> Margin/Bal ({balanceRejections})
+                  </button>
+                )}
+                {duplicateRejections > 0 && (
                   <button
                     onClick={() => setStatusFilter('DUPLICATE')}
-                    className={`px-3 py-1 rounded-xl text-xs font-extrabold transition flex items-center gap-1 cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-xl text-xs font-extrabold transition flex items-center gap-1 cursor-pointer ${
                       statusFilter === 'DUPLICATE'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'bg-purple-50 text-purple-800 border border-purple-200 hover:bg-purple-100'
+                    }`}
+                  >
+                    <span>🛡️</span> Duplicate Sets ({duplicateRejections})
+                  </button>
+                )}
+                {brokerRejections > 0 && (
+                  <button
+                    onClick={() => setStatusFilter('BROKER')}
+                    className={`px-2.5 py-1 rounded-xl text-xs font-extrabold transition flex items-center gap-1 cursor-pointer ${
+                      statusFilter === 'BROKER'
                         ? 'bg-rose-600 text-white shadow-xs'
                         : 'bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100'
                     }`}
                   >
-                    <span>🛡️</span> Duplicate Sets ({totalDuplicates})
+                    <span>⚠️</span> Broker/Limits ({brokerRejections})
                   </button>
                 )}
 
@@ -531,14 +583,24 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                     <tbody className="divide-y divide-slate-100">
                       {filteredSignals.map((sig) => {
                         const isExecuted = sig.auditStatus === 'PASSED_EXECUTED';
-                        const isDuplicate = sig.auditStatus === 'DUPLICATE_SET';
-                        const isHours = sig.auditStatus === 'MARKET_CLOSED';
+                        const isBalance = sig.auditStatus === 'REJECTED_BALANCE';
+                        const isDuplicate = sig.auditStatus === 'REJECTED_DUPLICATE_SET' || sig.auditStatus === 'DUPLICATE_SET';
+                        const isBroker = ['REJECTED_BROKER', 'REJECTED_LIMIT', 'REJECTED_COOLDOWN', 'REJECTED_FREEZE'].includes(sig.auditStatus);
+                        const isHours = sig.auditStatus === 'REJECTED_HOURS' || sig.auditStatus === 'MARKET_CLOSED';
 
                         return (
                           <tr
                             key={sig.opportunityId}
                             className={`transition hover:bg-slate-50/80 ${
-                              isExecuted ? 'bg-emerald-50/30' : isDuplicate ? 'bg-rose-50/20' : ''
+                              isExecuted
+                                ? 'bg-emerald-50/30'
+                                : isBalance
+                                ? 'bg-amber-50/20'
+                                : isDuplicate
+                                ? 'bg-purple-50/20'
+                                : isBroker
+                                ? 'bg-rose-50/20'
+                                : ''
                             }`}
                           >
                             {/* Scan Time */}
@@ -611,15 +673,19 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                                 className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
                                   isExecuted
                                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                    : isBalance
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
                                     : isDuplicate
+                                    ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                                    : isBroker
                                     ? 'bg-rose-100 text-rose-800 border border-rose-300'
                                     : isHours
                                     ? 'bg-slate-100 text-slate-700 border border-slate-300'
                                     : 'bg-slate-100 text-slate-700 border border-slate-300'
                                 }`}
                               >
-                                <span>{isExecuted ? '✓' : isDuplicate ? '🛡️' : isHours ? '⏰' : '📡'}</span>
-                                <span>{sig.statusBadge || 'SCANNED'}</span>
+                                <span>{isExecuted ? '✓' : isBalance ? '💰' : isDuplicate ? '🛡️' : isBroker ? '⚠️' : isHours ? '⏰' : '📡'}</span>
+                                <span>{sig.statusBadge || sig.auditStatus || 'SCANNED'}</span>
                               </span>
                             </td>
 
@@ -656,8 +722,10 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
               <div className="space-y-3">
                 {filteredSignals.map((sig) => {
                   const isExecuted = sig.auditStatus === 'PASSED_EXECUTED';
-                  const isDuplicate = sig.auditStatus === 'DUPLICATE_SET';
-                  const isHours = sig.auditStatus === 'MARKET_CLOSED';
+                  const isBalance = sig.auditStatus === 'REJECTED_BALANCE';
+                  const isDuplicate = sig.auditStatus === 'REJECTED_DUPLICATE_SET' || sig.auditStatus === 'DUPLICATE_SET';
+                  const isBroker = ['REJECTED_BROKER', 'REJECTED_LIMIT', 'REJECTED_COOLDOWN', 'REJECTED_FREEZE'].includes(sig.auditStatus);
+                  const isHours = sig.auditStatus === 'REJECTED_HOURS' || sig.auditStatus === 'MARKET_CLOSED';
 
                   return (
                     <div
@@ -665,8 +733,12 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                       className={`rounded-2xl border p-4 bg-white transition shadow-xs ${
                         isExecuted
                           ? 'border-emerald-300 bg-emerald-50/20'
+                          : isBalance
+                          ? 'border-amber-300 bg-amber-50/15'
                           : isDuplicate
-                          ? 'border-rose-200'
+                          ? 'border-purple-300 bg-purple-50/15'
+                          : isBroker
+                          ? 'border-rose-300 bg-rose-50/15'
                           : 'border-slate-200'
                       }`}
                     >
@@ -697,15 +769,19 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                             className={`px-3 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
                               isExecuted
                                 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : isBalance
+                                ? 'bg-amber-100 text-amber-800 border border-amber-300'
                                 : isDuplicate
+                                ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                                : isBroker
                                 ? 'bg-rose-100 text-rose-800 border border-rose-300'
                                 : isHours
                                 ? 'bg-slate-100 text-slate-700 border border-slate-300'
                                 : 'bg-slate-100 text-slate-700 border border-slate-300'
                             }`}
                           >
-                            <span>{isExecuted ? '✓' : isDuplicate ? '🛡️' : isHours ? '⏰' : '📡'}</span>
-                            <span>{sig.statusBadge || 'SCANNED'}</span>
+                            <span>{isExecuted ? '✓' : isBalance ? '💰' : isDuplicate ? '🛡️' : isBroker ? '⚠️' : isHours ? '⏰' : '📡'}</span>
+                            <span>{sig.statusBadge || sig.auditStatus || 'SCANNED'}</span>
                           </span>
                         </div>
                       </div>
@@ -770,20 +846,36 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-1.5 text-[10px] font-mono">
-                          <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold">
-                            ✓ Lot {sig.gatekeeper?.lotSize || 30}
-                          </span>
-                          <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold">
-                            ✓ Headroom +15%
-                          </span>
-                          <span className={`px-2 py-0.5 rounded font-bold border ${
-                            isDuplicate
-                              ? 'bg-rose-100 text-rose-800 border-rose-300'
-                              : 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                          }`}>
-                            {isDuplicate ? '✕ Duplicate Set' : '✓ Unique Strike Set'}
-                          </span>
+                        <div className="flex items-center gap-1.5 text-[10px] font-mono flex-wrap">
+                          {isExecuted ? (
+                            <>
+                              <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold">
+                                ✓ Lot Validated
+                              </span>
+                              <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold">
+                                ✓ Margin Cleared
+                              </span>
+                              <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold">
+                                ✓ Unique Strike Set
+                              </span>
+                            </>
+                          ) : isBalance ? (
+                            <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 font-bold">
+                              ✕ Insufficient Balance/Margin Headroom
+                            </span>
+                          ) : isDuplicate ? (
+                            <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-300 font-bold">
+                              ✕ Duplicate Strike Set Active
+                            </span>
+                          ) : isBroker ? (
+                            <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-300 font-bold">
+                              ✕ Broker API / Limits / Cooldown
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-bold">
+                              • Evaluated Signal
+                            </span>
+                          )}
                         </div>
                       </div>
 

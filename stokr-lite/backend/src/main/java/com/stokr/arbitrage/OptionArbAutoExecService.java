@@ -517,7 +517,13 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             long openPaperStrategy = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
                     .filter(p -> "PAPER".equals(p.getBroker()) && opp.getStrategyType().equals(p.getStrategyType()))
                     .mapToInt(p -> p.getLots() != null ? p.getLots() : 1).sum();
-            if (openPaperStrategy >= strategyMaxLots) continue;
+            if (openPaperStrategy >= strategyMaxLots) {
+                tradeSupervisorService.recordRejectedSignal(opp.getUnderlying(), opp.getStrategyType(), opp.getStrike(), opp.getAction(),
+                    opp.getEdgePoints() != null ? opp.getEdgePoints().doubleValue() : 0.0,
+                    opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0.0,
+                    "Strategy max open positions limit (" + strategyMaxLots + ") reached", "REJECTED_LIMIT");
+                continue;
+            }
 
             // 20-Minute Re-entry Cooldown Guard: Skip if same strategy, underlying & strike exited within last 20 mins
             LocalDateTime cooldownCutoff = LocalDateTime.now(ZoneId.of("Asia/Kolkata")).minusMinutes(20);
@@ -532,14 +538,23 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             if (recentlyExited) {
                 log.info("Auto-exec skipped for {} {} strike {}: Recently exited within 20m cooldown", opp.getStrategyType(), opp.getUnderlying(), opp.getStrike());
                 addLog("COOLDOWN_SKIP", "SKIPPED", opp.getStrategyType() + " " + opp.getUnderlying() + " strike " + opp.getStrike() + " skipped due to 20m exit cooldown");
+                tradeSupervisorService.recordRejectedSignal(opp.getUnderlying(), opp.getStrategyType(), opp.getStrike(), opp.getAction(),
+                    opp.getEdgePoints() != null ? opp.getEdgePoints().doubleValue() : 0.0,
+                    opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0.0,
+                    "Recently exited within 20m cooldown period", "REJECTED_COOLDOWN");
                 continue;
             }
 
-            
             long openPaperTotal = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
                     .filter(p -> "PAPER".equals(p.getBroker()))
                     .mapToInt(p -> p.getLots() != null ? p.getLots() : 1).sum();
-            if (openPaperTotal >= globalMaxLots) continue;
+            if (openPaperTotal >= globalMaxLots) {
+                tradeSupervisorService.recordRejectedSignal(opp.getUnderlying(), opp.getStrategyType(), opp.getStrike(), opp.getAction(),
+                    opp.getEdgePoints() != null ? opp.getEdgePoints().doubleValue() : 0.0,
+                    opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0.0,
+                    "Global max open positions limit (" + globalMaxLots + ") reached", "REJECTED_LIMIT");
+                continue;
+            }
 
 
             int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
@@ -783,6 +798,18 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 addLog("MARGIN", "SKIP", opp.getUnderlying() + " " + opp.getStrike()
                         + " needs ₹" + String.format("%.0f", hedgedMargin)
                         + " but only ₹" + String.format("%.0f", availableMargin) + " available");
+                if (tradeSupervisorService != null) {
+                    tradeSupervisorService.recordRejectedSignal(
+                        opp.getUnderlying(),
+                        opp.getStrategyType(),
+                        opp.getStrike(),
+                        opp.getAction(),
+                        opp.getEdgePoints() != null ? opp.getEdgePoints().doubleValue() : 0.0,
+                        opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0.0,
+                        "Margin required ₹" + String.format("%.0f", hedgedMargin) + " exceeds 90% available ₹" + String.format("%.0f", availableMargin),
+                        "REJECTED_BALANCE"
+                    );
+                }
                 continue;
             }
 
@@ -2281,11 +2308,13 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
     public void closeAllEodPositions320PM() {
         log.info("Starting mandatory 3:20 PM IST intraday auto-squareoff sweep...");
         try {
+            LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
             List<LivePosition> openPositions = positionRepo.findAllOpen().stream()
                     .filter(p -> "OPEN".equals(p.getStatus()))
+                    .filter(p -> !"OVERNIGHT_SWING".equalsIgnoreCase(p.getHoldType()) || (p.getExpiryDate() != null && p.getExpiryDate().isEqual(today)))
                     .toList();
             if (openPositions.isEmpty()) {
-                log.info("No open positions to square off at 3:20 PM IST.");
+                log.info("No open intraday positions to square off at 3:20 PM IST (overnight swings preserved).");
                 return;
             }
 

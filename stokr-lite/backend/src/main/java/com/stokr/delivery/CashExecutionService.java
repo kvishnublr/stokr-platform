@@ -21,9 +21,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CashExecutionService {
 
-    private static final int MAX_OPEN_PAPER = 5; // Unlimited paper positions
+    private static final int MAX_OPEN_PAPER = 15; // 15 total open slots
+    private static final int MAX_OPEN_SURGE = 5;  // 5 dedicated to short-term intraday surge
+    private static final int MAX_OPEN_SWING = 10; // 10 dedicated to multi-day swing
+    private static final int DAILY_EXEC_LIMIT = 10; // Allow up to 10 entries/day
     private static final double PAPER_CAPITAL = 10000.0;
-    private static final int MAX_HOLD_DAYS_SURGE = 3;
+    private static final int MAX_HOLD_DAYS_SURGE = 2;
     private static final int MAX_HOLD_DAYS_SWING = 5;
     private static final int SYMBOL_COOLDOWN_HOURS = 72;
 
@@ -341,10 +344,17 @@ public class CashExecutionService {
         long todayExecutedCash = positionRepo.findAll().stream()
             .filter(p -> "PAPER".equals(p.getBroker()) && p.getEnteredAt() != null && p.getEnteredAt().isAfter(todayStart))
             .count();
-        if (todayExecutedCash >= 5) {
-            log.info("Auto-exec cash skipped: today's cash trades {} reached daily limit 5", todayExecutedCash);
+        if (todayExecutedCash >= DAILY_EXEC_LIMIT) {
+            log.info("Auto-exec cash skipped: today's cash trades {} reached daily limit {}", todayExecutedCash, DAILY_EXEC_LIMIT);
             return;
         }
+
+        long openSurgeCount = openPositions.stream()
+                .filter(p -> "PAPER".equals(p.getBroker()) && "CASH_SURGE".equalsIgnoreCase(p.getStrategyType()))
+                .count();
+        long openSwingCount = openPositions.stream()
+                .filter(p -> "PAPER".equals(p.getBroker()) && "CASH_SWING".equalsIgnoreCase(p.getStrategyType()))
+                .count();
 
         java.util.Set<String> openPaperSymbols = openPositions.stream()
                 .filter(p -> "PAPER".equals(p.getBroker()))
@@ -363,7 +373,7 @@ public class CashExecutionService {
             List<Map<String, Object>> swingOpps = cashScannerService.scanCashSwing();
 
             for (Map<String, Object> opp : surgeOpps) {
-                if (openPaperCount >= MAX_OPEN_PAPER) break;
+                if (openPaperCount >= MAX_OPEN_PAPER || openSurgeCount >= MAX_OPEN_SURGE || todayExecutedCash >= DAILY_EXEC_LIMIT) break;
                 String symbol = (String) opp.get("symbol");
                 if (openPaperSymbols.contains(symbol) || recentlyClosedSymbols.contains(symbol)) continue;
                 double target = opp.get("targetPrice") instanceof Number n ? n.doubleValue() : 0;
@@ -371,11 +381,13 @@ public class CashExecutionService {
                 double scanRef = opp.get("entryPrice") instanceof Number n ? n.doubleValue() : 0;
                 execute(symbol, "CASH_SURGE", target, sl, "PAPER", PAPER_CAPITAL, scanRef);
                 openPaperCount++;
+                openSurgeCount++;
+                todayExecutedCash++;
                 openPaperSymbols.add(symbol);
             }
 
             for (Map<String, Object> opp : swingOpps) {
-                if (openPaperCount >= MAX_OPEN_PAPER) break;
+                if (openPaperCount >= MAX_OPEN_PAPER || openSwingCount >= MAX_OPEN_SWING || todayExecutedCash >= DAILY_EXEC_LIMIT) break;
                 String symbol = (String) opp.get("symbol");
                 if (openPaperSymbols.contains(symbol) || recentlyClosedSymbols.contains(symbol)) continue;
                 double target = opp.get("targetPrice") instanceof Number n ? n.doubleValue() : 0;
@@ -383,6 +395,8 @@ public class CashExecutionService {
                 double scanRef = opp.get("entryPrice") instanceof Number n ? n.doubleValue() : 0;
                 execute(symbol, "CASH_SWING", target, sl, "PAPER", PAPER_CAPITAL, scanRef);
                 openPaperCount++;
+                openSwingCount++;
+                todayExecutedCash++;
                 openPaperSymbols.add(symbol);
             }
 

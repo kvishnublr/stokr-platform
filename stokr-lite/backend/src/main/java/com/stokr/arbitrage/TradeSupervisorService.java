@@ -48,6 +48,7 @@ public class TradeSupervisorService {
 
     // Cached last reconciliation report
     private volatile ReconciliationReport lastReconciliationReport = null;
+    private final List<Map<String, Object>> rejectedSignalAudits = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     // --- DOMAIN MODELS ---
 
@@ -199,6 +200,24 @@ public class TradeSupervisorService {
                 opp.getUnderlying() + " " + opp.getStrike() + " (" + (isPaper ? "PAPER" : broker) + "): " + summary,
                 metrics);
 
+        if (!approved) {
+            String primaryRejection = rejections.isEmpty() ? "Gatekeeper rejection" : rejections.get(0);
+            String cat = "REJECTED_RISK";
+            if (primaryRejection.toLowerCase().contains("margin") || primaryRejection.toLowerCase().contains("balance")) {
+                cat = "REJECTED_BALANCE";
+            } else if (primaryRejection.toLowerCase().contains("duplicate")) {
+                cat = "REJECTED_DUPLICATE_SET";
+            } else if (primaryRejection.toLowerCase().contains("freeze")) {
+                cat = "REJECTED_FREEZE";
+            } else if (primaryRejection.toLowerCase().contains("closed") || primaryRejection.toLowerCase().contains("hours")) {
+                cat = "REJECTED_HOURS";
+            }
+            recordRejectedSignal(opp.getUnderlying(), opp.getStrategyType(), opp.getStrike(), opp.getAction(),
+                    opp.getEdgePoints() != null ? opp.getEdgePoints().doubleValue() : 0.0,
+                    opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0.0,
+                    summary, cat);
+        }
+
         return GatekeeperResult.builder()
                 .approved(approved)
                 .summary(summary)
@@ -206,6 +225,36 @@ public class TradeSupervisorService {
                 .rejections(rejections)
                 .metrics(metrics)
                 .build();
+    }
+
+    public void recordRejectedSignal(String underlying, String strategyType, Integer strike, String action,
+                                      double edgePoints, double edgeAfterCosts, String rejectionReason, String rejectionCategory) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("opportunityId", System.currentTimeMillis() % 1000000);
+        item.put("scanTime", LocalDateTime.now(ZoneId.of("Asia/Kolkata")).toString());
+        item.put("underlying", underlying);
+        item.put("strategyType", strategyType);
+        item.put("strike", strike);
+        item.put("action", action);
+        item.put("edgePoints", edgePoints);
+        item.put("edgeAfterCosts", edgeAfterCosts);
+        item.put("auditStatus", rejectionCategory);
+        item.put("statusBadge", rejectionCategory.replace("REJECTED_", ""));
+        item.put("statusReason", rejectionReason);
+        List<Integer> strikes = SetDeduplicationHelper.extractAllStrikes(action, strike);
+        item.put("setStrikes", strikes);
+
+        Map<String, Object> gatekeeper = new LinkedHashMap<>();
+        int lotSize = underlying != null && underlying.contains("BANK") ? 30 : 65;
+        gatekeeper.put("lotSize", lotSize);
+        gatekeeper.put("freezeLimitPassed", !rejectionCategory.contains("FREEZE"));
+        gatekeeper.put("setStrikesUnique", !rejectionCategory.contains("DUPLICATE"));
+        item.put("gatekeeper", gatekeeper);
+
+        if (rejectedSignalAudits.size() > 100) {
+            rejectedSignalAudits.remove(0);
+        }
+        rejectedSignalAudits.add(item);
     }
 
     private double estimateRequiredMargin(OptionArbOpportunity opp, int lots, int lotSize) {
@@ -498,89 +547,97 @@ public class TradeSupervisorService {
         LocalDateTime startOfDay = today.atStartOfDay();
         LocalDateTime endOfDay = today.atTime(LocalTime.MAX);
 
-        List<OptionArbOpportunity> opps = oppRepo.findByScanTimeBetween(startOfDay, endOfDay);
         List<LivePosition> allPositionsToday = livePositionRepo.findAll().stream()
                 .filter(p -> p.getEnteredAt() != null && p.getEnteredAt().toLocalDate().isEqual(today))
+                .sorted((a, b) -> b.getEnteredAt().compareTo(a.getEnteredAt()))
                 .toList();
 
         List<Map<String, Object>> signalAudits = new ArrayList<>();
         int executedCount = 0;
-        int duplicateCount = 0;
+        int balanceRejections = 0;
+        int duplicateRejections = 0;
+        int brokerRejections = 0;
         double maxEdge = 0.0;
 
-        for (OptionArbOpportunity opp : opps) {
+        // 1. Add all actual positions attempted/entered today
+        for (LivePosition pos : allPositionsToday) {
             Map<String, Object> item = new LinkedHashMap<>();
-            item.put("opportunityId", opp.getId());
-            item.put("scanTime", opp.getScanTime() != null ? opp.getScanTime().toString() : "");
-            item.put("underlying", opp.getUnderlying());
-            item.put("strategyType", opp.getStrategyType());
-            item.put("strike", opp.getStrike());
-            item.put("action", opp.getAction());
-            item.put("spotPrice", opp.getSpotPrice());
-            item.put("futuresPrice", opp.getFuturesPrice());
-            item.put("edgePoints", opp.getEdgePoints() != null ? opp.getEdgePoints().doubleValue() : 0.0);
-            item.put("edgeAfterCosts", opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0.0);
-            item.put("expiryDate", opp.getExpiryDate() != null ? opp.getExpiryDate().toString() : null);
-            item.put("status", opp.getStatus());
+            item.put("opportunityId", pos.getOpportunityId() != null ? pos.getOpportunityId() : pos.getId());
+            item.put("scanTime", pos.getEnteredAt() != null ? pos.getEnteredAt().toString() : "");
+            item.put("underlying", pos.getUnderlying());
+            item.put("strategyType", pos.getStrategyType());
+            item.put("strike", pos.getStrike());
+            item.put("action", pos.getAction());
+            item.put("lots", pos.getLots());
+            item.put("lotSize", pos.getLotSize());
+            item.put("broker", pos.getBroker());
+            item.put("expiryDate", pos.getExpiryDate() != null ? pos.getExpiryDate().toString() : null);
+            item.put("positionId", pos.getId());
+            item.put("positionStatus", pos.getStatus());
+            item.put("positionPnl", pos.getCurrentPnl() != null ? pos.getCurrentPnl().doubleValue() : 0.0);
+            item.put("exitReason", pos.getExitReason());
 
-            if (opp.getEdgeAfterCosts() != null && opp.getEdgeAfterCosts().doubleValue() > maxEdge) {
-                maxEdge = opp.getEdgeAfterCosts().doubleValue();
-            }
+            double edge = pos.getTargetEdge() != null ? pos.getTargetEdge().doubleValue() : 0.0;
+            item.put("edgeAfterCosts", edge);
+            if (edge > maxEdge) maxEdge = edge;
 
-            // Extract set strikes
-            List<Integer> strikes = SetDeduplicationHelper.extractAllStrikes(opp.getAction(), opp.getStrike());
+            List<Integer> strikes = SetDeduplicationHelper.extractAllStrikes(pos.getAction(), pos.getStrike());
             item.put("setStrikes", strikes);
 
-            // Cross-reference with live positions
-            LivePosition matchedPos = allPositionsToday.stream()
-                    .filter(p -> (p.getOpportunityId() != null && p.getOpportunityId().equals(opp.getId()))
-                            || (SetDeduplicationHelper.isSameSet(p, opp) && p.getEnteredAt() != null
-                                && Math.abs(java.time.Duration.between(p.getEnteredAt(), opp.getScanTime()).getSeconds()) <= 300))
-                    .findFirst()
-                    .orElse(null);
-
-            if (matchedPos != null) {
-                executedCount++;
-                item.put("auditStatus", "PASSED_EXECUTED");
-                item.put("statusBadge", "EXECUTED");
-                item.put("statusReason", "Executed as Trade #" + matchedPos.getId() + " (" + matchedPos.getStatus() + ")");
-                item.put("positionId", matchedPos.getId());
-                item.put("positionStatus", matchedPos.getStatus());
-                item.put("positionPnl", matchedPos.getCurrentPnl());
-                item.put("exitReason", matchedPos.getExitReason());
-            } else {
-                // Check if exact same set is currently open in active portfolio
-                boolean duplicateSetRunning = allPositionsToday.stream()
-                        .anyMatch(p -> "OPEN".equals(p.getStatus()) && SetDeduplicationHelper.isSameSet(p, opp));
-
-                LocalTime scanLt = opp.getScanTime() != null ? opp.getScanTime().toLocalTime() : LocalTime.now();
-                boolean withinHours = !scanLt.isBefore(LocalTime.of(9, 15)) && !scanLt.isAfter(LocalTime.of(15, 20));
-
-                if (duplicateSetRunning) {
-                    duplicateCount++;
-                    item.put("auditStatus", "DUPLICATE_SET");
-                    item.put("statusBadge", "DUPLICATE_SET");
-                    item.put("statusReason", "Identical strike set already active in portfolio");
-                } else if (!withinHours) {
-                    item.put("auditStatus", "MARKET_CLOSED");
-                    item.put("statusBadge", "MARKET_CLOSED");
-                    item.put("statusReason", "Outside intraday trading window (09:15 - 15:20 IST)");
-                } else {
-                    item.put("auditStatus", "SCANNED");
-                    item.put("statusBadge", "SCANNED");
-                    item.put("statusReason", "Market opportunity scanned & ready — Pre-order gatekeeper runs just before live order");
-                }
-            }
-
-            // Gatekeeper pre-check metrics
             Map<String, Object> gatekeeper = new LinkedHashMap<>();
-            int lotSize = opp.getUnderlying() != null && opp.getUnderlying().contains("BANK") ? 30 : 65;
-            gatekeeper.put("lotSize", lotSize);
+            gatekeeper.put("lotSize", pos.getLotSize() != null ? pos.getLotSize() : 30);
             gatekeeper.put("freezeLimitPassed", true);
             gatekeeper.put("setStrikesUnique", true);
             item.put("gatekeeper", gatekeeper);
 
+            if ("FAILED".equalsIgnoreCase(pos.getStatus())) {
+                brokerRejections++;
+                item.put("auditStatus", "REJECTED_BROKER");
+                item.put("statusBadge", "BROKER_REJECT");
+                item.put("statusReason", pos.getErrorMessage() != null ? pos.getErrorMessage() : "Broker order execution rejected");
+            } else {
+                executedCount++;
+                item.put("auditStatus", "PASSED_EXECUTED");
+                item.put("statusBadge", "EXECUTED");
+                item.put("statusReason", "Cleared all gatekeeper checks & executed as Trade #" + pos.getId() + " (" + pos.getStatus() + ")");
+            }
+
             signalAudits.add(item);
+        }
+
+        // 2. Add all pre-order gatekeeper rejections recorded today (Balance, Duplicate Set, Limits)
+        for (Map<String, Object> rej : rejectedSignalAudits) {
+            String status = (String) rej.getOrDefault("auditStatus", "");
+            if ("REJECTED_BALANCE".equals(status)) balanceRejections++;
+            else if ("REJECTED_DUPLICATE_SET".equals(status)) duplicateRejections++;
+            else if ("REJECTED_BROKER".equals(status)) brokerRejections++;
+
+            double edge = rej.get("edgeAfterCosts") instanceof Number n ? n.doubleValue() : 0.0;
+            if (edge > maxEdge) maxEdge = edge;
+
+            signalAudits.add(new LinkedHashMap<>(rej));
+        }
+
+        // 3. Fallback: If no trades or rejections yet today, display top 5 scanned opportunities
+        if (signalAudits.isEmpty()) {
+            List<OptionArbOpportunity> opps = oppRepo.findByScanTimeBetween(startOfDay, endOfDay);
+            for (OptionArbOpportunity opp : opps.stream().limit(5).toList()) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("opportunityId", opp.getId());
+                item.put("scanTime", opp.getScanTime() != null ? opp.getScanTime().toString() : "");
+                item.put("underlying", opp.getUnderlying());
+                item.put("strategyType", opp.getStrategyType());
+                item.put("strike", opp.getStrike());
+                item.put("action", opp.getAction());
+                item.put("edgePoints", opp.getEdgePoints() != null ? opp.getEdgePoints().doubleValue() : 0.0);
+                item.put("edgeAfterCosts", opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0.0);
+                item.put("expiryDate", opp.getExpiryDate() != null ? opp.getExpiryDate().toString() : null);
+                item.put("auditStatus", "SCANNED");
+                item.put("statusBadge", "SCANNED");
+                item.put("statusReason", "Opportunity scanned & ready — Gatekeeper validates upon execution trigger");
+                item.put("setStrikes", SetDeduplicationHelper.extractAllStrikes(opp.getAction(), opp.getStrike()));
+                signalAudits.add(item);
+            }
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -588,8 +645,10 @@ public class TradeSupervisorService {
         result.put("sessionDate", today.toString());
         result.put("totalSignals", signalAudits.size());
         result.put("executedSignals", executedCount);
-        result.put("scannedSignals", signalAudits.size() - executedCount);
-        result.put("duplicateSignals", duplicateCount);
+        result.put("rejectedSignals", signalAudits.size() - executedCount);
+        result.put("balanceRejections", balanceRejections);
+        result.put("duplicateRejections", duplicateRejections);
+        result.put("brokerRejections", brokerRejections);
         result.put("topEdgeToday", maxEdge);
         result.put("signals", signalAudits);
 
