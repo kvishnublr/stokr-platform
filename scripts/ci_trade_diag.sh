@@ -97,6 +97,17 @@ q "select broker, strategy_type, status, exit_reason, count(*) n, round(sum(curr
      from live_positions where entered_at >= date '${PREV}' and entered_at < date '${PREV}' + 1
     group by 1,2,3,4 order by 1,2;"
 echo
+echo "=== F&O trades on ${PREV}, one row each (IST times as stored) ==="
+q "select id, broker, strategy_type, underlying, strike, expiry_date, lots, status, exit_reason,
+          to_char(entered_at,'HH24:MI:SS') entry_t, to_char(exited_at,'YYYY-MM-DD HH24:MI') exited,
+          round(current_pnl) pnl, opportunity_id
+     from live_positions where entered_at >= date '${PREV}' and entered_at < date '${PREV}' + 1
+    order by entered_at;"
+echo
+echo "=== F&O entries per day, last 10 days (broker split) ==="
+q "select entered_at::date d, broker, count(*) n, round(sum(current_pnl)) pnl
+     from live_positions where entered_at >= current_date - 10 group by 1,2 order by 1 desc,2;"
+echo
 echo "=== Open positions right now ==="
 q "select broker, strategy_type, count(*) n, min(expiry_date) nearest_expiry from live_positions where status='OPEN' group by 1,2 order by 1,2;"
 echo
