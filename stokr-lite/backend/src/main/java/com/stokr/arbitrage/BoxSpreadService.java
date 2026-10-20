@@ -207,6 +207,10 @@ public class BoxSpreadService {
                             leg(k2, "CE", "SELL", 1, ce2Bid), leg(k2, "PE", "BUY", 1, pe2Ask)
                         );
 
+                        if (ArbSanity.implausibleEdge("BOX", opp.edgePoints)) {
+                            log.warn("BOX_DATA_ERROR {} {}: {} pts edge is not a real mispricing -- quotes inconsistent, dropped", underlying, opp.action, opp.edgePoints);
+                            continue;
+                        }
                         opps.add(opp);
                         continue;
                     }
@@ -272,6 +276,10 @@ public class BoxSpreadService {
                             leg(k2, "CE", "BUY", 1, ce2.ask), leg(k2, "PE", "SELL", 1, pe2.bid)
                         );
 
+                        if (ArbSanity.implausibleEdge("BOX", opp.edgePoints)) {
+                            log.warn("BOX_DATA_ERROR {} {}: {} pts edge is not a real mispricing -- quotes inconsistent, dropped", underlying, opp.action, opp.edgePoints);
+                            continue;
+                        }
                         opps.add(opp);
                     }
                 }

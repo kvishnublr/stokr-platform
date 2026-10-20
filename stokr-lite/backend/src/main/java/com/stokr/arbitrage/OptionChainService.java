@@ -190,6 +190,7 @@ public class OptionChainService {
                             q.lastPrice = getDoubleValue(qData, "last_price");
                             q.volume = getIntValue(qData, "volume");
                             q.openInterest = getIntValue(qData, "oi");
+                            q.fetchedAtMs = now;
 
                             Map<String, Object> depth = (Map<String, Object>) qData.get("depth");
                             if (depth != null) {
@@ -223,7 +224,10 @@ public class OptionChainService {
                 CachedQuote cq = globalQuoteCache.get(key);
                 if (cq == null) cq = globalQuoteCache.get(cleanKey);
                 if (cq != null && cq.quote != null && cq.quote.lastPrice > 0) {
-                    quotes.put(cleanKey, cq.quote);
+                    // Keep it for display, but flag it so it is never used as a fill or trigger.
+                    OptionQuote stale = cq.quote.copy();
+                    stale.staleFallback = true;
+                    quotes.put(cleanKey, stale);
                 } else {
                     // Removed synthetic fallback to prevent fabricated prices
                 }
@@ -500,8 +504,48 @@ public class OptionChainService {
         public int volume;
         public int openInterest;
 
+        /** When Kite returned this quote (epoch ms); 0 = unknown. */
+        public long fetchedAtMs;
+        /** Served from cache after a failed refresh, so possibly minutes old. */
+        public boolean staleFallback;
+
+        /** Max age for a quote to be used as a fill or an exit trigger. */
+        public static final long MAX_TRADABLE_AGE_MS = 15_000;
+
         public double effectiveBid() { return bid > 0 ? bid : lastPrice; }
         public double effectiveAsk() { return ask > 0 ? ask : lastPrice; }
+
+        /** Fresh, two-sided, sane market: safe to fill against or trigger exits on. */
+        public boolean isTradable() { return notTradableReason() == null; }
+
+        /** Why this quote must not be used as a fill/trigger, or null if it may. */
+        public String notTradableReason() {
+            if (staleFallback) return "stale cached quote";
+            if (fetchedAtMs <= 0 || System.currentTimeMillis() - fetchedAtMs > MAX_TRADABLE_AGE_MS) return "quote older than 15s";
+            if (bid <= 0 || ask <= 0) return "no two-sided bid/ask";
+            if (ask < bid) return "crossed bid/ask";
+            if (ask - bid > Math.max(5.0, 0.10 * (ask + bid) / 2)) return "bid/ask spread too wide";
+            return null;
+        }
+
+        OptionQuote copy() {
+            OptionQuote c = new OptionQuote();
+            c.symbol = symbol; c.lastPrice = lastPrice; c.bid = bid; c.ask = ask;
+            c.bidQty = bidQty; c.askQty = askQty; c.volume = volume; c.openInterest = openInterest;
+            c.fetchedAtMs = fetchedAtMs; c.staleFallback = staleFallback;
+            return c;
+        }
+    }
+
+    /** First symbol in {@code symbols} whose quote is missing or not tradable, or null if all are. */
+    public static String firstUntradable(java.util.Collection<String> symbols, Map<String, OptionQuote> quotes) {
+        for (String s : symbols) {
+            OptionQuote q = s != null ? quotes.get(s) : null;
+            if (q == null) return s + ": no quote";
+            String why = q.notTradableReason();
+            if (why != null) return s + ": " + why;
+        }
+        return null;
     }
 
     private OptionQuote generateSyntheticQuote(String symbol) { return null; }

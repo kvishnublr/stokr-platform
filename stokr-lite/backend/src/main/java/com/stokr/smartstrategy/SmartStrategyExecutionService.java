@@ -130,6 +130,13 @@ public class SmartStrategyExecutionService {
             ? Map.of() : optionChainService.fetchQuotes(entrySymbols);
 
         if (isPaper) {
+            String untradable = entrySymbols.size() < legList.size() ? "unresolved leg symbol"
+                    : OptionChainService.firstUntradable(entrySymbols, entryQuotes);
+            if (untradable != null) {
+                result.put("status", "SKIPPED");
+                result.put("message", "No fresh two-sided quote (" + untradable + "); paper fills never use LTP");
+                return result;
+            }
             List<Map<String, Object>> filledLegs = new ArrayList<>();
             double totalCost = 0;
             for (Map<String, Object> leg : legList) {
@@ -143,10 +150,7 @@ public class SmartStrategyExecutionService {
                     optionChainService.buildNfoSymbol(underlying, legExpiryDate, strike, optType);
                 OptionChainService.OptionQuote eq = entryQuotes.get(symbol);
                 double price = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
-                if (eq != null) {
-                    double realPrice = "BUY".equals(side) ? (eq.ask > 0 ? eq.ask : eq.lastPrice) : (eq.bid > 0 ? eq.bid : eq.lastPrice);
-                    if (realPrice > 0) price = realPrice;
-                }
+                if (eq != null) price = "BUY".equals(side) ? eq.ask : eq.bid;
                 int qty = leg.get("qty") instanceof Number n ? n.intValue() : 1;
 
                 filled.put("symbol", symbol);

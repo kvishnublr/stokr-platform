@@ -343,6 +343,10 @@ public class BidParityService {
             );
             map.put("legList", legList);
 
+            if (ArbSanity.implausibleEdge("BID_PARITY", edgePoints)) {
+                log.warn("PARITY_DATA_ERROR {} K={}: {} pts deviation is not real -- quotes inconsistent, dropped", underlying, strike, edgePoints);
+                continue;
+            }
             results.add(map);
 
             ArbitrageOpportunity opp = new ArbitrageOpportunity();

@@ -503,6 +503,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 log.info("Auto-exec rejected non-allowed symbol {}: Only NIFTY and BANKNIFTY are allowed", opp.getUnderlying());
                 continue;
             }
+            if (ArbSanity.autoTradeBlocked(opp.getStrategyType())) continue; // stale-quote artifacts, see ArbSanity
             if (opp.getEdgePoints() == null) continue;
 
             String prefix = strategyPrefix(opp.getStrategyType());
@@ -577,6 +578,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             int lots = strategyLots(opp.getStrategyType(), ((Number) settings.getOrDefault(key + "Lots", 1)).intValue());
             int lotSize = getLotSize(opp.getUnderlying());
 
+            String prevStatus = opp.getStatus();
             opp.setStatus("RUNNING");
             oppRepo.save(opp);
 
@@ -596,6 +598,15 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                     if (sym != null) symbols.add(sym);
                 }
                 Map<String, OptionChainService.OptionQuote> legQuotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
+                // Paper fills only against a fresh two-sided market -- never LTP or stale cache.
+                String untradable = symbols.size() < resolvedLegs.size() ? "unresolved leg symbol"
+                        : OptionChainService.firstUntradable(symbols, legQuotes);
+                if (untradable != null) {
+                    opp.setStatus(prevStatus);
+                    oppRepo.save(opp);
+                    addLog("PAPER_SKIP", "NO_QUOTE", opp.getStrategyType() + " " + opp.getUnderlying() + " skipped: " + untradable);
+                    continue;
+                }
                 double entryCost = 0;
                 for (Map<String, Object> leg : resolvedLegs) {
                     String sym = (String) leg.get("symbol");
@@ -603,10 +614,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                     var q = (sym != null && legQuotes.containsKey(sym)) ? legQuotes.get(sym) : null;
                     // Entry: BUY uses ask, SELL uses bid
                     double live = 0;
-                    if (q != null) {
-                        live = isBuy ? (q.ask > 0 ? q.ask : q.lastPrice) : (q.bid > 0 ? q.bid : q.lastPrice);
-                    }
-                    if (live <= 0) live = (leg.get("price") instanceof Number n ? n.doubleValue() : 0);
+                    if (q != null) live = isBuy ? q.ask : q.bid;
                     leg.put("price", live);
                     leg.put("entryPrice", live);
                     int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
@@ -740,6 +748,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 log.info("Auto-exec rejected non-allowed symbol {}: Only NIFTY and BANKNIFTY are allowed", opp.getUnderlying());
                 continue;
             }
+            if (ArbSanity.autoTradeBlocked(opp.getStrategyType())) continue; // stale-quote artifacts, see ArbSanity
 
             // Per-strategy, per-underlying key -- e.g. BOX_SPREAD on NIFTY reads
             // "boxNiftyEnabled"/"boxNiftyMinEdge"/"boxNiftyLots", independent of Bid Parity's
@@ -935,6 +944,13 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 // SL/target — only evaluate when every leg is priced.
                 if (!allLegsQuoted(pos, quotes)) {
                     log.debug("Exit check skipped for position {} — missing leg quote(s)", pos.getId());
+                    continue;
+                }
+                // Never fire SL/target on stale or one-sided quotes: that is how paper trades
+                // "captured" fake edges within a minute.
+                String untradable = OptionChainService.firstUntradable(legSymbols(pos), quotes);
+                if (untradable != null) {
+                    log.debug("Exit check skipped for position {} — {}", pos.getId(), untradable);
                     continue;
                 }
                 pnl = computeMultiLegPnl(pos, quotes);
@@ -1915,6 +1931,13 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
     }
 
     /** True when every leg of a multi-leg position has a quote in {@code quotes}. */
+    static List<String> legSymbols(LivePosition pos) {
+        List<String> out = new ArrayList<>();
+        if (pos.getLegs() != null) for (Map<String, Object> leg : pos.getLegs())
+            if (leg.get("symbol") instanceof String s) out.add(s);
+        return out;
+    }
+
     static boolean allLegsQuoted(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes) {
         if (pos.getLegs() == null) return false;
         for (Map<String, Object> leg : pos.getLegs()) {
