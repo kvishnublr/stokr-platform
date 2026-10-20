@@ -108,6 +108,26 @@ echo "=== F&O entries per day, last 10 days (broker split) ==="
 q "select entered_at::date d, broker, count(*) n, round(sum(current_pnl)) pnl
      from live_positions where entered_at >= current_date - 10 group by 1,2 order by 1 desc,2;"
 echo
+echo "=== History page APIs as the UI calls them (status / time / size; no data printed) ==="
+PORT=$(echo "$ENV" | sed -n 's/^SERVER_PORT=//p' | head -1); PORT=${PORT:-8080}
+for path in /api/option-arbitrage/paper-trades /api/option-arbitrage/cash-history; do
+  curl -s -o /tmp/diag_api.json -m 60 -w "$path -> HTTP %{http_code}, %{time_total}s, %{size_download} bytes\n" "http://127.0.0.1:${PORT}${path}"
+  python3 - "$PREV" <<'PY' 2>&1 | head -12
+import json,sys,collections
+prev=sys.argv[1]
+try:
+    d=json.load(open('/tmp/diag_api.json'))
+except Exception as e:
+    print('  not JSON:', open('/tmp/diag_api.json',errors='replace').read(300)); sys.exit()
+rows=d if isinstance(d,list) else (d.get('positions') or d.get('trades') or [])
+print('  rows:',len(rows),' keys:',list(d.keys())[:8] if isinstance(d,dict) else 'list')
+c=collections.Counter((r.get('status'),str(r.get('enteredAt'))[:10]==prev) for r in rows)
+print('  status/prev-day counts:',dict(c))
+print('  strategies:',sorted({r.get('strategyType') for r in rows if r.get('strategyType')}))
+PY
+done
+rm -f /tmp/diag_api.json
+echo
 echo "=== Open positions right now ==="
 q "select broker, strategy_type, count(*) n, min(expiry_date) nearest_expiry from live_positions where status='OPEN' group by 1,2 order by 1,2;"
 echo
