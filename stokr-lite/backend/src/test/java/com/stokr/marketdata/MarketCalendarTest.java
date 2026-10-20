@@ -55,4 +55,12 @@ class MarketCalendarTest {
         // 04:30 UTC = 10:00 IST on a Monday
         assertTrue(MarketCalendar.isMarketOpen(ZonedDateTime.parse("2026-09-28T04:30:00Z")));
     }
+
+    @Test
+    void builtInNseHolidaysApplyWithoutConfig() {
+        MarketCalendar.setHolidays("");
+        assertFalse(MarketCalendar.isTradingDay(LocalDate.parse("2026-10-20"))); // Dussehra
+        assertFalse(MarketCalendar.isMarketOpen(ist("2026-11-10", 11, 0)));     // Balipratipada
+        assertTrue(MarketCalendar.isTradingDay(LocalDate.parse("2026-10-19")));
+    }
 }

@@ -370,6 +370,7 @@ public class SmartAutoEntryService {
     }
 
     private boolean isMarketHours() {
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday()) return false;
         LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
         return !now.isBefore(LocalTime.of(9, 25)) && now.isBefore(LocalTime.of(15, 15));
     }

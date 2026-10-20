@@ -85,6 +85,7 @@ public class PairsLiveService {
 
     @Scheduled(cron = "0 15 9 * * MON-FRI", zone = "Asia/Kolkata")
     public void computeDailyStats() {
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday()) return;
         log.info("[PAIRS] 9:15 — computing daily stats for {} pairs", LIVE_PAIRS.size());
         dailyStats.clear();
         LocalDateTime now = LocalDateTime.now(IST);
@@ -128,6 +129,7 @@ public class PairsLiveService {
 
     @Scheduled(cron = "0 30 9 * * MON-FRI", zone = "Asia/Kolkata")
     public void enterPairsAtOpen() {
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday()) return;
         LocalDate today = LocalDate.now(IST);
         long alreadyEntered = pairTradeRepository.countByEntryTimeBetween(
             today.atStartOfDay(), today.atTime(9, 35));
@@ -202,6 +204,7 @@ public class PairsLiveService {
     @Scheduled(cron = "30 31-59 9 * * MON-FRI", zone = "Asia/Kolkata")
     @Scheduled(cron = "30 * 10-14 * * MON-FRI", zone = "Asia/Kolkata")
     public void monitorOpenTrades() {
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday()) return;
         List<PairTrade> open = pairTradeRepository.findByStatus("OPEN");
         if (open.isEmpty()) return;
         LocalDateTime now = LocalDateTime.now(IST);
@@ -218,6 +221,7 @@ public class PairsLiveService {
 
     @Scheduled(cron = "0 5 15 * * MON-FRI", zone = "Asia/Kolkata")
     public void forceEodClose() {
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday()) return;
         List<PairTrade> open = pairTradeRepository.findByStatus("OPEN");
         if (open.isEmpty()) { log.info("[PAIRS] EOD: no open trades"); return; }
         log.info("[PAIRS] EOD force-closing {} open trade(s)", open.size());

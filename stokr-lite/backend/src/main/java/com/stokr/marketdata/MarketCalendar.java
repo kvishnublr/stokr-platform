@@ -15,8 +15,9 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Single source of truth for "is the NSE F&O market trading right now?".
  *
- * Trading day = Mon–Fri and not listed in {@code stokr.market.holidays}
- * (comma-separated yyyy-MM-dd, env STOKR_MARKET_HOLIDAYS). Session = 09:15–15:30 IST.
+ * Trading day = Mon–Fri, not an NSE holiday built in below, and not listed in
+ * {@code stokr.market.holidays} (comma-separated yyyy-MM-dd, env STOKR_MARKET_HOLIDAYS,
+ * for extra closures). Session = 09:15–15:30 IST.
  *
  * Static accessors are deliberate: several callers are plain helpers/records that are
  * not Spring beans. The component only loads the configured holiday list at startup.
@@ -30,6 +31,29 @@ public class MarketCalendar {
     public static final LocalTime CLOSE = LocalTime.of(15, 30);
 
     private static final Set<LocalDate> HOLIDAYS = ConcurrentHashMap.newKeySet();
+
+    /**
+     * NSE equity/F&O weekday trading holidays. Built in so a missing env var can't turn a
+     * holiday into a trading day (that happened on Dussehra, 2026-10-20). Update yearly
+     * from the NSE holiday circular.
+     */
+    private static final Set<LocalDate> NSE_HOLIDAYS = Set.of(
+        LocalDate.parse("2026-01-26"), // Republic Day
+        LocalDate.parse("2026-03-03"), // Holi
+        LocalDate.parse("2026-03-26"), // Shri Ram Navami
+        LocalDate.parse("2026-03-31"), // Shri Mahavir Jayanti
+        LocalDate.parse("2026-04-03"), // Good Friday
+        LocalDate.parse("2026-04-14"), // Dr. Baba Saheb Ambedkar Jayanti
+        LocalDate.parse("2026-05-01"), // Maharashtra Day
+        LocalDate.parse("2026-05-28"), // Bakri Id
+        LocalDate.parse("2026-06-26"), // Muharram
+        LocalDate.parse("2026-09-14"), // Ganesh Chaturthi
+        LocalDate.parse("2026-10-02"), // Mahatma Gandhi Jayanti
+        LocalDate.parse("2026-10-20"), // Dussehra
+        LocalDate.parse("2026-11-10"), // Diwali Balipratipada
+        LocalDate.parse("2026-11-24"), // Guru Nanak Jayanti
+        LocalDate.parse("2026-12-25")  // Christmas
+    );
 
     public MarketCalendar(@Value("${stokr.market.holidays:}") String holidays) {
         setHolidays(holidays);
@@ -53,7 +77,8 @@ public class MarketCalendar {
 
     public static boolean isTradingDay(LocalDate date) {
         DayOfWeek d = date.getDayOfWeek();
-        return d != DayOfWeek.SATURDAY && d != DayOfWeek.SUNDAY && !HOLIDAYS.contains(date);
+        return d != DayOfWeek.SATURDAY && d != DayOfWeek.SUNDAY
+                && !NSE_HOLIDAYS.contains(date) && !HOLIDAYS.contains(date);
     }
 
     public static boolean isTradingDayToday() {

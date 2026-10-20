@@ -36,6 +36,7 @@ public class EodSquareOffService {
      */
     @Scheduled(cron = "0 15 15 * * MON-FRI", zone = "Asia/Kolkata")
     public void triggerEodSquareOff() {
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday()) return;
         log.info("=== EOD SQUARE-OFF TRIGGERED ===");
 
         List<Deployment> activeDeployments = deploymentService.getAllActiveDeployments();

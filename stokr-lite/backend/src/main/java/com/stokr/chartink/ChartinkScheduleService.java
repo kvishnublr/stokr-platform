@@ -40,6 +40,7 @@ public class ChartinkScheduleService {
     @Scheduled(fixedRate = 30000)
     @Transactional
     public void monitorPositions() {
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday()) return; // holiday: LTPs are stale
         var openPositions = positionRepository.findByStatusOrderByCreatedAtDesc("OPEN");
         if (openPositions.isEmpty()) return;
 

@@ -88,8 +88,8 @@ public class MorningRangeThetaExecutor {
             todayPnl = 0;
         }
 
-        // Only active 10:15 - 15:00
-        if (now.isBefore(LocalTime.of(9, 35)) || now.isAfter(LocalTime.of(15, 0))) {
+        // Only active 9:35 - 15:00 on NSE trading days
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || now.isBefore(LocalTime.of(9, 35)) || now.isAfter(LocalTime.of(15, 0))) {
             return;
         }
 
