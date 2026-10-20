@@ -133,6 +133,13 @@ for f in /var/log/nginx/access.log /var/log/nginx/access.log.1; do
   [ -r "$f" ] && grep -E "option-arbitrage/(paper-trades|cash-history)" "$f" | awk '{print $7, $9, $10" bytes"}' | sed -E 's/\?.*? / /' | sort | uniq -c | sort -rn | head -10
 done
 grep -E "paper-trades" /var/log/nginx/error.log 2>/dev/null | tail -5 | sed -E 's/client: [0-9.]+/client: x/; s/server: [^,]+/server: x/'
+if [ -n "$LOGFILE" ] && [ -f "$LOGFILE" ]; then
+  echo
+  echo "=== Last servlet exception in service log (class/line only) ==="
+  tail -n 200000 "$LOGFILE" | grep -nE "threw exception|Request processing failed|Exception: " | tail -3 | cut -c1-300
+  L=$(tail -n 200000 "$LOGFILE" | grep -nE "threw exception|Request processing failed" | tail -1 | cut -d: -f1)
+  [ -n "$L" ] && tail -n 200000 "$LOGFILE" | sed -n "${L},$((L+40))p" | grep -E "Exception|Caused by|at com\.stokr" | head -15 | cut -c1-250
+fi
 echo
 echo "=== Open positions right now ==="
 q "select broker, strategy_type, count(*) n, min(expiry_date) nearest_expiry from live_positions where status='OPEN' group by 1,2 order by 1,2;"
