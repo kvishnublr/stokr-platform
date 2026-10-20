@@ -224,6 +224,12 @@ public class SmartAutoEntryService {
                 }
                 if (entered >= 1) break; // Max 1 entry per cycle
 
+                String stratLimit = strategyLimitBreach(stratType, openPositions);
+                if (stratLimit != null) {
+                    log.info("SMART_AUTO: Skipped {} {} - {}", stratType, und, stratLimit);
+                    continue;
+                }
+
                 String key = opp.get("strategyType") + ":" + opp.get("underlying") + ":"
                     + opp.getOrDefault("putSellStrike", opp.getOrDefault("strike", ""));
 
@@ -234,7 +240,7 @@ public class SmartAutoEntryService {
                 }
 
                 // Portfolio risk check
-                PortfolioRiskManager.RiskCheck riskCheck = riskManager.canEnterTrade(opp, lotsForScore(opp));
+                PortfolioRiskManager.RiskCheck riskCheck = riskManager.canEnterTrade(opp, lotsFor(opp));
                 if (!riskCheck.allowed()) {
                     log.info("SMART_AUTO: Blocked by risk: {} — {}", key, riskCheck.reason());
                     continue;
@@ -289,7 +295,7 @@ public class SmartAutoEntryService {
 
         req.put("maxLoss", PortfolioRiskManager.maxLossPerLot(opp));
         req.put("maxProfit", maxProfitPerLot(opp));
-        req.put("lots", lotsForScore(opp));
+        req.put("lots", lotsFor(opp));
 
         // Strategy-specific exit rules. Time exits apply only to the expiry-day trade: multi-day
         // structures (condors, butterflies, calendars, skew) are built around decay into expiry, and
@@ -376,11 +382,7 @@ public class SmartAutoEntryService {
     
         private double getMinEdgeForStrategy(String stratId) {
         if (stratId == null) return 500.0;
-        String norm = stratId.toUpperCase().trim().replace(" ", "_");
-        if (norm.equals("BOX_SPREAD") || norm.equals("BOX_SPREAD_ARBITRAGE")) norm = "BOX_SPREAD_ARB";
-        if (norm.equals("CONDOR") || norm.equals("PUT/CALL_CONDOR_SPREAD")) norm = "CONDOR_SPREAD";
-        if (norm.equals("BUTTERFLY_SPREAD")) norm = "BUTTERFLY";
-        if (norm.equals("BID_PARITY_ARBITRAGE")) norm = "BID_PARITY";
+        String norm = com.stokr.arbitrage.OptionArbAutoExecService.normalizeStrategyId(stratId);
 
         AutoExecSetting s = autoExecSettingRepo.findBySettingKey("STRAT_" + norm + "_minEdge").orElse(null);
         if (s != null && s.getSettingValue() != null) {
@@ -401,9 +403,46 @@ public class SmartAutoEntryService {
 
     private boolean isStrategyEnabled(String stratId) {
         if (stratId == null) return true;
-        String normalized = stratId.toUpperCase().replace(" ", "_");
-        AutoExecSetting s = autoExecSettingRepo.findBySettingKey("STRAT_" + normalized + "_paperEnabled").orElse(null);
-        return s == null || "true".equalsIgnoreCase(s.getSettingValue());
+        String val = settingRaw(stratId, "paperEnabled");
+        return val == null || "true".equalsIgnoreCase(val.trim());
+    }
+
+    private String settingRaw(String stratId, String field) {
+        String norm = com.stokr.arbitrage.OptionArbAutoExecService.normalizeStrategyId(stratId);
+        AutoExecSetting s = autoExecSettingRepo.findBySettingKey("STRAT_" + norm + "_" + field).orElse(null);
+        return s != null ? s.getSettingValue() : null;
+    }
+
+    private Double settingNumber(String stratId, String field) {
+        String val = settingRaw(stratId, field);
+        if (val == null) return null;
+        try { return Double.parseDouble(val.trim()); } catch (Exception e) { return null; }
+    }
+
+    /** Strategy Control Center lots if saved, else the score-based default. */
+    private int lotsFor(Map<String, Object> opp) {
+        Double v = settingNumber(String.valueOf(opp.get("strategyType")), "lots");
+        return v != null && v >= 1 ? v.intValue() : lotsForScore(opp);
+    }
+
+    /** Strategy Control Center maxActiveTrades / maxDailyLoss for paper positions; null if OK. */
+    private String strategyLimitBreach(String stratId, List<LivePosition> openPositions) {
+        Double maxActive = settingNumber(stratId, "maxActiveTrades");
+        Double maxLoss = settingNumber(stratId, "maxDailyLoss");
+        if (maxActive == null && maxLoss == null) return null;
+        String norm = com.stokr.arbitrage.OptionArbAutoExecService.normalizeStrategyId(stratId);
+        java.util.function.Predicate<LivePosition> mine = p -> "PAPER".equals(p.getBroker())
+                && norm.equals(com.stokr.arbitrage.OptionArbAutoExecService.normalizeStrategyId(p.getStrategyType()));
+        if (maxActive != null && openPositions.stream().filter(mine).count() >= maxActive)
+            return "max active trades (" + maxActive.intValue() + ") reached";
+        if (maxLoss != null && maxLoss > 0) {
+            java.time.LocalDateTime dayStart = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).atStartOfDay();
+            double pnl = positionRepo.findAll().stream().filter(mine)
+                    .filter(p -> "OPEN".equals(p.getStatus()) || (p.getExitedAt() != null && !p.getExitedAt().isBefore(dayStart)))
+                    .mapToDouble(p -> p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0.0).sum();
+            if (pnl <= -maxLoss) return "daily loss limit Rs." + String.format("%.0f", maxLoss) + " hit";
+        }
+        return null;
     }
 
 }

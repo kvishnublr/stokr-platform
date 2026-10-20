@@ -76,4 +76,46 @@ q "select id, symbol, strategy_type, side, quantity qty, entry_price, exit_price
           round(current_pnl) pnl, error_message exit_reason,
           to_char(entered_at,'HH24:MI:SS') entry_t, to_char(exited_at,'HH24:MI:SS') exit_t
      from cash_positions where exited_at >= current_date order by exited_at limit 40;"
+
+# ---------------- Previous trading day (why were there no trades?) ----------------
+PREV=$(psql -X -tA -c "select (current_date - case extract(isodow from current_date) when 1 then 3 when 7 then 2 else 1 end)::date" 2>/dev/null | head -1)
+echo
+echo "################ Previous trading day: ${PREV:-unknown} ################"
+echo "=== Service uptime / restarts ==="
+systemctl show stokr-lite -p ActiveEnterTimestamp -p NRestarts 2>/dev/null
+journalctl -u stokr-lite --since "${PREV} 00:00" --until "$(date +%F) 00:00" --no-pager 2>/dev/null | grep -E "Started|Stopped|Failed|Main process exited" | tail -10
+echo
+echo "=== Opportunities detected ${PREV} by strategy / status ==="
+q "select strategy_type, status, count(*) n, round(max(edge_after_costs)) best_edge, round(avg(edge_after_costs)) avg_edge,
+          to_char(min(scan_time),'HH24:MI') first, to_char(max(scan_time),'HH24:MI') last
+     from option_arb_opportunities
+    where scan_time >= date '${PREV}' and scan_time < date '${PREV}' + 1
+    group by 1,2 order by 1, n desc;"
+echo
+echo "=== Positions entered ${PREV} ==="
+q "select broker, strategy_type, status, exit_reason, count(*) n, round(sum(current_pnl)) pnl
+     from live_positions where entered_at >= date '${PREV}' and entered_at < date '${PREV}' + 1
+    group by 1,2,3,4 order by 1,2;"
+echo
+echo "=== Open positions right now ==="
+q "select broker, strategy_type, count(*) n, min(expiry_date) nearest_expiry from live_positions where status='OPEN' group by 1,2 order by 1,2;"
+echo
+echo "=== Strategy / auto-exec settings (non-secret keys) ==="
+q "select setting_key, left(setting_value, 160) val, to_char(updated_at,'YYYY-MM-DD HH24:MI') updated
+     from option_arb_auto_exec_settings
+    where setting_key !~* '(token|secret|pass|totp|api|key_|client|pin)'
+    order by setting_key;"
+if [ -n "$LOGFILE" ] && [ -f "$LOGFILE" ]; then
+  echo
+  echo "=== Service log ${PREV}: log lines per hour (gaps = app down / not scanning) ==="
+  grep "^${PREV}" "$LOGFILE" | cut -c12-13 | sort | uniq -c
+  echo
+  echo "=== Service log ${PREV}: skip / reject reasons (top 30) ==="
+  grep "^${PREV}" "$LOGFILE" | grep -oE "(PRE-EXEC REJECT|EXEC_REJECT|REJECTED_[A-Z]+|COOLDOWN_SKIP|Daily loss limit hit|Blocked by risk|Skipped [^:-]{0,60}|skipped [^:]{0,60}|rejected non-allowed symbol|needs ₹|margin check failed|broker setup failed|Not a trading day|holiday)" | sed -E 's/[0-9]{3,}/N/g' | sort | uniq -c | sort -rn | head -30
+  echo
+  echo "=== Service log ${PREV}: signal / entry / auto-exec samples (amounts masked) ==="
+  grep "^${PREV}" "$LOGFILE" | grep -E "FIRING|SMART_AUTO_ENTRY|Auto-exec|SMART_AUTO scan error|closeExpired" \
+    | grep -viE "margin|balance|client|token|password" \
+    | sed -E 's/(₹|Rs\.?) ?-?[0-9][0-9,.]*/\1X/g' | cut -c1-200 | head -40
+fi
 REMOTE

@@ -23,7 +23,8 @@ class RegimeAndSizingTest {
     @Test
     void lotsFollowScore() {
         assertEquals(1, SmartAutoEntryService.lotsForScore(Map.of("compositeScore", 79.9)));
-        assertEquals(2, SmartAutoEntryService.lotsForScore(Map.of("compositeScore", 80)));
+        // Auto entries are capped at 1 lot regardless of score.
+        assertEquals(1, SmartAutoEntryService.lotsForScore(Map.of("compositeScore", 80)));
         assertEquals(1, SmartAutoEntryService.lotsForScore(Map.of()));
     }
 

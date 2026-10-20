@@ -217,7 +217,7 @@ public class MotilalOswalAdapter implements BrokerAdapter {
     }
 
     /** Kite-style symbols for an MO option name like "NIFTY 29-SEP-2026 CE 24200". */
-    static List<String> kiteAliases(String moName) {
+    public static List<String> kiteAliases(String moName) {
         String[] parts = moName.split(" ");
         if (parts.length < 4) return List.of();
         String[] d = parts[1].split("-");

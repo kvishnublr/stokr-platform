@@ -42,8 +42,8 @@ class PortfolioRiskManagerTest {
 
     @Test
     void riskBudgetScalesWithLots() {
-        // Budget is 3 × daily loss cap (₹45,000). ₹25,000/lot fits at 1 lot, not at 2.
-        Map<String, Object> opp = Map.of("strategyType", "IRON_CONDOR", "underlying", "NIFTY", "maxLoss", 25000);
+        // Budget is 3 × daily loss cap (₹75,000). ₹40,000/lot fits at 1 lot, not at 2.
+        Map<String, Object> opp = Map.of("strategyType", "IRON_CONDOR", "underlying", "NIFTY", "maxLoss", 40000);
         assertTrue(risk.canEnterTrade(opp, 1).allowed());
         assertFalse(risk.canEnterTrade(opp, 2).allowed());
     }

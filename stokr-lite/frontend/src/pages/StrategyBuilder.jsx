@@ -331,7 +331,7 @@ export default function StrategyBuilder() {
               <div className="bg-indigo-50 border border-indigo-100/50 px-4 py-2.5 rounded-2xl shadow-[0_4px_15px_rgba(99,102,241,0.1)] flex items-center gap-2">
                 <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(99,102,241,0.8)]"></div>
                 <span className="text-[10px] text-indigo-400 uppercase tracking-widest font-black">Spot</span>
-                <span className="text-sm font-black text-indigo-700">{chainData.spotPrice.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
+                <span className="text-sm font-black text-indigo-700">{chainData.spotPrice != null ? Number(chainData.spotPrice).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</span>
               </div>
               <div className="bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-2xl flex items-center gap-1.5">
                 <span className="text-[9px] text-slate-400 uppercase tracking-widest font-black">Lot</span>

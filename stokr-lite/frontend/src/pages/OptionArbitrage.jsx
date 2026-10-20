@@ -7163,6 +7163,10 @@ function PaperTradesView() {
   const openCount = data?.openCount || 0;
   const closedCount = data?.closedCount || 0;
   const failedCount = data?.failedCount || 0;
+  // Realized = P&L of trades that are no longer open
+  const totalRealizedPnl = positions
+    .filter(p => !['OPEN', 'RUNNING', 'EXECUTING', 'PARTIAL', 'DETECTED'].includes(p.status))
+    .reduce((sum, p) => sum + (Number(p.pnl ?? p.currentPnl ?? 0) || 0), 0);
   const paperCount = data?.paperCount || 0;
   const liveCount = data?.liveCount || 0;
 
@@ -7304,11 +7308,12 @@ function PaperTradesView() {
                      );
                   }
 
-                  let actionBadge = <span className="font-bold text-slate-700 truncate">{pos.action}</span>;
-                  if (pos.action.includes('BOX')) actionBadge = <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md font-bold text-[9px] border border-blue-200 shadow-sm">{pos.action}</span>;
-                  else if (pos.action.includes('FLY')) actionBadge = <span className="px-2 py-0.5 bg-fuchsia-100 text-fuchsia-800 rounded-md font-bold text-[9px] border border-fuchsia-200 shadow-sm">{pos.action}</span>;
-                  else if (pos.action.includes('SPREAD')) actionBadge = <span className="px-2 py-0.5 bg-cyan-100 text-cyan-800 rounded-md font-bold text-[9px] border border-cyan-200 shadow-sm">{pos.action}</span>;
-                  else if (pos.action.includes('ARB')) actionBadge = <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-md font-bold text-[9px] border border-orange-200 shadow-sm">{pos.action}</span>;
+                  const act = String(pos.action || pos.strategyType || '');
+                  let actionBadge = <span className="font-bold text-slate-700 truncate">{pos.action || pos.strategyType || '—'}</span>;
+                  if (act.includes('BOX')) actionBadge = <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md font-bold text-[9px] border border-blue-200 shadow-sm">{pos.action}</span>;
+                  else if (act.includes('FLY')) actionBadge = <span className="px-2 py-0.5 bg-fuchsia-100 text-fuchsia-800 rounded-md font-bold text-[9px] border border-fuchsia-200 shadow-sm">{pos.action}</span>;
+                  else if (act.includes('SPREAD')) actionBadge = <span className="px-2 py-0.5 bg-cyan-100 text-cyan-800 rounded-md font-bold text-[9px] border border-cyan-200 shadow-sm">{pos.action}</span>;
+                  else if (act.includes('ARB')) actionBadge = <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-md font-bold text-[9px] border border-orange-200 shadow-sm">{pos.action}</span>;
 
                   return (
                     <React.Fragment key={pos.id}>

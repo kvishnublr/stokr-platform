@@ -48,6 +48,11 @@ public class TradeSupervisorService {
 
     // Cached last reconciliation report
     private volatile ReconciliationReport lastReconciliationReport = null;
+
+    /** Consecutive reconciliation cycles in which each open live position was missing at its broker. */
+    private final Map<Long, Integer> phantomStreak = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Scheduled auto-heal closes a position only after this many consecutive misses (~45s apart). */
+    static final int PHANTOM_CONFIRMATIONS = 3;
     private final List<Map<String, Object>> rejectedSignalAudits = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     // --- DOMAIN MODELS ---
@@ -311,14 +316,50 @@ public class TradeSupervisorService {
         // Only run reconciliation during market hours
         if (MarketCalendar.isTradingDayToday() && !now.isBefore(LocalTime.of(9, 15)) && !now.isAfter(LocalTime.of(15, 35))) {
             try {
-                reconcileBrokerPositions(true);
+                reconcileBrokerPositions(true, PHANTOM_CONFIRMATIONS);
             } catch (Exception e) {
                 log.debug("Scheduled reconciliation error: {}", e.getMessage());
             }
         }
     }
 
-    public synchronized ReconciliationReport reconcileBrokerPositions(boolean autoHeal) {
+    public ReconciliationReport reconcileBrokerPositions(boolean autoHeal) {
+        // Manual reconcile (user-triggered) heals on the first confirmed miss.
+        return reconcileBrokerPositions(autoHeal, 1);
+    }
+
+    /**
+     * Symbols a broker position may be known by. Motilal reports "NIFTY 27-OCT-2026 CE 25000" while
+     * legs are stored Kite-style ("NIFTY26OCT25000CE"), so its names are expanded to Kite aliases.
+     */
+    static Set<String> symbolKeys(String brokerSymbol) {
+        Set<String> keys = new HashSet<>();
+        if (brokerSymbol == null || brokerSymbol.isBlank()) return keys;
+        String s = brokerSymbol.trim().toUpperCase();
+        int colon = s.indexOf(':');
+        if (colon >= 0) s = s.substring(colon + 1);
+        keys.add(s);
+        if (s.contains(" ")) keys.addAll(com.stokr.broker.MotilalOswalAdapter.kiteAliases(s));
+        return keys;
+    }
+
+    static String legKey(String legSymbol) {
+        String s = legSymbol.trim().toUpperCase();
+        int colon = s.indexOf(':');
+        return colon >= 0 ? s.substring(colon + 1) : s;
+    }
+
+    /**
+     * Compares open live DB positions with what the brokers report. A position is closed in the DB
+     * ("healed") only when ALL of these hold, because a wrong heal leaves a real broker position with
+     * no stop-loss, target or 3:20 square-off:
+     *  - the broker returned real position data (adapters return an empty list when the call fails,
+     *    so an empty result is treated as "unknown", never as "flat");
+     *  - every ACTIVE account of that broker was checked (positions may sit in any of them);
+     *  - none of the position's legs appears there, under any alias;
+     *  - the miss repeated in {@code confirmations} consecutive cycles.
+     */
+    public synchronized ReconciliationReport reconcileBrokerPositions(boolean autoHeal, int confirmations) {
         List<LivePosition> openDbPositions = livePositionRepo.findAllOpen();
         List<String> brokers = List.of("ZERODHA", "NAVIA", "MOTILALOSWAL");
         List<Map<String, Object>> positionAudits = new ArrayList<>();
@@ -329,23 +370,39 @@ public class TradeSupervisorService {
         Map<String, Set<String>> brokerHeldSymbols = new HashMap<>();
 
         for (String brokerName : brokers) {
+            List<BrokerAccount> accounts;
             try {
-                List<BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(brokerName, "ACTIVE");
-                if (accounts.isEmpty()) continue;
-                activeBrokers++;
-                BrokerAccount acc = accounts.get(0);
-                BrokerAdapter adapter = brokerService.getAdapter(brokerName);
-                List<BrokerPosition> positions = adapter.getPositions(acc.getAccessToken());
-
-                Set<String> heldSymbols = positions.stream()
-                        .filter(p -> p.quantity() != 0)
-                        .map(BrokerPosition::symbol)
-                        .collect(Collectors.toSet());
-                brokerHeldSymbols.put(brokerName, heldSymbols);
+                accounts = brokerAccountRepo.findByBrokerNameAndStatus(brokerName, "ACTIVE");
             } catch (Exception e) {
-                log.debug("Reconciliation: Failed to fetch positions from {}: {}", brokerName, e.getMessage());
+                continue;
             }
+            if (accounts.isEmpty()) continue;
+            activeBrokers++;
+            Set<String> heldSymbols = new HashSet<>();
+            boolean anyData = false, anyFailure = false;
+            BrokerAdapter adapter;
+            try {
+                adapter = brokerService.getAdapter(brokerName);
+            } catch (Exception e) {
+                continue;
+            }
+            for (BrokerAccount acc : accounts) {
+                try {
+                    List<BrokerPosition> positions = adapter.getPositions(acc.getAccessToken());
+                    if (positions == null || positions.isEmpty()) continue; // failure and "flat" look identical
+                    anyData = true;
+                    for (BrokerPosition p : positions) {
+                        if (p.quantity() != 0) heldSymbols.addAll(symbolKeys(p.symbol()));
+                    }
+                } catch (Exception e) {
+                    anyFailure = true;
+                    log.debug("Reconciliation: Failed to fetch positions from {} account {}: {}", brokerName, acc.getId(), e.getMessage());
+                }
+            }
+            // Only a broker that returned real data, with no account failing, counts as checked.
+            if (anyData && !anyFailure) brokerHeldSymbols.put(brokerName, heldSymbols);
         }
+        Set<Long> stillOpenIds = new HashSet<>();
 
         for (LivePosition pos : openDbPositions) {
             Map<String, Object> audit = new LinkedHashMap<>();
@@ -364,26 +421,30 @@ public class TradeSupervisorService {
                 continue;
             }
 
+            stillOpenIds.add(pos.getId());
             Set<String> held = brokerHeldSymbols.get(broker);
             if (held == null) {
                 audit.put("auditState", "BROKER_OFFLINE_OR_UNCHECKED");
-                audit.put("detail", "Broker " + broker + " did not respond with position feed this cycle");
+                audit.put("detail", "Broker " + broker + " returned no position data this cycle (failed, expired session, or empty) — nothing changed");
                 positionAudits.add(audit);
                 continue;
             }
 
             List<String> legSymbols = extractLegSymbols(pos);
-            boolean anyLegHeld = legSymbols.stream().anyMatch(held::contains);
+            boolean anyLegHeld = legSymbols.stream().map(TradeSupervisorService::legKey).anyMatch(held::contains);
 
             if (anyLegHeld || legSymbols.isEmpty()) {
+                phantomStreak.remove(pos.getId());
                 audit.put("auditState", "IN_SYNC");
                 audit.put("detail", "Legs confirmed active at " + broker);
             } else {
+                int streak = phantomStreak.merge(pos.getId(), 1, Integer::sum);
                 audit.put("auditState", "PHANTOM_DETECTED");
-                audit.put("detail", "Broker has 0 open quantity across all legs (likely closed externally or by RMS)");
+                audit.put("detail", "Broker has 0 open quantity across all legs (" + streak + "/" + confirmations + " checks)");
                 anomalies.add("Phantom position #" + pos.getId() + " (" + pos.getUnderlying() + " " + pos.getStrategyType() + ") flat at broker " + broker);
 
-                if (autoHeal) {
+                if (autoHeal && streak >= confirmations) {
+                    phantomStreak.remove(pos.getId());
                     pos.setStatus("CLOSED");
                     pos.setExitedAt(LocalDateTime.now());
                     pos.setExitReason("RECONCILED_FLAT_AT_BROKER");
@@ -397,6 +458,7 @@ public class TradeSupervisorService {
             positionAudits.add(audit);
         }
 
+        phantomStreak.keySet().retainAll(stillOpenIds);
         String overallStatus = anomalies.isEmpty() ? "IN_SYNC" : (healedCount > 0 ? "HEALED" : "DESYNC_DETECTED");
 
         ReconciliationReport report = ReconciliationReport.builder()

@@ -1109,7 +1109,7 @@ export default function TradeSentinelPanel({ showToast, inline = false }) {
           </div>
           <span>•</span>
           <div>
-            Total Signals Scanned: <strong className="text-slate-900">{totalScanned}</strong>
+            Total Signals Scanned: <strong className="text-slate-900">{totalSignals}</strong>
           </div>
         </div>
 

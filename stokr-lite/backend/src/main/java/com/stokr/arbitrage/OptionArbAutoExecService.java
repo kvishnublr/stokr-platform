@@ -39,6 +39,13 @@ public class OptionArbAutoExecService {
 
     private final List<Map<String, Object>> execLogs = Collections.synchronizedList(new ArrayList<>());
 
+    /** Index spot for expiry settlement; optional so tests and non-Zerodha setups still start. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ZerodhaSpotPriceFetcher spotPriceFetcher;
+
+    private static final Map<String, String> SETTLE_SPOT_KEYS = Map.of(
+        "NIFTY", "NSE:NIFTY 50", "BANKNIFTY", "NSE:NIFTY BANK");
+
     /** Settings-key prefixes for each of the 7 real auto-executing strategies. */
     private static final List<String> STRATEGY_PREFIXES =
         List.of("bidParity", "box", "vertical", "butterfly", "condor", "ironCondor", "calendar");
@@ -502,6 +509,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             String key = prefix + capitalize(opp.getUnderlying());
             boolean enabled = Boolean.TRUE.equals(settings.get(key + "Enabled"));
             if (!enabled) continue;
+            if (!isStrategyEnabledForMode(opp.getStrategyType(), "PAPER")) continue;
 
             double minEdge = getMinEdgeForStrategy(opp.getStrategyType());
             double totalEdge = opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : (opp.getEdgePoints().doubleValue() * getLotSize(opp.getUnderlying()));
@@ -510,6 +518,15 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
 
             if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
                     .anyMatch(p -> "PAPER".equals(p.getBroker()) && opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
+
+            String stratBreach = strategyLimitBreach(opp.getStrategyType(), true);
+            if (stratBreach != null) {
+                tradeSupervisorService.recordRejectedSignal(opp.getUnderlying(), opp.getStrategyType(), opp.getStrike(), opp.getAction(),
+                    opp.getEdgePoints() != null ? opp.getEdgePoints().doubleValue() : 0.0,
+                    opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0.0,
+                    stratBreach, "REJECTED_LIMIT");
+                continue;
+            }
 
             int strategyMaxLots = ((Number) settings.getOrDefault(prefix + "MaxLots", 9999)).intValue();
             int globalMaxLots = ((Number) settings.getOrDefault("maxOpenPositions", 9999)).intValue();
@@ -557,7 +574,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             }
 
 
-            int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
+            int lots = strategyLots(opp.getStrategyType(), ((Number) settings.getOrDefault(key + "Lots", 1)).intValue());
             int lotSize = getLotSize(opp.getUnderlying());
 
             opp.setStatus("RUNNING");
@@ -731,6 +748,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             String key = prefix + capitalize(opp.getUnderlying());
             boolean enabled = Boolean.TRUE.equals(settings.get(key + "Enabled"));
             if (!enabled) continue;
+            if (!isStrategyEnabledForMode(opp.getStrategyType(), broker)) continue;
 
             double minEdge = getMinEdgeForStrategy(opp.getStrategyType());
             double totalEdge = opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : (opp.getEdgePoints().doubleValue() * getLotSize(opp.getUnderlying()));
@@ -740,6 +758,15 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(userId, "OPEN").stream()
                     .anyMatch(p -> opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
 
+            String stratBreach = strategyLimitBreach(opp.getStrategyType(), false);
+            if (stratBreach != null) {
+                if (tradeSupervisorService != null) tradeSupervisorService.recordRejectedSignal(opp.getUnderlying(), opp.getStrategyType(), opp.getStrike(), opp.getAction(),
+                    opp.getEdgePoints() != null ? opp.getEdgePoints().doubleValue() : 0.0,
+                    opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0.0,
+                    stratBreach, "REJECTED_LIMIT");
+                continue;
+            }
+
 
 
             int strategyMaxLots = ((Number) settings.getOrDefault(prefix + "MaxLots", 9999)).intValue();
@@ -747,7 +774,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                     .filter(p -> broker.equals(p.getBroker()) && opp.getStrategyType().equals(p.getStrategyType()))
                     .count();
             if (openStrategyPos >= strategyMaxLots) continue;
-            int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
+            int lots = strategyLots(opp.getStrategyType(), ((Number) settings.getOrDefault(key + "Lots", 1)).intValue());
             List<Map<String, Object>> legs = opp.getLegList();
             boolean isMultiLeg = legs != null && !legs.isEmpty() && !"BID_PARITY".equals(opp.getStrategyType());
 
@@ -1902,6 +1929,73 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
      * (current - entry) for BUY legs, (entry - current) for SELL legs, scaled by each leg's
      * quantity multiplier and lot size.
      */
+    private double settlementSpot(String underlying) {
+        try {
+            String key = SETTLE_SPOT_KEYS.get(underlying);
+            if (key == null || spotPriceFetcher == null) return 0;
+            double v = spotPriceFetcher.getSpotPrice(key);
+            return v > 0 ? v : 0;
+        } catch (Exception e) {
+            log.debug("Settlement spot fetch failed for {}: {}", underlying, e.getMessage());
+            return 0;
+        }
+    }
+
+    /** Intrinsic value of an option leg at the given underlying price, or -1 if unknown. */
+    static double intrinsicValue(Map<String, Object> leg, double spot) {
+        if (spot <= 0) return -1;
+        Integer strike = leg.get("strike") instanceof Number n ? n.intValue() : null;
+        String type = leg.get("optionType") instanceof String t ? t.toUpperCase() : null;
+        if ((strike == null || type == null) && leg.get("symbol") instanceof String sym) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+)(CE|PE)$").matcher(sym.toUpperCase());
+            if (m.find()) {
+                // Weekly Kite symbols put expiry digits right before the strike; NIFTY and
+                // BANKNIFTY strikes are 5 digits, so take the last five.
+                String digits = m.group(1);
+                if (strike == null && digits.length() >= 5) strike = Integer.parseInt(digits.substring(digits.length() - 5));
+                if (type == null) type = m.group(2);
+            }
+        }
+        if (strike == null || type == null) return -1;
+        return "CE".equals(type) ? Math.max(0, spot - strike) : Math.max(0, strike - spot);
+    }
+
+    /**
+     * Exit price used to settle an expired leg: intrinsic at the closing index on expiry day,
+     * otherwise the last known quote, otherwise intrinsic at current spot. -1 if nothing known.
+     */
+    static double settlementPrice(Map<String, Object> leg, Map<String, OptionChainService.OptionQuote> quotes,
+                                  double spot, boolean expiresToday) {
+        double intrinsic = intrinsicValue(leg, spot);
+        if (expiresToday && intrinsic >= 0) return intrinsic;
+        String symbol = leg.get("symbol") instanceof String s ? s : null;
+        OptionChainService.OptionQuote q = symbol != null ? quotes.get(symbol) : null;
+        if (q != null && q.lastPrice > 0) return q.lastPrice;
+        return intrinsic;
+    }
+
+    /** P&L of an expired multi-leg position settled leg by leg (see settlementPrice). */
+    double computeExpiryPnl(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes,
+                            double spot, boolean expiresToday) {
+        List<Map<String, Object>> legs = pos.getLegs();
+        if (legs == null || legs.isEmpty()) return 0;
+        int lotSize = pos.getLotSize() != null ? pos.getLotSize() : getLotSize(pos.getUnderlying());
+        int lots = pos.getLots() != null ? pos.getLots() : 1;
+        double pnl = 0;
+        for (Map<String, Object> leg : legs) {
+            double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
+            if (entry <= 0) continue;
+            double exit = settlementPrice(leg, quotes, spot, expiresToday);
+            if (exit < 0) {
+                // No quote, no strike info, no spot: fall back to the old worthless assumption.
+                exit = 0;
+            }
+            int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+            pnl += ("BUY".equals(leg.get("side")) ? exit - entry : entry - exit) * qtyMult;
+        }
+        return pnl * lotSize * lots;
+    }
+
     public double computeMultiLegPnl(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes) {
         List<Map<String, Object>> legs = pos.getLegs();
         if (legs == null || legs.isEmpty()) return 0;
@@ -2427,42 +2521,35 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             }
             Map<String, OptionChainService.OptionQuote> quotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
 
+            Map<String, Double> spots = new HashMap<>();
             int closed = 0;
             for (LivePosition pos : expired) {
                 boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
-                double pnl = isMultiLeg ? computeMultiLegPnl(pos, quotes) : computePnl(pos, quotes);
+                // Index options are cash-settled at intrinsic value against the closing index.
+                // On expiry day (after 15:30) the live index is that close; for older expiries
+                // the quote cache is preferred and intrinsic at current spot is only a fallback.
+                double spot = spots.computeIfAbsent(String.valueOf(pos.getUnderlying()).toUpperCase(), this::settlementSpot);
+                boolean expiresToday = today.equals(pos.getExpiryDate());
+                double pnl = isMultiLeg ? computeExpiryPnl(pos, quotes, spot, expiresToday) : computePnl(pos, quotes);
 
                 boolean isPaper = pos.getBroker() == null || "PAPER".equalsIgnoreCase(pos.getBroker());
                 if (!isPaper) {
-                    try {
-                        List<BrokerAccount> accounts = pos.getUserId() != null
-                                ? brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(pos.getUserId(), pos.getBroker(), "ACTIVE")
-                                : List.of();
-                        if (!accounts.isEmpty()) {
-                            BrokerAccount account = accounts.get(0);
-                            BrokerAdapter adapter = brokerService.getAdapter(pos.getBroker());
-                            boolean ok = isMultiLeg ? squareOffMultiLegPosition(account, adapter, pos) : squareOffPosition(account, adapter, pos);
-                            if (!ok) {
-                                addLog("AUTO_EXPIRE", "SQUAREOFF_FAILED", pos.getUnderlying() + " " + pos.getStrike() + " live square-off failed");
-                                continue;
-                            }
-                        }
-                    } catch (Exception e) {
-                        log.error("Auto-expire live close failed for {}: {}", pos.getId(), e.getMessage());
-                        continue;
-                    }
+                    // Expired contracts can't be traded; the exchange settles them. Sending
+                    // square-off orders here only failed and retried every minute forever.
+                    addLog("AUTO_EXPIRE", "SETTLED", pos.getUnderlying() + " " + pos.getStrike()
+                            + " live position expired, marked settled by exchange (verify in broker)");
+                    pos.setExitReason("EXPIRY_SETTLED");
+                } else if (pos.getExitReason() == null) {
+                    pos.setExitReason("EXPIRY_SETTLED");
                 }
 
                 if (pos.getLegs() != null && !pos.getLegs().isEmpty()) {
                     List<Map<String, Object>> legs = new ArrayList<>(pos.getLegs());
-                    for (Map<String, Object> leg : legs) {
-                        String symbol = (String) leg.get("symbol");
-                        if (symbol != null && quotes.containsKey(symbol)) {
-                            var q = quotes.get(symbol);
-                            boolean isBuy = "BUY".equals(leg.get("side"));
-                            double exitPrice = isBuy ? (q.bid > 0 ? q.bid : q.lastPrice) : (q.ask > 0 ? q.ask : q.lastPrice);
-                            leg.put("exitPrice", exitPrice);
-                        }
+                    for (int i = 0; i < legs.size(); i++) {
+                        Map<String, Object> leg = new LinkedHashMap<>(legs.get(i));
+                        double exitPrice = settlementPrice(leg, quotes, spot, expiresToday);
+                        if (exitPrice >= 0) leg.put("exitPrice", exitPrice);
+                        legs.set(i, leg);
                     }
                     pos.setLegs(legs);
                 } else {
@@ -2550,13 +2637,9 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         if (cfg.containsKey("maxDailyLoss")) saveSettingRaw(prefix + "maxDailyLoss", String.valueOf(cfg.get("maxDailyLoss")));
     }
 
-        public double getMinEdgeForStrategy(String stratId) {
+    public double getMinEdgeForStrategy(String stratId) {
         if (stratId == null) return 500.0;
-        String norm = stratId.toUpperCase().trim().replace(" ", "_");
-        if (norm.equals("BOX_SPREAD") || norm.equals("BOX_SPREAD_ARBITRAGE")) norm = "BOX_SPREAD_ARB";
-        if (norm.equals("CONDOR") || norm.equals("PUT/CALL_CONDOR_SPREAD")) norm = "CONDOR_SPREAD";
-        if (norm.equals("BUTTERFLY_SPREAD")) norm = "BUTTERFLY";
-        if (norm.equals("BID_PARITY_ARBITRAGE")) norm = "BID_PARITY";
+        String norm = normalizeStrategyId(stratId);
 
         String val = getSettingRaw("STRAT_" + norm + "_minEdge");
         if (val != null) {
@@ -2566,14 +2649,67 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
         return norm.startsWith("CASH") ? 3.5 : 500.0;
     }
 
+    /** Canonical Strategy Control Center id for a strategy type (same mapping as minEdge). */
+    public static String normalizeStrategyId(String stratId) {
+        if (stratId == null) return null;
+        String norm = stratId.toUpperCase().trim().replace(" ", "_");
+        if (norm.equals("BOX_SPREAD") || norm.equals("BOX_SPREAD_ARBITRAGE")) norm = "BOX_SPREAD_ARB";
+        if (norm.equals("CONDOR") || norm.equals("PUT/CALL_CONDOR_SPREAD")) norm = "CONDOR_SPREAD";
+        if (norm.equals("BUTTERFLY_SPREAD")) norm = "BUTTERFLY";
+        if (norm.equals("BID_PARITY_ARBITRAGE")) norm = "BID_PARITY";
+        return norm;
+    }
+
+    /**
+     * Strategy Control Center paper/live switch. Every non-PAPER broker counts as live.
+     * Only an explicitly saved setting blocks a strategy; if the user never touched the
+     * switch, the existing per-underlying enable flags keep deciding (no silent stop).
+     */
     public boolean isStrategyEnabledForMode(String stratId, String mode) {
         if (stratId == null) return true;
-        String normalized = stratId.toUpperCase().replace(" ", "_");
-        boolean isLive = "LIVE".equalsIgnoreCase(mode) || "ZERODHA".equalsIgnoreCase(mode) || "NAVIA".equalsIgnoreCase(mode);
-        String key = "STRAT_" + normalized + "_" + (isLive ? "liveEnabled" : "paperEnabled");
-        String val = getSettingRaw(key);
-        if (val == null) return !isLive; // Default: Paper true, Live false
-        return "true".equalsIgnoreCase(val);
+        boolean isLive = mode != null && !"PAPER".equalsIgnoreCase(mode);
+        String val = getSettingRaw("STRAT_" + normalizeStrategyId(stratId) + "_" + (isLive ? "liveEnabled" : "paperEnabled"));
+        return val == null || "true".equalsIgnoreCase(val.trim());
+    }
+
+    /** Explicitly saved STRAT_<ID>_<field> as a number, or null if never saved / unparsable. */
+    private Double strategySetting(String stratId, String field) {
+        if (stratId == null) return null;
+        String val = getSettingRaw("STRAT_" + normalizeStrategyId(stratId) + "_" + field);
+        if (val == null) return null;
+        try { return Double.parseDouble(val.trim()); } catch (Exception e) { return null; }
+    }
+
+    /** Lots from the Strategy Control Center if saved there, else the per-underlying setting. */
+    private int strategyLots(String stratId, int fallback) {
+        Double v = strategySetting(stratId, "lots");
+        return v != null && v >= 1 ? v.intValue() : fallback;
+    }
+
+    /**
+     * Strategy Control Center gate for maxActiveTrades and maxDailyLoss.
+     * Returns a rejection reason, or null if the trade may proceed.
+     */
+    private String strategyLimitBreach(String stratId, boolean paper) {
+        Double maxActive = strategySetting(stratId, "maxActiveTrades");
+        Double maxLoss = strategySetting(stratId, "maxDailyLoss");
+        if (maxActive == null && maxLoss == null) return null;
+        String norm = normalizeStrategyId(stratId);
+        java.util.function.Predicate<LivePosition> mine = p -> norm.equals(normalizeStrategyId(p.getStrategyType()))
+                && ("PAPER".equals(p.getBroker()) == paper);
+        if (maxActive != null) {
+            long active = positionRepo.findAllOpen().stream().filter(mine).count();
+            if (active >= maxActive) return "Strategy max active trades (" + maxActive.intValue() + ") reached";
+        }
+        if (maxLoss != null && maxLoss > 0) {
+            LocalDateTime dayStart = LocalDate.now(ZoneId.of("Asia/Kolkata")).atStartOfDay();
+            double pnl = positionRepo.findAll().stream().filter(mine)
+                    .filter(p -> "OPEN".equals(p.getStatus())
+                            || (p.getExitedAt() != null && !p.getExitedAt().isBefore(dayStart)))
+                    .mapToDouble(p -> p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0.0).sum();
+            if (pnl <= -maxLoss) return "Strategy daily loss limit ₹" + String.format("%.0f", maxLoss) + " hit (today ₹" + String.format("%.0f", pnl) + ")";
+        }
+        return null;
     }
 
     private String getSettingRaw(String key) {
