@@ -163,3 +163,28 @@ if [ -n "$LOGFILE" ] && [ -f "$LOGFILE" ]; then
     | sed -E 's/(₹|Rs\.?) ?-?[0-9][0-9,.]*/\1X/g' | cut -c1-200 | head -40
 fi
 REMOTE
+
+# F&O concurrency / streak / capital report. Rows go to a runner-local temp file and only the
+# aggregates computed by fno_capital_report.py are printed.
+echo
+echo "################ F&O capital report (all history) ################"
+ROWS=$(mktemp)
+ssh $SSH_OPTS "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' > "$ROWS" <<'REMOTE'
+set -u
+PID=$(systemctl show stokr-lite -p MainPID --value 2>/dev/null)
+ENV=""
+[ -n "$PID" ] && [ "$PID" != "0" ] && [ -r /proc/$PID/environ ] && ENV=$(tr '\0' '\n' < /proc/$PID/environ)
+ENV="$ENV
+$(systemctl show stokr-lite -p Environment --value 2>/dev/null | tr ' ' '\n')"
+CMD=$([ -n "$PID" ] && tr '\0' '\n' < /proc/$PID/cmdline 2>/dev/null)
+get() { { echo "$ENV" | sed -n "s/^$1=//p"; echo "$CMD" | sed -n "s/^--spring\.datasource\.$2=//p"; } | head -1; }
+URL=$(get SPRING_DATASOURCE_URL url); USER_=$(get SPRING_DATASOURCE_USERNAME username); PASS=$(get SPRING_DATASOURCE_PASSWORD password)
+URL=${URL:-jdbc:postgresql://localhost:5432/stokr_lite}
+HOSTPORT=$(echo "$URL" | sed -E 's#jdbc:postgresql://([^/]+)/.*#\1#'); DB=$(echo "$URL" | sed -E 's#.*/([^/?]+).*#\1#')
+export PGHOST=${HOSTPORT%%:*} PGPORT=${HOSTPORT##*:} PGDATABASE=$DB PGUSER=${USER_:-stokr} PGPASSWORD=${PASS:-stokr_pass}
+psql -X -tA -c "select coalesce(json_agg(t),'[]') from (select strategy_type, underlying, lots, lot_size, status, broker,
+  entered_at, exited_at, current_pnl, max_loss_amount, legs_json from live_positions
+  where status in ('CLOSED','EXITED') and entered_at is not null) t"
+REMOTE
+python3 "$(dirname "$0")/fno_capital_report.py" < "$ROWS" || echo "report failed"
+rm -f "$ROWS"
