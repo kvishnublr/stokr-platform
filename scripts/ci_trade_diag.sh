@@ -109,10 +109,10 @@ q "select entered_at::date d, broker, count(*) n, round(sum(current_pnl)) pnl
      from live_positions where entered_at >= current_date - 10 group by 1,2 order by 1 desc,2;"
 echo
 echo "=== History page APIs as the UI calls them (status / time / size; no data printed) ==="
-PORT=$(echo "$ENV" | sed -n 's/^SERVER_PORT=//p' | head -1); PORT=${PORT:-8080}
+PORT=$(echo "$ENV" | sed -n 's/^SERVER_PORT=//p' | head -1); PORT=${PORT:-8081}
 for path in /api/option-arbitrage/paper-trades /api/option-arbitrage/cash-history; do
   curl -s -o /tmp/diag_api.json -m 60 -w "$path -> HTTP %{http_code}, %{time_total}s, %{size_download} bytes\n" "http://127.0.0.1:${PORT}${path}"
-  python3 - "$PREV" <<'PY' 2>&1 | head -12
+  [ -s /tmp/diag_api.json ] && python3 - "$PREV" <<'PY' 2>&1 | head -12
 import json,sys,collections
 prev=sys.argv[1]
 try:
@@ -127,6 +127,12 @@ print('  strategies:',sorted({r.get('strategyType') for r in rows if r.get('stra
 PY
 done
 rm -f /tmp/diag_api.json
+echo
+echo "=== nginx: what browsers got from the history APIs today (no IPs) ==="
+for f in /var/log/nginx/access.log /var/log/nginx/access.log.1; do
+  [ -r "$f" ] && grep -E "option-arbitrage/(paper-trades|cash-history)" "$f" | awk '{print $7, $9, $10" bytes"}' | sed -E 's/\?.*? / /' | sort | uniq -c | sort -rn | head -10
+done
+grep -E "paper-trades" /var/log/nginx/error.log 2>/dev/null | tail -5 | sed -E 's/client: [0-9.]+/client: x/; s/server: [^,]+/server: x/'
 echo
 echo "=== Open positions right now ==="
 q "select broker, strategy_type, count(*) n, min(expiry_date) nearest_expiry from live_positions where status='OPEN' group by 1,2 order by 1,2;"
