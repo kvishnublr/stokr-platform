@@ -188,3 +188,27 @@ psql -X -tA -c "select coalesce(json_agg(t),'[]') from (select strategy_type, un
 REMOTE
 python3 "$(dirname "$0")/fno_capital_report.py" < "$ROWS" || echo "report failed"
 rm -f "$ROWS"
+
+echo
+echo "################ Box Spread / Bid Parity fill reality check ################"
+ROWS=$(mktemp)
+ssh $SSH_OPTS "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' > "$ROWS" <<'REMOTE'
+set -u
+PID=$(systemctl show stokr-lite -p MainPID --value 2>/dev/null)
+ENV=""
+[ -n "$PID" ] && [ "$PID" != "0" ] && [ -r /proc/$PID/environ ] && ENV=$(tr '\0' '\n' < /proc/$PID/environ)
+ENV="$ENV
+$(systemctl show stokr-lite -p Environment --value 2>/dev/null | tr ' ' '\n')"
+CMD=$([ -n "$PID" ] && tr '\0' '\n' < /proc/$PID/cmdline 2>/dev/null)
+get() { { echo "$ENV" | sed -n "s/^$1=//p"; echo "$CMD" | sed -n "s/^--spring\.datasource\.$2=//p"; } | head -1; }
+URL=$(get SPRING_DATASOURCE_URL url); USER_=$(get SPRING_DATASOURCE_USERNAME username); PASS=$(get SPRING_DATASOURCE_PASSWORD password)
+URL=${URL:-jdbc:postgresql://localhost:5432/stokr_lite}
+HOSTPORT=$(echo "$URL" | sed -E 's#jdbc:postgresql://([^/]+)/.*#\1#'); DB=$(echo "$URL" | sed -E 's#.*/([^/?]+).*#\1#')
+export PGHOST=${HOSTPORT%%:*} PGPORT=${HOSTPORT##*:} PGDATABASE=$DB PGUSER=${USER_:-stokr} PGPASSWORD=${PASS:-stokr_pass}
+psql -X -tA -c "select coalesce(json_agg(t order by t.id),'[]') from (select id, strategy_type, underlying, strike, action, expiry_date,
+  lots, lot_size, entered_at, exited_at, current_pnl, exit_reason, legs_json,
+  ce_entry_price, pe_entry_price, fut_entry_price, ce_exit_price, pe_exit_price, fut_exit_price
+  from live_positions where status in ('CLOSED','EXITED') and (strategy_type like 'BOX%' or strategy_type like 'BID_PARITY%')) t"
+REMOTE
+python3 "$(dirname "$0")/arb_reality_check.py" < "$ROWS" || echo "check failed"
+rm -f "$ROWS"
