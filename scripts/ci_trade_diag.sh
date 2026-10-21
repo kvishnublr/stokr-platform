@@ -141,6 +141,12 @@ if [ -n "$LOGFILE" ] && [ -f "$LOGFILE" ]; then
   [ -n "$L" ] && tail -n 200000 "$LOGFILE" | sed -n "${L},$((L+40))p" | grep -E "Exception|Caused by|at com\.stokr" | head -15 | cut -c1-250
 fi
 echo
+echo "=== Positions entered on 2026-10-20 (Dussehra holiday) by status ==="
+q "select 'cash' t, status, count(*) from cash_positions where entered_at >= date '2026-10-20' and entered_at < date '2026-10-21' group by 1,2
+   union all
+   select 'fno', status, count(*) from live_positions where entered_at >= date '2026-10-20' and entered_at < date '2026-10-21' group by 1,2;"
+q "select count(*) open_cash_now from cash_positions where status='OPEN';"
+echo
 echo "=== Open positions right now ==="
 q "select broker, strategy_type, count(*) n, min(expiry_date) nearest_expiry from live_positions where status='OPEN' group by 1,2 order by 1,2;"
 echo
