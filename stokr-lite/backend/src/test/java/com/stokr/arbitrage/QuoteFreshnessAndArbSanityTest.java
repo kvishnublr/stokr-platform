@@ -54,10 +54,10 @@ class QuoteFreshnessAndArbSanityTest {
 
     @Test
     void boxAndParityAreNeverAutoTraded() {
-        assertTrue(ArbSanity.autoTradeBlocked("BOX_SPREAD"));
-        assertTrue(ArbSanity.autoTradeBlocked("BOX_SPREAD_ARB"));
-        assertTrue(ArbSanity.autoTradeBlocked("BID_PARITY"));
-        assertFalse(ArbSanity.autoTradeBlocked("CONDOR_SPREAD"));
-        assertFalse(ArbSanity.autoTradeBlocked("BUTTERFLY_SPREAD"));
+        assertTrue(ArbSanity.autoTradeBlockedForLive("BOX_SPREAD"));
+        assertTrue(ArbSanity.autoTradeBlockedForLive("BOX_SPREAD_ARB"));
+        assertTrue(ArbSanity.autoTradeBlockedForLive("BID_PARITY"));
+        assertFalse(ArbSanity.autoTradeBlockedForLive("CONDOR_SPREAD"));
+        assertFalse(ArbSanity.autoTradeBlockedForLive("BUTTERFLY_SPREAD"));
     }
 }

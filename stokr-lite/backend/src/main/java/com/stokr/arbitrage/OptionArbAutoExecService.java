@@ -150,6 +150,11 @@ public class OptionArbAutoExecService {
 
     public void updateSetting(String mode, String key, String value) {
         String profileKey = mode != null ? mode.toUpperCase() : "PAPER";
+        // HARD SAFETY BLOCK: Only PAPER auto-execution is permitted across the platform
+        if ("LIVE".equalsIgnoreCase(profileKey) && ("enabled".equals(key) || key.endsWith("Enabled")) && Boolean.parseBoolean(value)) {
+            log.warn("Auto-exec: BLOCKED attempt to enable LIVE setting {}. ONLY PAPER auto-execution is permitted.", key);
+            return;
+        }
         Map<String, Object> settings = autoExecSettings.computeIfAbsent(profileKey, k -> new ConcurrentHashMap<>());
         
         if ("enabled".equals(key)) settings.put("enabled", Boolean.parseBoolean(value));
@@ -492,7 +497,11 @@ public class OptionArbAutoExecService {
         if (!opps.isEmpty()) evaluateAndExecute(opps);
     }
 
-public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) {        for (String key : autoExecSettings.keySet()) {            if ("global".equalsIgnoreCase(key)) continue;            evaluateAndExecuteForMode(newOpps, key, autoExecSettings.getOrDefault(key, java.util.Map.of()));        }    }
+public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) {
+        // Enforce system policy: ONLY PAPER auto-execution is permitted.
+        Map<String, Object> paperSettings = autoExecSettings.getOrDefault("PAPER", java.util.Map.of());
+        evaluateAndExecuteForMode(newOpps, "PAPER", paperSettings);
+    }
     
 
     private void executePaperTrades(List<OptionArbOpportunity> newOpps, Map<String, Object> settings) {
@@ -503,7 +512,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 log.info("Auto-exec rejected non-allowed symbol {}: Only NIFTY and BANKNIFTY are allowed", opp.getUnderlying());
                 continue;
             }
-            if (ArbSanity.autoTradeBlocked(opp.getStrategyType())) continue; // stale-quote artifacts, see ArbSanity
+            // Box & Bid Parity allowed in paper auto-exec with active bid/ask fills
             if (opp.getEdgePoints() == null) continue;
 
             String prefix = strategyPrefix(opp.getStrategyType());
@@ -632,60 +641,90 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 positionRepo.save(livePos);
                 addLog("EXEC", "PAPER", "Auto-executed PAPER trade for " + opp.getUnderlying() + " (" + resolvedLegs.size() + " legs)");
             } else {
-                double ceLive = 0, peLive = 0;
                 String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
                 String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
-                Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(List.of(ceSymbol, peSymbol));
-                boolean isReversal = "REVERSAL".equalsIgnoreCase(opp.getAction());
-                // Entry: REVERSAL = SELL CE + BUY PE, CONVERSION = BUY CE + SELL PE
-                var ceQ = quotes.containsKey(ceSymbol) ? quotes.get(ceSymbol) : null;
-                var peQ = quotes.containsKey(peSymbol) ? quotes.get(peSymbol) : null;
-                if (ceQ != null) ceLive = isReversal ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice);
-                if (peQ != null) peLive = isReversal ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice);
-                if (ceLive > 0) opp.setCeEntryPrice(BigDecimal.valueOf(ceLive));
-                if (peLive > 0) opp.setPeEntryPrice(BigDecimal.valueOf(peLive));
-
                 String futSymbol = optionChainService.buildNfoFutSymbol(opp.getUnderlying(), opp.getExpiryDate());
-                double futLive = 0;
-                if (futSymbol != null) {
-                    try {
-                        var futQuotes = optionChainService.fetchQuotes(List.of(futSymbol));
-                        if (futQuotes.containsKey(futSymbol)) {
-                            var futQ = futQuotes.get(futSymbol);
-                            boolean isBuyFut = opp.getAction() != null && opp.getAction().contains("BUY FUT");
-                            futLive = isBuyFut ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice);
-                        }
-                    } catch (Exception ignored) {}
+
+                List<String> paritySymbols = new ArrayList<>();
+                if (ceSymbol != null) paritySymbols.add(ceSymbol);
+                if (peSymbol != null) paritySymbols.add(peSymbol);
+                if (futSymbol != null) paritySymbols.add(futSymbol);
+
+                Map<String, OptionChainService.OptionQuote> quotes = paritySymbols.isEmpty() 
+                        ? Map.of() : optionChainService.fetchQuotes(paritySymbols);
+
+                // Paper fills only against a fresh two-sided market -- never LTP or stale cache.
+                String untradable = paritySymbols.size() < 3 ? "unresolved parity symbol"
+                        : OptionChainService.firstUntradable(paritySymbols, quotes);
+                if (untradable != null) {
+                    opp.setStatus(prevStatus);
+                    oppRepo.save(opp);
+                    addLog("PAPER_SKIP", "NO_QUOTE", opp.getStrategyType() + " " + opp.getUnderlying() + " skipped: " + untradable);
+                    continue;
                 }
-                
+
+                boolean isReversal = "REVERSAL".equalsIgnoreCase(opp.getAction());
+                boolean isBuyFut = opp.getAction() != null && opp.getAction().contains("BUY FUT");
+                var ceQ = quotes.get(ceSymbol);
+                var peQ = quotes.get(peSymbol);
+                var futQ = quotes.get(futSymbol);
+
+                // Strictly active bid/ask fills:
+                // REVERSAL: SELL CE (bid) + BUY PE (ask) + BUY FUT (ask)
+                // CONVERSION: BUY CE (ask) + SELL PE (bid) + SELL FUT (bid)
+                double ceLive = isReversal ? ceQ.bid : ceQ.ask;
+                double peLive = isReversal ? peQ.ask : peQ.bid;
+                double futLive = isBuyFut ? futQ.ask : futQ.bid;
+
+                if (ceLive <= 0 || peLive <= 0 || futLive <= 0) {
+                    opp.setStatus(prevStatus);
+                    oppRepo.save(opp);
+                    addLog("PAPER_SKIP", "NO_QUOTE", opp.getStrategyType() + " " + opp.getUnderlying() + " invalid price");
+                    continue;
+                }
+
+                opp.setCeEntryPrice(BigDecimal.valueOf(ceLive));
+                opp.setPeEntryPrice(BigDecimal.valueOf(peLive));
+
                 LivePosition livePos = LivePosition.builder()
                     .userId(1L).broker("PAPER").opportunityId(opp.getId())
                     .underlying(opp.getUnderlying()).strike(opp.getStrike()).action(opp.getAction())
                     .strategyType(opp.getStrategyType()).expiryDate(opp.getExpiryDate()).lots(lots).lotSize(lotSize)
-                    .ceEntryPrice(ceLive > 0 ? BigDecimal.valueOf(ceLive) : null)
-                    .peEntryPrice(peLive > 0 ? BigDecimal.valueOf(peLive) : null)
-                    .futEntryPrice(futLive > 0 ? BigDecimal.valueOf(futLive) : null)
+                    .ceEntryPrice(BigDecimal.valueOf(ceLive))
+                    .peEntryPrice(BigDecimal.valueOf(peLive))
+                    .futEntryPrice(BigDecimal.valueOf(futLive))
                     .futSymbol(futSymbol).ceSymbol(ceSymbol).peSymbol(peSymbol)
                     .targetEdge(opp.getEdgeAfterCosts())
-                    .entryCost(BigDecimal.valueOf((ceLive + peLive + futLive) * lotSize))
+                    .entryCost(BigDecimal.valueOf((ceLive + peLive + futLive) * lotSize * lots))
                     .status("OPEN").enteredAt(LocalDateTime.now()).createdAt(LocalDateTime.now()).build();
                 positionRepo.save(livePos);
-                addLog("EXEC", "PAPER", "Auto-executed PAPER Bid Parity trade for " + opp.getUnderlying());
+                addLog("EXEC", "PAPER", "Auto-executed PAPER Bid Parity trade for " + opp.getUnderlying() + " @ CE:" + ceLive + " PE:" + peLive + " FUT:" + futLive);
             }
         }
     }
 
     private void evaluateAndExecuteForMode(List<OptionArbOpportunity> newOpps, String mode, Map<String, Object> settings) {
+        // HARD SAFETY BLOCK: Only PAPER auto-execution is permitted across the platform
+        if (!"PAPER".equalsIgnoreCase(mode)) {
+            log.warn("Auto-exec: BLOCKED non-paper execution mode '{}'. ONLY PAPER auto-execution is allowed.", mode);
+            return;
+        }
         if (!Boolean.TRUE.equals(settings.get("enabled"))) return;
 
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
         if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 29))) return;
 
-        String broker = (String) settings.getOrDefault("broker", "NAVIA");
-        if ("PAPER".equalsIgnoreCase(broker) || "PAPER".equalsIgnoreCase(mode)) {
-            executePaperTrades(newOpps, settings);
+        String broker = (String) settings.getOrDefault("broker", "PAPER");
+        if (!"PAPER".equalsIgnoreCase(broker)) {
+            log.warn("Auto-exec: BLOCKED non-paper broker '{}'. ONLY PAPER auto-execution is allowed.", broker);
             return;
         }
+        executePaperTrades(newOpps, settings);
+        return;
+    }
+
+    private void _disabledLiveEvaluateAndExecuteForMode(List<OptionArbOpportunity> newOpps, String mode, Map<String, Object> settings) {
+        String broker = (String) settings.getOrDefault("broker", "PAPER");
         int maxPositions = (int) settings.getOrDefault("maxOpenPositions", 1);
         long currentOpen = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream().filter(p -> !"PAPER".equals(p.getBroker())).mapToInt(p -> p.getLots() != null ? p.getLots() : 1).sum();
         if (currentOpen >= maxPositions) return;
@@ -748,7 +787,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 log.info("Auto-exec rejected non-allowed symbol {}: Only NIFTY and BANKNIFTY are allowed", opp.getUnderlying());
                 continue;
             }
-            if (ArbSanity.autoTradeBlocked(opp.getStrategyType())) continue; // stale-quote artifacts, see ArbSanity
+            if (ArbSanity.autoTradeBlockedForLive(opp.getStrategyType())) continue; // protected from live multi-leg slippage
 
             // Per-strategy, per-underlying key -- e.g. BOX_SPREAD on NIFTY reads
             // "boxNiftyEnabled"/"boxNiftyMinEdge"/"boxNiftyLots", independent of Bid Parity's
@@ -955,15 +994,27 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 }
                 pnl = computeMultiLegPnl(pos, quotes);
             } else {
+                List<String> parityLegs = new ArrayList<>();
+                if (pos.getCeSymbol() != null) parityLegs.add(pos.getCeSymbol());
+                if (pos.getPeSymbol() != null) parityLegs.add(pos.getPeSymbol());
+                if (pos.getFutSymbol() != null) parityLegs.add(pos.getFutSymbol());
+
+                String untradable = OptionChainService.firstUntradable(parityLegs, quotes);
+                if (untradable != null) {
+                    log.debug("Exit check skipped for Bid Parity position {} — {}", pos.getId(), untradable);
+                    continue;
+                }
+
                 String actionStr = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
                 boolean ceLong = actionStr.contains("BUY CE");
                 var ceQ = pos.getCeSymbol() != null ? quotes.get(pos.getCeSymbol()) : null;
                 var peQ = pos.getPeSymbol() != null ? quotes.get(pos.getPeSymbol()) : null;
                 var futQ = pos.getFutSymbol() != null ? quotes.get(pos.getFutSymbol()) : null;
-                // Exit/mark-to-market: closing a BUY uses bid, closing a SELL uses ask
-                ceCurrent = ceQ != null ? (ceLong ? (ceQ.bid > 0 ? ceQ.bid : ceQ.lastPrice) : (ceQ.ask > 0 ? ceQ.ask : ceQ.lastPrice)) : 0;
-                peCurrent = peQ != null ? (ceLong ? (peQ.ask > 0 ? peQ.ask : peQ.lastPrice) : (peQ.bid > 0 ? peQ.bid : peQ.lastPrice)) : 0;
-                futCurrent = futQ != null ? (ceLong ? (futQ.ask > 0 ? futQ.ask : futQ.lastPrice) : (futQ.bid > 0 ? futQ.bid : futQ.lastPrice)) : 0;
+
+                // Exit/mark-to-market: closing a BUY uses bid, closing a SELL uses ask -- strictly active bid/ask
+                ceCurrent = ceQ != null ? (ceLong ? ceQ.bid : ceQ.ask) : 0;
+                peCurrent = peQ != null ? (ceLong ? peQ.ask : peQ.bid) : 0;
+                futCurrent = futQ != null ? (ceLong ? futQ.ask : futQ.bid) : 0;
 
                 double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
                 double peEntry = pos.getPeEntryPrice() != null ? pos.getPeEntryPrice().doubleValue() : 0;
@@ -2691,6 +2742,10 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
     public boolean isStrategyEnabledForMode(String stratId, String mode) {
         if (stratId == null) return true;
         boolean isLive = mode != null && !"PAPER".equalsIgnoreCase(mode);
+        if (isLive) {
+            // Live auto-execution is strictly disabled
+            return false;
+        }
         String val = getSettingRaw("STRAT_" + normalizeStrategyId(stratId) + "_" + (isLive ? "liveEnabled" : "paperEnabled"));
         return val == null || "true".equalsIgnoreCase(val.trim());
     }

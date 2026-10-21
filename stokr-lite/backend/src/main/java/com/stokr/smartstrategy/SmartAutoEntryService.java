@@ -170,7 +170,7 @@ public class SmartAutoEntryService {
             // Apply timing multiplier to composite scores
             for (Map<String, Object> opp : ranked) {
                 String stratTypeCheck = String.valueOf(opp.get("strategyType"));
-                if (com.stokr.arbitrage.ArbSanity.autoTradeBlocked(stratTypeCheck)) continue; // stale-quote artifacts
+                // Box/Parity permitted in paper with active bid/ask fills
                 if (!isStrategyEnabled(stratTypeCheck)) {
                     log.info("SMART_AUTO: Skipped disabled strategy in config: {}", stratTypeCheck);
                     continue;
@@ -200,7 +200,7 @@ public class SmartAutoEntryService {
             int entered = 0;
             for (Map<String, Object> opp : ranked) {
                 String stratTypeCheck = String.valueOf(opp.get("strategyType"));
-                if (com.stokr.arbitrage.ArbSanity.autoTradeBlocked(stratTypeCheck)) continue; // stale-quote artifacts
+                // Box/Parity permitted in paper with active bid/ask fills
                 if (!isStrategyEnabled(stratTypeCheck)) {
                     log.info("SMART_AUTO: Skipped disabled strategy in config: {}", stratTypeCheck);
                     continue;

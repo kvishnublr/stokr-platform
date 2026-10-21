@@ -20,9 +20,17 @@ public final class ArbSanity {
         return false;
     }
 
-    /** Box and Bid Parity are excluded from all automatic entries (paper and live). */
-    public static boolean autoTradeBlocked(String strategyType) {
+    /**
+     * Box and Bid Parity are excluded from real-money LIVE execution to prevent
+     * slippage on multi-leg arbitrage, but permitted in PAPER auto-execution
+     * when filled against fresh, active bid/ask quotes.
+     */
+    public static boolean autoTradeBlockedForLive(String strategyType) {
         String s = strategyType == null ? "" : strategyType.toUpperCase();
         return s.contains("BOX") || s.contains("PARITY");
+    }
+
+    public static boolean autoTradeBlocked(String strategyType) {
+        return autoTradeBlockedForLive(strategyType);
     }
 }
