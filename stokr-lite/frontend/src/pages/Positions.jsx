@@ -1443,20 +1443,37 @@ function StrategyConfigurationControlPanel({ fnoHistory, cashHistory }) {
     refetchInterval: 10000,
   });
 
+  // Fetch Live Portfolio Daily Risk & Circuit Breaker status
+  const { data: serverPortfolioRisk, refetch: refetchPortfolioRisk } = useQuery({
+    queryKey: ['portfolioDailyRisk'],
+    queryFn: () => client.get('/option-arbitrage/portfolio-daily-risk').then(r => r.data),
+    refetchInterval: 5000,
+  });
+
+  const [portfolioRisk, setPortfolioRisk] = useState({
+    globalMaxDailyLoss: 5000,
+    globalMaxDailyProfit: 10000,
+    todayRealizedPnl: 0,
+    todayUnrealizedPnl: 0,
+    todayNetPnl: 0,
+    halted: false,
+    haltReason: null,
+  });
+
   const defaultStrategies = useMemo(() => ({
-    BID_PARITY: { strategyId: 'BID_PARITY', name: 'Bid Parity Arbitrage', icon: '⚡', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Pure risk-free mispricing arbitrage between futures and synthetic options.' },
-    BOX_SPREAD_ARB: { strategyId: 'BOX_SPREAD_ARB', name: 'Box Spread Arbitrage', icon: '📦', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: '4-leg zero-delta convexity bound arbitrage.' },
-    CONDOR_SPREAD: { strategyId: 'CONDOR_SPREAD', name: 'Put/Call Condor Spread', icon: '🎯', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Defined-risk 4-leg range theta accumulation.' },
-    IRON_CONDOR: { strategyId: 'IRON_CONDOR', name: 'Iron Condor Spread', icon: '🛡️', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Symmetric OTM credit spread with tight wings.' },
-    BUTTERFLY: { strategyId: 'BUTTERFLY', name: 'Butterfly Spread', icon: '🦋', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'High win-rate centered pin butterfly.' },
-    RATIO_BUTTERFLY: { strategyId: 'RATIO_BUTTERFLY', name: 'Ratio Butterfly', icon: '🎀', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Asymmetric ratio butterfly for directional skew.' },
-    BROKEN_WING_BUTTERFLY: { strategyId: 'BROKEN_WING_BUTTERFLY', name: 'Broken Wing Butterfly', icon: '🔥', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Skews risk to zero on one side with credit buffer.' },
-    VERTICAL: { strategyId: 'VERTICAL', name: 'Vertical Spread', icon: '📐', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: '2-leg directional vertical spread.' },
-    MORNING_THETA: { strategyId: 'MORNING_THETA', name: 'Morning Theta Crush', icon: '🌅', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Early morning volatility crush entry.' },
-    JADE_LIZARD: { strategyId: 'JADE_LIZARD', name: 'Jade Lizard', icon: '🦎', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Short put + credit call spread.' },
-    ADAPTIVE: { strategyId: 'ADAPTIVE', name: 'Adaptive Multi-Leg', icon: '⚙️', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, desc: 'Dynamic score-based multi-leg selector.' },
-    CASH_SURGE: { strategyId: 'CASH_SURGE', name: 'Cash Institutional Surge', icon: '📈', category: 'CASH', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 5, minEdge: 3.5, maxDailyLoss: 5000, desc: 'High-volume delivery accumulation breakout.' },
-    CASH_SWING: { strategyId: 'CASH_SWING', name: 'Cash Swing Accumulation', icon: '📊', category: 'CASH', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 5, minEdge: 3.5, maxDailyLoss: 5000, desc: '3-day institutional swing momentum setup.' },
+    BID_PARITY: { strategyId: 'BID_PARITY', name: 'Bid Parity Arbitrage', icon: '⚡', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, maxDailyProfit: 5000, desc: 'Pure risk-free mispricing arbitrage between futures and synthetic options.' },
+    BOX_SPREAD_ARB: { strategyId: 'BOX_SPREAD_ARB', name: 'Box Spread Arbitrage', icon: '📦', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, maxDailyProfit: 5000, desc: '4-leg zero-delta convexity bound arbitrage.' },
+    CONDOR_SPREAD: { strategyId: 'CONDOR_SPREAD', name: 'Put/Call Condor Spread', icon: '🎯', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, maxDailyProfit: 5000, desc: 'Defined-risk 4-leg range theta accumulation.' },
+    IRON_CONDOR: { strategyId: 'IRON_CONDOR', name: 'Iron Condor Spread', icon: '🛡️', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, maxDailyProfit: 5000, desc: 'Symmetric OTM credit spread with tight wings.' },
+    BUTTERFLY: { strategyId: 'BUTTERFLY', name: 'Butterfly Spread', icon: '🦋', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, maxDailyProfit: 5000, desc: 'High win-rate centered pin butterfly.' },
+    RATIO_BUTTERFLY: { strategyId: 'RATIO_BUTTERFLY', name: 'Ratio Butterfly', icon: '🎀', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, maxDailyProfit: 5000, desc: 'Asymmetric ratio butterfly for directional skew.' },
+    BROKEN_WING_BUTTERFLY: { strategyId: 'BROKEN_WING_BUTTERFLY', name: 'Broken Wing Butterfly', icon: '🔥', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, maxDailyProfit: 5000, desc: 'Skews risk to zero on one side with credit buffer.' },
+    VERTICAL: { strategyId: 'VERTICAL', name: 'Vertical Spread', icon: '📐', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, maxDailyProfit: 5000, desc: '2-leg directional vertical spread.' },
+    MORNING_THETA: { strategyId: 'MORNING_THETA', name: 'Morning Theta Crush', icon: '🌅', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, maxDailyProfit: 5000, desc: 'Early morning volatility crush entry.' },
+    JADE_LIZARD: { strategyId: 'JADE_LIZARD', name: 'Jade Lizard', icon: '🦎', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, maxDailyProfit: 5000, desc: 'Short put + credit call spread.' },
+    ADAPTIVE: { strategyId: 'ADAPTIVE', name: 'Adaptive Multi-Leg', icon: '⚙️', category: 'FNO', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 2, minEdge: 1500, maxDailyLoss: 3000, maxDailyProfit: 5000, desc: 'Dynamic score-based multi-leg selector.' },
+    CASH_SURGE: { strategyId: 'CASH_SURGE', name: 'Cash Institutional Surge', icon: '📈', category: 'CASH', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 5, minEdge: 3.5, maxDailyLoss: 5000, maxDailyProfit: 10000, desc: 'High-volume delivery accumulation breakout.' },
+    CASH_SWING: { strategyId: 'CASH_SWING', name: 'Cash Swing Accumulation', icon: '📊', category: 'CASH', paperEnabled: true, liveEnabled: false, lots: 1, maxActiveTrades: 5, minEdge: 3.5, maxDailyLoss: 5000, maxDailyProfit: 10000, desc: '3-day institutional swing momentum setup.' },
   }), []);
 
   const [configs, setConfigs] = useState(defaultStrategies);
@@ -1472,8 +1489,30 @@ function StrategyConfigurationControlPanel({ fnoHistory, cashHistory }) {
         }
         return next;
       });
+      if (serverConfigs._PORTFOLIO_RISK_) {
+        setPortfolioRisk(prev => ({
+          ...prev,
+          ...serverConfigs._PORTFOLIO_RISK_,
+        }));
+      }
     }
   }, [serverConfigs]);
+
+  useEffect(() => {
+    if (serverPortfolioRisk) {
+      setPortfolioRisk(prev => ({
+        ...prev,
+        ...serverPortfolioRisk,
+      }));
+    }
+  }, [serverPortfolioRisk]);
+
+  const updatePortfolioRiskField = (field, val) => {
+    setPortfolioRisk(prev => ({
+      ...prev,
+      [field]: val,
+    }));
+  };
 
   // Compute Performance Badges from history
   const perfMap = useMemo(() => {
@@ -1510,12 +1549,20 @@ function StrategyConfigurationControlPanel({ fnoHistory, cashHistory }) {
   };
 
   const saveAllConfigs = async (customConfigObj = null) => {
-    const toSave = customConfigObj || configs;
+    const baseConfigs = customConfigObj || configs;
+    const toSave = {
+      ...baseConfigs,
+      _PORTFOLIO_RISK_: {
+        globalMaxDailyLoss: portfolioRisk.globalMaxDailyLoss || 5000,
+        globalMaxDailyProfit: portfolioRisk.globalMaxDailyProfit || 10000,
+      }
+    };
     try {
       setSaveStatus('SAVING');
       await client.post('/option-arbitrage/strategy-configs', toSave);
       setSaveStatus('SUCCESS');
       refetchConfigs();
+      refetchPortfolioRisk();
       setTimeout(() => setSaveStatus(null), 3000);
     } catch (e) {
       setSaveStatus('ERROR');
@@ -1657,6 +1704,94 @@ function StrategyConfigurationControlPanel({ fnoHistory, cashHistory }) {
             >
               🧪 Enable All Paper Test
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* PORTFOLIO-LEVEL DAILY RISK & CIRCUIT BREAKER BANNER */}
+      <div className={`rounded-2xl border p-5 shadow-sm space-y-4 transition-all ${portfolioRisk.halted ? 'bg-rose-50/70 border-rose-300 ring-2 ring-rose-500/20' : 'bg-white border-slate-200'}`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl p-2.5 rounded-2xl bg-slate-100 border border-slate-200">???</span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-black text-slate-900 tracking-tight">Portfolio Daily Risk &amp; Circuit Breakers (Entire Day)</h3>
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">Account-Wide</span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium">Automatic circuit breaker: halts all automated new entries across all strategies when daily loss limit or profit target is hit.</p>
+            </div>
+          </div>
+
+          <div>
+            {portfolioRisk.halted ? (
+              <div className="px-3.5 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-black shadow-md flex items-center gap-1.5 animate-pulse">
+                <span>??</span>
+                <span>CIRCUIT BREAKER ACTIVE: TRADING HALTED</span>
+              </div>
+            ) : (
+              <div className="px-3.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-300 text-xs font-black flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                <span>TRADING ACTIVE (Within Limits)</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Status Callout if Halted */}
+        {portfolioRisk.halted && portfolioRisk.haltReason && (
+          <div className="p-3 bg-rose-100 border border-rose-300 rounded-xl text-xs font-bold text-rose-900 flex items-center gap-2">
+            <span className="text-base">??</span>
+            <span>{portfolioRisk.haltReason}</span>
+          </div>
+        )}
+
+        {/* Inputs & Live Day P&L Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+          {/* Max Daily Loss Limit */}
+          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-black uppercase tracking-wider text-rose-600">Max Daily Loss Limit (₹)</label>
+              <span className="text-[9px] font-mono font-bold text-slate-400">Circuit Breaker</span>
+            </div>
+            <input
+              type="number"
+              step={500}
+              value={portfolioRisk.globalMaxDailyLoss || 5000}
+              onChange={(e) => updatePortfolioRiskField('globalMaxDailyLoss', Number(e.target.value))}
+              className="w-full text-base font-black bg-white border border-slate-300 rounded-lg p-2 text-rose-700 focus:ring-2 focus:ring-rose-500"
+            />
+            <p className="text-[10px] text-slate-500 font-medium">Stops all new entries for the day if net P&amp;L drops to -₹{(portfolioRisk.globalMaxDailyLoss || 5000).toLocaleString('en-IN')}</p>
+          </div>
+
+          {/* Daily Profit Target / Lock */}
+          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Daily Profit Target (₹)</label>
+              <span className="text-[9px] font-mono font-bold text-slate-400">Lock-In Gains</span>
+            </div>
+            <input
+              type="number"
+              step={500}
+              value={portfolioRisk.globalMaxDailyProfit || 10000}
+              onChange={(e) => updatePortfolioRiskField('globalMaxDailyProfit', Number(e.target.value))}
+              className="w-full text-base font-black bg-white border border-slate-300 rounded-lg p-2 text-emerald-700 focus:ring-2 focus:ring-emerald-500"
+            />
+            <p className="text-[10px] text-slate-500 font-medium">Locks in profits and halts new entries when +₹{(portfolioRisk.globalMaxDailyProfit || 10000).toLocaleString('en-IN')} is reached (0 to disable)</p>
+          </div>
+
+          {/* Real-time Day P&L Meter */}
+          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1.5 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Today's Net P&amp;L</span>
+              <span className="text-[9px] font-bold text-slate-400">Live (Realized + MTM)</span>
+            </div>
+            <div className={`text-xl font-black font-mono ${portfolioRisk.todayNetPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {portfolioRisk.todayNetPnl >= 0 ? '+' : ''}₹{Math.round(portfolioRisk.todayNetPnl || 0).toLocaleString('en-IN')}
+            </div>
+            <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 border-t border-slate-200 pt-1.5">
+              <span>Realized: <strong className={portfolioRisk.todayRealizedPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}>{portfolioRisk.todayRealizedPnl >= 0 ? '+' : ''}₹{Math.round(portfolioRisk.todayRealizedPnl || 0).toLocaleString('en-IN')}</strong></span>
+              <span>Open MTM: <strong className={portfolioRisk.todayUnrealizedPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}>{portfolioRisk.todayUnrealizedPnl >= 0 ? '+' : ''}₹{Math.round(portfolioRisk.todayUnrealizedPnl || 0).toLocaleString('en-IN')}</strong></span>
+            </div>
           </div>
         </div>
       </div>
@@ -1826,6 +1961,18 @@ function StrategyConfigurationControlPanel({ fnoHistory, cashHistory }) {
                         className="w-full text-xs font-black bg-white border border-slate-300 rounded-lg p-1 text-rose-700 focus:ring-2 focus:ring-rose-500"
                       />
                     </div>
+
+                    {/* Max Daily Profit Cap */}
+                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Daily Profit Cap (₹)</label>
+                      <input
+                        type="number"
+                        step={500}
+                        value={item.maxDailyProfit || 5000}
+                        onChange={(e) => updateStrategyField(key, 'maxDailyProfit', Number(e.target.value))}
+                        className="w-full text-xs font-black bg-white border border-slate-300 rounded-lg p-1 text-emerald-700 focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
                   </div>
 
                 </div>
@@ -1950,6 +2097,28 @@ function StrategyConfigurationControlPanel({ fnoHistory, cashHistory }) {
                         value={item.minEdge || 3.5}
                         onChange={(e) => updateStrategyField(key, 'minEdge', Number(e.target.value))}
                         className="w-full text-xs font-black bg-white border border-slate-300 rounded-lg p-1 text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Daily Loss Cap (₹)</label>
+                      <input
+                        type="number"
+                        step={500}
+                        value={item.maxDailyLoss || 5000}
+                        onChange={(e) => updateStrategyField(key, 'maxDailyLoss', Number(e.target.value))}
+                        className="w-full text-xs font-black bg-white border border-slate-300 rounded-lg p-1 text-rose-700 focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+
+                    <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Daily Profit Cap (₹)</label>
+                      <input
+                        type="number"
+                        step={500}
+                        value={item.maxDailyProfit || 10000}
+                        onChange={(e) => updateStrategyField(key, 'maxDailyProfit', Number(e.target.value))}
+                        className="w-full text-xs font-black bg-white border border-slate-300 rounded-lg p-1 text-emerald-700 focus:ring-2 focus:ring-emerald-500"
                       />
                     </div>
                   </div>

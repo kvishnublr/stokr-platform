@@ -530,6 +530,14 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
     
 
     private void executePaperTrades(List<OptionArbOpportunity> newOpps, Map<String, Object> settings) {
+        PortfolioRiskCalculator.PortfolioRiskStatus dailyRisk = 
+                PortfolioRiskCalculator.evaluateDailyRisk(positionRepo, autoExecSettingRepo, 1L, "PAPER");
+        if (dailyRisk.halted) {
+            log.info("Auto-exec PAPER halted: {}", dailyRisk.haltReason);
+            addLog("RISK", "STOPPED", dailyRisk.haltReason);
+            return;
+        }
+
         long currentOpen = positionRepo.countOpenLive(); 
         for (OptionArbOpportunity opp : newOpps) {
             if (opp.getUnderlying() == null || opp.getEdgeAfterCosts() == null) continue;
@@ -791,38 +799,11 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             return;
         }
 
-        double maxDailyLoss = ((Number) settings.getOrDefault("maxDailyLoss", 5000.0)).doubleValue();
-        double todayPnl = 0;
-        try {
-            List<LivePosition> openPos = positionRepo.findAllOpen();
-            if (!openPos.isEmpty()) {
-                List<String> syms = new ArrayList<>();
-                for (LivePosition p : openPos) {
-                    if (p.getCeSymbol() != null) syms.add(p.getCeSymbol());
-                    if (p.getPeSymbol() != null) syms.add(p.getPeSymbol());
-                    if (p.getFutSymbol() != null) syms.add(p.getFutSymbol());
-                    if (p.getLegs() != null) {
-                        for (Map<String, Object> leg : p.getLegs()) {
-                            Object sym = leg.get("symbol");
-                            if (sym instanceof String s) syms.add(s);
-                        }
-                    }
-                }
-                Map<String, OptionChainService.OptionQuote> q = syms.isEmpty() ? Map.of() : optionChainService.fetchQuotes(syms);
-                for (LivePosition p : openPos) {
-                    boolean isMultiLegPos = p.getLegs() != null && !p.getLegs().isEmpty();
-                    todayPnl += isMultiLegPos ? computeMultiLegPnl(p, q) : computePnl(p, q);
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Daily loss quote fetch failed, using stored values: {}", e.getMessage());
-            todayPnl = positionRepo.findAllOpen().stream()
-                    .filter(p -> p.getCurrentPnl() != null)
-                    .mapToDouble(p -> p.getCurrentPnl().doubleValue())
-                    .sum();
-        }
-        if (todayPnl < -maxDailyLoss) {
-            addLog("RISK", "STOPPED", "Daily loss limit hit: ₹" + String.format("%.0f", todayPnl));
+        PortfolioRiskCalculator.PortfolioRiskStatus dailyRisk = 
+                PortfolioRiskCalculator.evaluateDailyRisk(positionRepo, autoExecSettingRepo, userId, broker);
+        if (dailyRisk.halted) {
+            log.info("Auto-exec LIVE halted: {}", dailyRisk.haltReason);
+            addLog("RISK", "STOPPED", dailyRisk.haltReason);
             return;
         }
 
@@ -2749,8 +2730,10 @@ for (LivePosition pos : openPositions) {
             cfg.put("maxActiveTrades", parseInt(getSettingRaw(prefix + "maxActiveTrades"), strat.startsWith("CASH") ? 5 : 2));
             cfg.put("minEdge", parseDouble(getSettingRaw(prefix + "minEdge"), strat.startsWith("CASH") ? 3.5 : 1500.0));
             cfg.put("maxDailyLoss", parseDouble(getSettingRaw(prefix + "maxDailyLoss"), 3000.0));
+            cfg.put("maxDailyProfit", parseDouble(getSettingRaw(prefix + "maxDailyProfit"), 5000.0));
             res.put(strat, cfg);
         }
+        res.put("_PORTFOLIO_RISK_", getPortfolioDailyRisk());
         return res;
     }
 
@@ -2762,6 +2745,22 @@ for (LivePosition pos : openPositions) {
         if (cfg.containsKey("maxActiveTrades")) saveSettingRaw(prefix + "maxActiveTrades", String.valueOf(cfg.get("maxActiveTrades")));
         if (cfg.containsKey("minEdge")) saveSettingRaw(prefix + "minEdge", String.valueOf(cfg.get("minEdge")));
         if (cfg.containsKey("maxDailyLoss")) saveSettingRaw(prefix + "maxDailyLoss", String.valueOf(cfg.get("maxDailyLoss")));
+        if (cfg.containsKey("maxDailyProfit")) saveSettingRaw(prefix + "maxDailyProfit", String.valueOf(cfg.get("maxDailyProfit")));
+    }
+
+    public Map<String, Object> getPortfolioDailyRisk() {
+        return PortfolioRiskCalculator.evaluateDailyRisk(positionRepo, autoExecSettingRepo, null, "PAPER").toMap();
+    }
+
+    public void updatePortfolioDailyRisk(Map<String, Object> riskSettings) {
+        if (riskSettings == null) return;
+        if (riskSettings.containsKey("globalMaxDailyLoss")) {
+            saveSettingRaw("globalMaxDailyLoss", String.valueOf(riskSettings.get("globalMaxDailyLoss")));
+            saveSettingRaw("maxDailyLoss", String.valueOf(riskSettings.get("globalMaxDailyLoss")));
+        }
+        if (riskSettings.containsKey("globalMaxDailyProfit")) {
+            saveSettingRaw("globalMaxDailyProfit", String.valueOf(riskSettings.get("globalMaxDailyProfit")));
+        }
     }
 
     public double getMinEdgeForStrategy(String stratId) {
@@ -2824,7 +2823,8 @@ for (LivePosition pos : openPositions) {
     private String strategyLimitBreach(String stratId, boolean paper) {
         Double maxActive = strategySetting(stratId, "maxActiveTrades");
         Double maxLoss = strategySetting(stratId, "maxDailyLoss");
-        if (maxActive == null && maxLoss == null) return null;
+        Double maxProfit = strategySetting(stratId, "maxDailyProfit");
+        if (maxActive == null && maxLoss == null && maxProfit == null) return null;
         String norm = normalizeStrategyId(stratId);
         java.util.function.Predicate<LivePosition> mine = p -> norm.equals(normalizeStrategyId(p.getStrategyType()))
                 && ("PAPER".equals(p.getBroker()) == paper);
@@ -2832,13 +2832,18 @@ for (LivePosition pos : openPositions) {
             long active = positionRepo.findAllOpen().stream().filter(mine).count();
             if (active >= maxActive) return "Strategy max active trades (" + maxActive.intValue() + ") reached";
         }
-        if (maxLoss != null && maxLoss > 0) {
+        if ((maxLoss != null && maxLoss > 0) || (maxProfit != null && maxProfit > 0)) {
             LocalDateTime dayStart = LocalDate.now(ZoneId.of("Asia/Kolkata")).atStartOfDay();
             double pnl = positionRepo.findAll().stream().filter(mine)
                     .filter(p -> "OPEN".equals(p.getStatus())
                             || (p.getExitedAt() != null && !p.getExitedAt().isBefore(dayStart)))
                     .mapToDouble(p -> p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0.0).sum();
-            if (pnl <= -maxLoss) return "Strategy daily loss limit ₹" + String.format("%.0f", maxLoss) + " hit (today ₹" + String.format("%.0f", pnl) + ")";
+            if (maxLoss != null && maxLoss > 0 && pnl <= -maxLoss) {
+                return "Strategy daily loss limit Rs." + String.format("%.0f", maxLoss) + " hit (today Rs." + String.format("%.0f", pnl) + ")";
+            }
+            if (maxProfit != null && maxProfit > 0 && pnl >= maxProfit) {
+                return "Strategy daily profit cap Rs." + String.format("%.0f", maxProfit) + " reached (today Rs." + String.format("%.0f", pnl) + ")";
+            }
         }
         return null;
     }

@@ -197,6 +197,15 @@ public class TradeSupervisorService {
             passed.add("Paper trading mode - margin check bypassed");
         }
 
+        // Check 6: Portfolio Daily Risk Circuit Breaker
+        PortfolioRiskCalculator.PortfolioRiskStatus dailyRisk = 
+                PortfolioRiskCalculator.evaluateDailyRisk(livePositionRepo, autoExecSettingRepo, null, isPaper ? "PAPER" : broker);
+        if (dailyRisk.halted) {
+            rejections.add("Portfolio Circuit Breaker: " + dailyRisk.haltReason);
+        } else {
+            passed.add(String.format("Portfolio risk within limits (Today's Net P&L: \u20B9%.0f)", dailyRisk.todayNetPnl));
+        }
+
         boolean approved = rejections.isEmpty();
         String summary = approved ? "GATEKEEPER APPROVED: All pre-order checks passed"
                 : "GATEKEEPER REJECTED: " + String.join(" | ", rejections);
@@ -210,6 +219,8 @@ public class TradeSupervisorService {
             String cat = "REJECTED_RISK";
             if (primaryRejection.toLowerCase().contains("margin") || primaryRejection.toLowerCase().contains("balance")) {
                 cat = "REJECTED_BALANCE";
+            } else if (primaryRejection.toLowerCase().contains("circuit breaker") || primaryRejection.toLowerCase().contains("daily loss") || primaryRejection.toLowerCase().contains("profit target")) {
+                cat = "REJECTED_LIMIT";
             } else if (primaryRejection.toLowerCase().contains("duplicate")) {
                 cat = "REJECTED_DUPLICATE_SET";
             } else if (primaryRejection.toLowerCase().contains("freeze")) {

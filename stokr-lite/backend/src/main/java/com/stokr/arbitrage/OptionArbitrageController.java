@@ -3217,11 +3217,27 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
     public ResponseEntity<Map<String, Object>> saveStrategyConfigs(@RequestBody Map<String, Map<String, Object>> payload) {
         if (payload != null) {
             for (Map.Entry<String, Map<String, Object>> entry : payload.entrySet()) {
-                autoExecService.updateStrategyConfig(entry.getKey(), entry.getValue());
+                if ("_PORTFOLIO_RISK_".equals(entry.getKey()) || "PORTFOLIO_RISK".equals(entry.getKey())) {
+                    autoExecService.updatePortfolioDailyRisk(entry.getValue());
+                } else {
+                    autoExecService.updateStrategyConfig(entry.getKey(), entry.getValue());
+                }
             }
         }
         addAuditLog("STRATEGY_CONFIG", "INFO", "Bulk strategy configuration updated");
         return ResponseEntity.ok(autoExecService.getStrategyConfigs());
+    }
+
+    @GetMapping("/portfolio-daily-risk")
+    public ResponseEntity<Map<String, Object>> getPortfolioDailyRisk() {
+        return ResponseEntity.ok(autoExecService.getPortfolioDailyRisk());
+    }
+
+    @PostMapping("/portfolio-daily-risk")
+    public ResponseEntity<Map<String, Object>> updatePortfolioDailyRisk(@RequestBody Map<String, Object> req) {
+        autoExecService.updatePortfolioDailyRisk(req);
+        addAuditLog("PORTFOLIO_RISK", "INFO", "Portfolio daily risk limits updated");
+        return ResponseEntity.ok(autoExecService.getPortfolioDailyRisk());
     }
 
 }

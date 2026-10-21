@@ -136,6 +136,15 @@ public class SmartAutoEntryService {
             return;
         }
 
+        // Portfolio-level circuit breaker: Check overall daily risk before scanning / entering
+        com.stokr.arbitrage.PortfolioRiskCalculator.PortfolioRiskStatus dailyRisk = 
+                com.stokr.arbitrage.PortfolioRiskCalculator.evaluateDailyRisk(positionRepo, autoExecSettingRepo, null, "PAPER");
+        if (dailyRisk.halted) {
+            log.info("SMART_AUTO: Skipped cycle - {}", dailyRisk.haltReason);
+            lastScanResult = "Circuit Breaker Active: " + dailyRisk.haltReason;
+            return;
+        }
+
         try {
             List<Map<String, Object>> allOpportunities = new ArrayList<>();
 
@@ -452,21 +461,24 @@ public class SmartAutoEntryService {
     }
 
     /** Strategy Control Center maxActiveTrades / maxDailyLoss for paper positions; null if OK. */
+    /** Strategy Control Center maxActiveTrades / maxDailyLoss / maxDailyProfit for paper positions; null if OK. */
     private String strategyLimitBreach(String stratId, List<LivePosition> openPositions) {
         Double maxActive = settingNumber(stratId, "maxActiveTrades");
         Double maxLoss = settingNumber(stratId, "maxDailyLoss");
-        if (maxActive == null && maxLoss == null) return null;
+        Double maxProfit = settingNumber(stratId, "maxDailyProfit");
+        if (maxActive == null && maxLoss == null && maxProfit == null) return null;
         String norm = com.stokr.arbitrage.OptionArbAutoExecService.normalizeStrategyId(stratId);
         java.util.function.Predicate<LivePosition> mine = p -> "PAPER".equals(p.getBroker())
                 && norm.equals(com.stokr.arbitrage.OptionArbAutoExecService.normalizeStrategyId(p.getStrategyType()));
         if (maxActive != null && openPositions.stream().filter(mine).count() >= maxActive)
             return "max active trades (" + maxActive.intValue() + ") reached";
-        if (maxLoss != null && maxLoss > 0) {
+        if ((maxLoss != null && maxLoss > 0) || (maxProfit != null && maxProfit > 0)) {
             java.time.LocalDateTime dayStart = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).atStartOfDay();
             double pnl = positionRepo.findAll().stream().filter(mine)
                     .filter(p -> "OPEN".equals(p.getStatus()) || (p.getExitedAt() != null && !p.getExitedAt().isBefore(dayStart)))
                     .mapToDouble(p -> p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0.0).sum();
-            if (pnl <= -maxLoss) return "daily loss limit Rs." + String.format("%.0f", maxLoss) + " hit";
+            if (maxLoss != null && maxLoss > 0 && pnl <= -maxLoss) return "daily loss limit Rs." + String.format("%.0f", maxLoss) + " hit";
+            if (maxProfit != null && maxProfit > 0 && pnl >= maxProfit) return "daily profit cap Rs." + String.format("%.0f", maxProfit) + " reached";
         }
         return null;
     }
