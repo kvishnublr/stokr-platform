@@ -39,6 +39,11 @@ if [ -n "$LOGFILE" ] && [ -f "$LOGFILE" ]; then
   echo "=== Service log $TODAY: exit events by type ==="
   grep "^$TODAY" "$LOGFILE" | grep -oE "(STOP_LOSS|AUTO_EXIT|PER_POS_SL|PER_POS_TARGET|TRAILING_SL_HIT|TIME_EXIT|EOD_320_SQUAREOFF|AUTO_LOSS_REENTRY|AUTO_PROFIT_EXIT|TARGET_HIT|MAX_HOLD_[0-9]+D|EXPIRED)[: ]" | sort | uniq -c | sort -rn
   echo
+  echo "=== Service log $TODAY: Box / Bid Parity activity (entries, skips, data errors) ==="
+  grep "^$TODAY" "$LOGFILE" | grep -E "BOX_DATA_ERROR|PARITY_DATA_ERROR|PAPER_SKIP|Auto-executed PAPER|Manual|paper-trade|AUTO_ROLL|Rolled|SMART_AUTO_ENTRY" \
+    | sed -E 's/(₹|Rs\.?) ?-?[0-9][0-9,.]*/\1X/g' | cut -c1-220 | tail -40
+  grep "^$TODAY" "$LOGFILE" | grep -oE "BOX_DATA_ERROR|PARITY_DATA_ERROR|PAPER_SKIP|Auto-executed PAPER Bid Parity|Auto-executed PAPER trade|SMART_AUTO_ENTRY" | sort | uniq -c
+  echo
   echo "=== Service log $TODAY: first 40 exit lines ==="
   grep "^$TODAY" "$LOGFILE" | grep -E "STOP_LOSS:|AUTO_EXIT:|PER_POS_SL:|PER_POS_TARGET:|TRAILING_SL_HIT:|TIME_EXIT:|squared off|AUTO_LOSS_REENTRY" | sed -E 's/^([0-9T:.-]+)[^ ]* .*(STOP_LOSS|AUTO_EXIT|PER_POS|TRAILING|TIME_EXIT|squared off|AUTO_LOSS)/\1 \2/' | cut -c1-220 | head -40
 fi
@@ -59,6 +64,11 @@ q "select id, strategy_type, underlying, lots, lot_size, round(current_pnl) pnl,
           left(legs_json, 700) legs
      from live_positions where exited_at >= current_date
     order by current_pnl asc limit 12;"
+echo
+echo "=== F&O: every position entered today ==="
+q "select id, broker, strategy_type, underlying, strike, status, exit_reason, to_char(entered_at,'HH24:MI:SS') entry_t,
+          to_char(exited_at,'HH24:MI:SS') exit_t, round(current_pnl) pnl, opportunity_id is not null from_scanner
+     from live_positions where entered_at >= current_date order by entered_at;"
 echo
 echo "=== F&O: entries per hour today (re-entry loops show as bursts) ==="
 q "select to_char(entered_at,'HH24') hr, strategy_type, count(*) from live_positions
