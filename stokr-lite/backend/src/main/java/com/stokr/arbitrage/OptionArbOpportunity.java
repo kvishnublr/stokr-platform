@@ -38,6 +38,17 @@ public class OptionArbOpportunity {
     @Column(name = "futures_price")
     private BigDecimal futuresPrice;
 
+    /**
+     * spot_price / futures_price are NOT NULL in production, but scheduled trades, pre-order
+     * checks and some scanner maps carry no price; saving those failed with a constraint error.
+     */
+    @PrePersist
+    @PreUpdate
+    void defaultMissingPrices() {
+        if (spotPrice == null) spotPrice = BigDecimal.ZERO;
+        if (futuresPrice == null) futuresPrice = BigDecimal.ZERO;
+    }
+
     @Column(name = "ce_entry_price")
     private BigDecimal ceEntryPrice;
 
