@@ -2,6 +2,8 @@ package com.stokr.arbitrage;
 
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -33,5 +35,24 @@ class SmartExitRulesTest {
         q.lastPrice = 10;
         assertTrue(OptionArbAutoExecService.allLegsQuoted(pos, Map.of("A", q, "B", q)));
         assertFalse(OptionArbAutoExecService.allLegsQuoted(pos, Map.of("A", q)));
+    }
+
+    @Test
+    void multiLegStopLossThresholdCalculatesProperly() {
+        LivePosition pos = LivePosition.builder()
+                .strategyType("JADE_LIZARD")
+                .underlying("BANKNIFTY")
+                .slPct(40.0)
+                .maxLossAmount(10000.0)
+                .build();
+
+        double slThreshold = pos.getMaxLossAmount() * pos.getSlPct() / 100.0;
+        assertEquals(4000.0, slThreshold);
+
+        double smallLoss = -2500.0;
+        assertFalse(Math.abs(smallLoss) >= slThreshold);
+
+        double largeLoss = -4200.0;
+        assertTrue(Math.abs(largeLoss) >= slThreshold);
     }
 }

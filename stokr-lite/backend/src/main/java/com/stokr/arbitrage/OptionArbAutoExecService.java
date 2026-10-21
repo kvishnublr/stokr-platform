@@ -448,17 +448,33 @@ public class OptionArbAutoExecService {
             try {
                 OptionArbOpportunity opp = new OptionArbOpportunity();
                 opp.setUnderlying((String) m.get("underlying"));
-                opp.setStrike(m.get("strike") instanceof Number n ? n.intValue() : null);
-                opp.setAction((String) m.get("action"));
-                String stratType = (String) m.get("strategyType");
-                if (stratType == null) stratType = (String) m.get("type");
-                opp.setStrategyType(stratType);
-                opp.setType((String) m.get("type"));
-                opp.setLegs((String) m.get("legs"));
+                Integer strikeVal = m.get("strike") instanceof Number n ? n.intValue() : null;
                 Object spot = m.get("spotPrice");
                 if (spot instanceof Number n) opp.setSpotPrice(BigDecimal.valueOf(n.doubleValue()));
+                else opp.setSpotPrice(BigDecimal.ZERO);
+
+                if (strikeVal == null && opp.getSpotPrice().doubleValue() > 0 && opp.getUnderlying() != null) {
+                    int step = OptionChainService.getStrikeStep(opp.getUnderlying());
+                    strikeVal = (int) (Math.round(opp.getSpotPrice().doubleValue() / step) * step);
+                }
+                opp.setStrike(strikeVal != null ? strikeVal : 0);
+
+                String stratType = (String) m.get("strategyType");
+                if (stratType == null) stratType = (String) m.get("type");
+                opp.setStrategyType(stratType != null ? stratType : "SMART");
+                opp.setType((String) m.get("type"));
+                if (opp.getType() == null) opp.setType(opp.getStrategyType());
+
+                opp.setAction((String) m.get("action"));
+                if (opp.getAction() == null) opp.setAction(opp.getStrategyType());
+
+                opp.setLegs((String) m.get("legs"));
+                if (opp.getLegs() == null) opp.setLegs(opp.getAction());
+
                 Object epts = m.get("edgePoints");
                 if (epts instanceof Number n) opp.setEdgePoints(BigDecimal.valueOf(n.doubleValue()));
+                else opp.setEdgePoints(BigDecimal.ZERO);
+
                 Object desc = m.get("description");
                 if (desc instanceof String s) opp.setDescription(s);
                 opp.setExpiryDate(m.get("expiryDate") instanceof String s ? LocalDate.parse(s) : null);
@@ -469,12 +485,21 @@ public class OptionArbAutoExecService {
                 }
                 Object eac = m.get("edgeAfterCosts");
                 if (eac instanceof Number n) opp.setEdgeAfterCosts(BigDecimal.valueOf(n.doubleValue()));
+                else opp.setEdgeAfterCosts(BigDecimal.ZERO);
+
                 Object ce = m.get("ceEntryPrice");
                 if (ce instanceof Number n) opp.setCeEntryPrice(BigDecimal.valueOf(n.doubleValue()));
                 Object pe = m.get("peEntryPrice");
                 if (pe instanceof Number n) opp.setPeEntryPrice(BigDecimal.valueOf(n.doubleValue()));
+
                 Object fut = m.get("futuresPrice");
-                if (fut instanceof Number n) opp.setFuturesPrice(BigDecimal.valueOf(n.doubleValue()));
+                if (fut instanceof Number n) {
+                    opp.setFuturesPrice(BigDecimal.valueOf(n.doubleValue()));
+                } else if (opp.getSpotPrice() != null) {
+                    opp.setFuturesPrice(opp.getSpotPrice());
+                } else {
+                    opp.setFuturesPrice(BigDecimal.ZERO);
+                }
                 Object est = m.get("estimatedMargin");
                 if (est instanceof Number n) opp.setEstimatedMargin(BigDecimal.valueOf(n.doubleValue()));
                 Object roi = m.get("roiPct");
@@ -995,23 +1020,32 @@ for (LivePosition pos : openPositions) {
                     continue;
                 }
             }
-boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
+            boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
+
+            boolean isTimeExitDue = false;
+            if (pos.getTimeExitMinutes() != null && pos.getTimeExitMinutes() > 0) {
+                LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+                LocalTime exitTime = LocalTime.of(15, 30).minusMinutes(pos.getTimeExitMinutes());
+                if (!now.isBefore(exitTime) && now.isBefore(LocalTime.of(15, 30))) {
+                    isTimeExitDue = true;
+                }
+            }
 
             double pnl;
             if (isMultiLeg) {
                 // A leg without a quote would be dropped from the P&L sum and could fire a false
-                // SL/target — only evaluate when every leg is priced.
-                if (!allLegsQuoted(pos, quotes)) {
-                    log.debug("Exit check skipped for position {} — missing leg quote(s)", pos.getId());
-                    continue;
-                }
-                // Never fire SL/target on stale or one-sided quotes: that is how paper trades
-                // "captured" fake edges within a minute.
-                String untradable = OptionChainService.firstUntradable(legSymbols(pos), quotes);
-                if (untradable != null) {
-                    log.debug("Exit check skipped for position {} — {}", pos.getId(), untradable);
-                    continue;
+                // SL/target — only evaluate when every leg is priced (unless scheduled time exit is due).
+                if (!isTimeExitDue) {
+                    if (!allLegsQuoted(pos, quotes)) {
+                        log.debug("Exit check skipped for position {} — missing leg quote(s)", pos.getId());
+                        continue;
+                    }
+                    String untradable = OptionChainService.firstUntradable(legSymbols(pos), quotes);
+                    if (untradable != null) {
+                        log.debug("Exit check skipped for position {} — {}", pos.getId(), untradable);
+                        continue;
+                    }
                 }
                 pnl = computeMultiLegPnl(pos, quotes);
             } else {
@@ -1020,10 +1054,12 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 if (pos.getPeSymbol() != null) parityLegs.add(pos.getPeSymbol());
                 if (pos.getFutSymbol() != null) parityLegs.add(pos.getFutSymbol());
 
-                String untradable = OptionChainService.firstUntradable(parityLegs, quotes);
-                if (untradable != null) {
-                    log.debug("Exit check skipped for Bid Parity position {} — {}", pos.getId(), untradable);
-                    continue;
+                if (!isTimeExitDue) {
+                    String untradable = OptionChainService.firstUntradable(parityLegs, quotes);
+                    if (untradable != null) {
+                        log.debug("Exit check skipped for Bid Parity position {} — {}", pos.getId(), untradable);
+                        continue;
+                    }
                 }
 
                 String actionStr = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
@@ -1179,7 +1215,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             boolean inGracePeriod = entryTime != null &&
                 java.time.Duration.between(entryTime, java.time.LocalDateTime.now()).getSeconds() < 120;
 
-            if (!inGracePeriod && !shouldExit && !isMultiLegOrDefinedRisk && pos.getSlPct() != null && pos.getSlPct() > 0 && pos.getMaxLossAmount() != null && pos.getMaxLossAmount() > 0) {
+            if (!inGracePeriod && !shouldExit && pos.getSlPct() != null && pos.getSlPct() > 0 && pos.getMaxLossAmount() != null && pos.getMaxLossAmount() > 0) {
                 double slThreshold = pos.getMaxLossAmount() * pos.getSlPct() / 100.0;
                 if (pnl < 0 && Math.abs(pnl) >= slThreshold) {
                     shouldExit = true;
@@ -1259,17 +1295,13 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             }
 
             // Per-position time exit (Smart Strategies) — exit N minutes before market close
-            if (!shouldExit && pos.getTimeExitMinutes() != null && pos.getTimeExitMinutes() > 0) {
-                LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-                LocalTime exitTime = LocalTime.of(15, 30).minusMinutes(pos.getTimeExitMinutes());
-                if (!now.isBefore(exitTime) && now.isBefore(LocalTime.of(15, 30))) {
-                    shouldExit = true;
-                    exitReason = "TIME_EXIT";
-                    log.info("TIME_EXIT: {} {} — {}min before close (P&L ₹{})", pos.getUnderlying(),
-                        pos.getStrategyType(), pos.getTimeExitMinutes(), String.format("%.0f", pnl));
-                    addLog("TIME_EXIT", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrategyType()
-                        + " — " + pos.getTimeExitMinutes() + "min before close (₹" + String.format("%.0f", pnl) + ")");
-                }
+            if (!shouldExit && isTimeExitDue) {
+                shouldExit = true;
+                exitReason = "TIME_EXIT";
+                log.info("TIME_EXIT: {} {} — {}min before close (P&L ₹{})", pos.getUnderlying(),
+                    pos.getStrategyType(), pos.getTimeExitMinutes(), String.format("%.0f", pnl));
+                addLog("TIME_EXIT", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrategyType()
+                    + " — " + pos.getTimeExitMinutes() + "min before close (₹" + String.format("%.0f", pnl) + ")");
             }
 
             if (!shouldExit) continue;
