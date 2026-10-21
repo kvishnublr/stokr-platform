@@ -44,6 +44,9 @@ if [ -n "$LOGFILE" ] && [ -f "$LOGFILE" ]; then
     | sed -E 's/(₹|Rs\.?) ?-?[0-9][0-9,.]*/\1X/g' | cut -c1-220 | tail -40
   grep "^$TODAY" "$LOGFILE" | grep -oE "BOX_DATA_ERROR|PARITY_DATA_ERROR|PAPER_SKIP|Auto-executed PAPER Bid Parity|Auto-executed PAPER trade|SMART_AUTO_ENTRY" | sort | uniq -c
   echo
+  echo "=== Service log $TODAY: exit / skip / guard event counts ==="
+  grep "^$TODAY" "$LOGFILE" | grep -oE "PER_POS_SL|PER_POS_TARGET|TRAILING_SL_HIT|TIME_EXIT|TIME_EXIT on best-available|EOD_320_SQUAREOFF|AUTO_EXIT|PAPER_SKIP|No fresh two-sided quote|same strategy entered on this underlying|Skipped disabled strategy|Blocked by risk|NOT_ROLLED|BOX_DATA_ERROR|PARITY_DATA_ERROR|SMART_AUTO_ENTRY|MORNING_THETA_ENTRY|Auto-executed PAPER" | sort | uniq -c | sort -rn
+  echo
   echo "=== Service log $TODAY: first 40 exit lines ==="
   grep "^$TODAY" "$LOGFILE" | grep -E "STOP_LOSS:|AUTO_EXIT:|PER_POS_SL:|PER_POS_TARGET:|TRAILING_SL_HIT:|TIME_EXIT:|squared off|AUTO_LOSS_REENTRY" | sed -E 's/^([0-9T:.-]+)[^ ]* .*(STOP_LOSS|AUTO_EXIT|PER_POS|TRAILING|TIME_EXIT|squared off|AUTO_LOSS)/\1 \2/' | cut -c1-220 | head -40
 fi
@@ -69,6 +72,22 @@ echo "=== F&O: every position entered today ==="
 q "select id, broker, strategy_type, underlying, strike, status, exit_reason, to_char(entered_at,'HH24:MI:SS') entry_t,
           to_char(exited_at,'HH24:MI:SS') exit_t, round(current_pnl) pnl, opportunity_id is not null from_scanner
      from live_positions where entered_at >= current_date order by entered_at;"
+echo
+echo "=== F&O today: per-trade detail (risk settings, peak, legs entry/exit) ==="
+q "select id, strategy_type st, underlying und, status, exit_reason, to_char(entered_at,'HH24:MI') ent,
+          to_char(exited_at,'HH24:MI') ex, round(extract(epoch from (exited_at-entered_at))/60) hold_m,
+          round(current_pnl) pnl, round(max_loss_amount) max_loss, round(max_profit_amount) max_prof,
+          sl_pct, target_pct, time_exit_minutes tx, round(peak_pnl::numeric) peak, round(trailing_sl_level::numeric) trail,
+          hold_type, round(entry_cost) cost,
+          (select string_agg(coalesce(l->>'side','?')||' '||coalesce(l->>'strike','')||coalesce(l->>'optionType','')||
+                   ' @'||coalesce(l->>'price','?')||'->'||coalesce(l->>'exitPrice','-'), ' | ')
+             from json_array_elements(legs_json::json) l) legs
+     from live_positions where entered_at >= current_date order by entered_at;"
+echo
+echo "=== Cash today: entries and exits ==="
+q "select id, symbol, strategy_type, status, error_message reason, quantity qty, entry_price, exit_price,
+          target_price, stop_loss_price, round(current_pnl) pnl, to_char(entered_at,'HH24:MI') ent, to_char(exited_at,'HH24:MI') ex
+     from cash_positions where entered_at >= current_date or exited_at >= current_date order by coalesce(exited_at, entered_at);"
 echo
 echo "=== F&O: entries per hour today (re-entry loops show as bursts) ==="
 q "select to_char(entered_at,'HH24') hr, strategy_type, count(*) from live_positions
