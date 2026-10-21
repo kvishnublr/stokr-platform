@@ -235,6 +235,14 @@ public class SmartAutoEntryService {
                 String key = opp.get("strategyType") + ":" + opp.get("underlying") + ":"
                     + opp.getOrDefault("putSellStrike", opp.getOrDefault("strike", ""));
 
+                // One entry per strategy per underlying per 15 min, whatever the strikes.
+                if (com.stokr.arbitrage.EntryCooldown.blocked(
+                        positionRepo.findEnteredSince(java.time.LocalDateTime.now().minus(com.stokr.arbitrage.EntryCooldown.WINDOW)),
+                        stratType, und, true, java.time.LocalDateTime.now())) {
+                    log.info("SMART_AUTO: Skipped {} {} - same strategy entered on this underlying within 15 min", stratType, und);
+                    continue;
+                }
+
                 // Cooldown check
                 Long lastEntry = recentEntries.get(key);
                 if (lastEntry != null && System.currentTimeMillis() - lastEntry < COOLDOWN_MS) {

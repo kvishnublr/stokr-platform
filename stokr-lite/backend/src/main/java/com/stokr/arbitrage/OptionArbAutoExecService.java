@@ -520,6 +520,9 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
                     .anyMatch(p -> "PAPER".equals(p.getBroker()) && opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
 
+            if (EntryCooldown.blocked(positionRepo.findEnteredSince(LocalDateTime.now().minus(EntryCooldown.WINDOW)),
+                    opp.getStrategyType(), opp.getUnderlying(), true, LocalDateTime.now())) continue;
+
             String stratBreach = strategyLimitBreach(opp.getStrategyType(), true);
             if (stratBreach != null) {
                 tradeSupervisorService.recordRejectedSignal(opp.getUnderlying(), opp.getStrategyType(), opp.getStrike(), opp.getAction(),
@@ -767,6 +770,9 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(userId, "OPEN").stream()
                     .anyMatch(p -> opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
 
+            if (EntryCooldown.blocked(positionRepo.findEnteredSince(LocalDateTime.now().minus(EntryCooldown.WINDOW)),
+                    opp.getStrategyType(), opp.getUnderlying(), false, LocalDateTime.now())) continue;
+
             String stratBreach = strategyLimitBreach(opp.getStrategyType(), false);
             if (stratBreach != null) {
                 if (tradeSupervisorService != null) tradeSupervisorService.recordRejectedSignal(opp.getUnderlying(), opp.getStrategyType(), opp.getStrike(), opp.getAction(),
@@ -868,7 +874,13 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
      */
     @Scheduled(fixedDelayString = "5000", initialDelay = 5000)
     public synchronized void checkRollover() {
-        java.time.LocalTime nowTimeIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        // Holidays: quotes are stale, so no SL/target/time exit may act on them.
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday()) return;
+        checkRolloverAt(java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata")));
+    }
+
+    /** Exit monitor body with the IST wall-clock time passed in (tests drive it directly). */
+    synchronized void checkRolloverAt(java.time.LocalTime nowTimeIST) {
         boolean isMarketOpenNow = !nowTimeIST.isBefore(java.time.LocalTime.of(9, 25)) && !nowTimeIST.isAfter(java.time.LocalTime.of(15, 25));
         if (!isMarketOpenNow) return;
 
@@ -939,19 +951,20 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
 
             double pnl;
+            // Price-based rules (SL / target / trailing / triggers) need every leg on a fresh
+            // two-sided quote, or a missing/stale leg fires a false exit. The time exit does not
+            // depend on prices, so it still closes the position when quotes are bad.
+            boolean marksTradable = true;
             if (isMultiLeg) {
-                // A leg without a quote would be dropped from the P&L sum and could fire a false
-                // SL/target — only evaluate when every leg is priced.
-                if (!allLegsQuoted(pos, quotes)) {
-                    log.debug("Exit check skipped for position {} — missing leg quote(s)", pos.getId());
-                    continue;
-                }
-                // Never fire SL/target on stale or one-sided quotes: that is how paper trades
-                // "captured" fake edges within a minute.
-                String untradable = OptionChainService.firstUntradable(legSymbols(pos), quotes);
+                String untradable = allLegsQuoted(pos, quotes)
+                        ? OptionChainService.firstUntradable(legSymbols(pos), quotes) : "missing leg quote(s)";
                 if (untradable != null) {
-                    log.debug("Exit check skipped for position {} — {}", pos.getId(), untradable);
-                    continue;
+                    if (!timeExitDue(pos, nowTimeIST)) {
+                        log.debug("Exit check skipped for position {} — {}", pos.getId(), untradable);
+                        continue;
+                    }
+                    marksTradable = false;
+                    log.info("TIME_EXIT on best-available marks for position {} ({})", pos.getId(), untradable);
                 }
                 pnl = computeMultiLegPnl(pos, quotes);
             } else {
@@ -1000,7 +1013,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             }
 
             // PER-POSITION TRIGGER EVALUATION
-            if (opp != null) {
+            if (opp != null && marksTradable) {
                 if (opp.getProfitExitTrigger() != null && pnl >= opp.getProfitExitTrigger().doubleValue()) {
                     boolean squaredOff = false;
                     if (isPaper) {
@@ -1068,7 +1081,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
                 pos.getStrategyType().contains("ARBITRAGE")
             ));
 
-            if (stopLossEnabled && !isMultiLegOrDefinedRisk && targetEdge > 0 && pnlPerLot < 0) {
+            if (marksTradable && stopLossEnabled && !isMultiLegOrDefinedRisk && targetEdge > 0 && pnlPerLot < 0) {
                 java.time.LocalDateTime entryTime = pos.getEnteredAt() != null ? pos.getEnteredAt() : pos.getCreatedAt();
                 boolean inGracePeriod = entryTime != null &&
                     java.time.Duration.between(entryTime, java.time.LocalDateTime.now()).getSeconds() < 30;
@@ -1092,7 +1105,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             boolean autoExitGracePeriod = autoExitEntryTime != null &&
                 java.time.Duration.between(autoExitEntryTime, java.time.LocalDateTime.now()).getSeconds() < 60;
 
-            if (autoExitEnabled && !autoExitGracePeriod && targetEdge > 0 && pctAchieved >= autoExitThresholdPct) {
+            if (marksTradable && autoExitEnabled && !autoExitGracePeriod && targetEdge > 0 && pctAchieved >= autoExitThresholdPct) {
                 shouldExit = true;
                 exitReason = "AUTO_EXIT";
                 log.info("AUTO_EXIT: {} {} strike {} — {}% of target ₹{} reached (P&L ₹{})",
@@ -1107,9 +1120,11 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             boolean inGracePeriod = entryTime != null &&
                 java.time.Duration.between(entryTime, java.time.LocalDateTime.now()).getSeconds() < 120;
 
-            if (!inGracePeriod && !shouldExit && !isMultiLegOrDefinedRisk && pos.getSlPct() != null && pos.getSlPct() > 0 && pos.getMaxLossAmount() != null && pos.getMaxLossAmount() > 0) {
+            // The configured SL (slPct of the position's own max loss) applies to multi-leg Smart
+            // positions as well: excluding them let every loser ride to the time exit / 15:20.
+            if (marksTradable && !inGracePeriod && !shouldExit && pos.getSlPct() != null && pos.getSlPct() > 0 && pos.getMaxLossAmount() != null && pos.getMaxLossAmount() > 0) {
                 double slThreshold = pos.getMaxLossAmount() * pos.getSlPct() / 100.0;
-                if (pnl < 0 && Math.abs(pnl) >= slThreshold) {
+                if (slConfirmed(pos.getId(), pnl < 0 && Math.abs(pnl) >= slThreshold)) {
                     shouldExit = true;
                     exitReason = "PER_POSITION_SL";
                     log.info("PER_POS_SL: {} {} — loss ₹{} >= SL ₹{} ({}%)", pos.getUnderlying(),
@@ -1120,7 +1135,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             }
 
             // Per-position target (Smart Strategies)
-            if (!shouldExit && pos.getTargetPct() != null && pos.getTargetPct() > 0 && pos.getMaxProfitAmount() != null && pos.getMaxProfitAmount() > 0) {
+            if (marksTradable && !shouldExit && pos.getTargetPct() != null && pos.getTargetPct() > 0 && pos.getMaxProfitAmount() != null && pos.getMaxProfitAmount() > 0) {
                 double targetThreshold = pos.getMaxProfitAmount() * pos.getTargetPct() / 100.0;
                 if (pnl > 0 && pnl >= targetThreshold) {
                     shouldExit = true;
@@ -1133,7 +1148,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             }
 
             // Trailing stop loss (Smart Strategies) — ratchet SL upward as profit grows
-            if (!shouldExit && pos.getMaxProfitAmount() != null && pos.getMaxProfitAmount() > 0 && pos.getTargetPct() != null) {
+            if (marksTradable && !shouldExit && pos.getMaxProfitAmount() != null && pos.getMaxProfitAmount() > 0 && pos.getTargetPct() != null) {
                 double maxProfit = pos.getMaxProfitAmount();
                 double targetThreshold = maxProfit * pos.getTargetPct() / 100.0;
                 double peakPnl = pos.getPeakPnl() != null ? pos.getPeakPnl() : 0;
@@ -1188,9 +1203,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
 
             // Per-position time exit (Smart Strategies) — exit N minutes before market close
             if (!shouldExit && pos.getTimeExitMinutes() != null && pos.getTimeExitMinutes() > 0) {
-                LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-                LocalTime exitTime = LocalTime.of(15, 30).minusMinutes(pos.getTimeExitMinutes());
-                if (!now.isBefore(exitTime) && now.isBefore(LocalTime.of(15, 30))) {
+                if (timeExitDue(pos, nowTimeIST)) {
                     shouldExit = true;
                     exitReason = "TIME_EXIT";
                     log.info("TIME_EXIT: {} {} — {}min before close (P&L ₹{})", pos.getUnderlying(),
@@ -1931,6 +1944,26 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
     }
 
     /** True when every leg of a multi-leg position has a quote in {@code quotes}. */
+    /** Per-position time exit: due from (15:30 - timeExitMinutes) until the close. */
+    static boolean timeExitDue(LivePosition pos, LocalTime now) {
+        Integer m = pos.getTimeExitMinutes();
+        if (m == null || m <= 0) return false;
+        return !now.isBefore(LocalTime.of(15, 30).minusMinutes(m)) && now.isBefore(LocalTime.of(15, 30));
+    }
+
+    /** Consecutive monitor passes (5s apart) a position has been beyond its SL. */
+    private final ConcurrentHashMap<Long, Integer> slBreachStreak = new ConcurrentHashMap<>();
+    static final int SL_CONFIRMATIONS = 2;
+
+    /** True once an SL breach has held for SL_CONFIRMATIONS consecutive checks; a recovery resets it. */
+    boolean slConfirmed(Long positionId, boolean breached) {
+        if (positionId == null) return breached;
+        if (!breached) { slBreachStreak.remove(positionId); return false; }
+        int n = slBreachStreak.merge(positionId, 1, Integer::sum);
+        if (n >= SL_CONFIRMATIONS) { slBreachStreak.remove(positionId); return true; }
+        return false;
+    }
+
     static List<String> legSymbols(LivePosition pos) {
         List<String> out = new ArrayList<>();
         if (pos.getLegs() != null) for (Map<String, Object> leg : pos.getLegs())
@@ -2034,6 +2067,11 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
             if (entry <= 0) continue;
             if (q.lastPrice <= 0 && q.bid <= 0 && q.ask <= 0) {
+                // An all-zero quote only means "worthless" once the contract has expired; before
+                // that it is just a missing quote, so the leg is carried at entry (no P&L).
+                boolean expired = pos.getExpiryDate() != null
+                        && pos.getExpiryDate().isBefore(LocalDate.now(ZoneId.of("Asia/Kolkata")));
+                if (!expired) continue;
                 // Expired leg: SELL leg expired worthless = keep full premium, BUY leg = lose full premium
                 double legPnl2 = "BUY".equals(leg.get("side")) ? -entry : entry;
                 int qtyMult2 = leg.get("qty") instanceof Number n2 ? n2.intValue() : 1;
@@ -2423,6 +2461,7 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
      */
     @Scheduled(cron = "0 20 15 * * MON-FRI", zone = "Asia/Kolkata")
     public void closeAllEodPositions320PM() {
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday()) return; // holiday: nothing traded, prices stale
         log.info("Starting mandatory 3:20 PM IST intraday auto-squareoff sweep...");
         try {
             LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
