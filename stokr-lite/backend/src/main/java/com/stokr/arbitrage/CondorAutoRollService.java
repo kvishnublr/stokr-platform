@@ -30,6 +30,8 @@ public class CondorAutoRollService {
 
 
     private final Map<Long, LocalDateTime> breachTracker = new HashMap<>();
+    /** Positions already reported as not rollable, so the log says it once instead of every minute. */
+    private final Set<Long> rollRefusedLogged = new HashSet<>();
 
     @Scheduled(fixedDelayString = "60000", initialDelay = 50000)
     public synchronized void monitorAndRollCondors() {
@@ -77,9 +79,7 @@ public class CondorAutoRollService {
                 // Expiry Rollover Trigger: DTE < 1
                 long dte = pos.getExpiryDate() != null ? java.time.Duration.between(LocalDate.now().atStartOfDay(), pos.getExpiryDate().atStartOfDay()).toDays() : 999;
                 if (dte < 1) {
-                    log.info("Condor Auto-Rollover Triggered: {} expiring today. Rolling forward.", pos.getUnderlying());
-                    autoExecService.addLog("CONDOR_ADJUST", "EXPIRY_ROLL", pos.getUnderlying() + " DTE < 1. Auto-rolling forward.");
-                    autoExecService.rollPosition(pos.getId());
+                    roll(pos, "EXPIRY_ROLL", pos.getUnderlying() + " DTE < 1. Auto-rolling forward.");
                     continue;
                 }
 
@@ -90,8 +90,7 @@ public class CondorAutoRollService {
                     int requiredMinutes = ((Number) settings.getOrDefault(uKey + "AutoRollBreachMinutes", 5)).intValue();
                     if (minutesBreached >= requiredMinutes) {
                         log.info("Condor Auto-Adjuster Triggered: {} spot at {} breached for {} min. K2={}, K3={}", pos.getUnderlying(), spot, minutesBreached, k2, k3);
-                        autoExecService.addLog("CONDOR_ADJUST", "TRIGGERED", pos.getUnderlying() + " Condor tested at " + spot + " for " + minutesBreached + "m. Squaring off and shifting to ATM.");
-                        autoExecService.rollPosition(pos.getId()); // In autoExecService, this squares off and opens new ATM
+                        roll(pos, "TRIGGERED", pos.getUnderlying() + " Condor tested at " + spot + " for " + minutesBreached + "m. Squaring off and shifting to ATM.");
                         breachTracker.remove(pos.getId());
                     }
                 } else {
@@ -100,6 +99,22 @@ public class CondorAutoRollService {
             } catch (Exception e) {
                 log.error("Condor Auto-Adjust monitor failed: {}", e.getMessage());
             }
+        }
+    }
+
+    /**
+     * Rolls via autoExecService and logs what really happened. rollPosition() refuses multi-leg
+     * spreads, which used to be logged as a successful "squaring off and shifting" every few
+     * minutes while the position stayed put; the refusal is now reported once per position.
+     */
+    private void roll(LivePosition pos, String status, String message) {
+        Map<String, Object> result = autoExecService.rollPosition(pos.getId());
+        Object error = result != null ? result.get("error") : "no result";
+        if (error == null) {
+            autoExecService.addLog("CONDOR_ADJUST", status, message);
+        } else if (rollRefusedLogged.add(pos.getId())) {
+            autoExecService.addLog("CONDOR_ADJUST", "NOT_ROLLED", pos.getUnderlying() + " #" + pos.getId()
+                + " not rolled (" + error + "); SL / time exit still apply");
         }
     }
 }

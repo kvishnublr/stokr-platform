@@ -1120,17 +1120,23 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             boolean inGracePeriod = entryTime != null &&
                 java.time.Duration.between(entryTime, java.time.LocalDateTime.now()).getSeconds() < 120;
 
-            // The configured SL (slPct of the position's own max loss) applies to multi-leg Smart
-            // positions as well: excluding them let every loser ride to the time exit / 15:20.
-            if (marksTradable && !inGracePeriod && !shouldExit && pos.getSlPct() != null && pos.getSlPct() > 0 && pos.getMaxLossAmount() != null && pos.getMaxLossAmount() > 0) {
-                double slThreshold = pos.getMaxLossAmount() * pos.getSlPct() / 100.0;
+            // SL = slPct of the position's max loss. Smart positions carry their own slPct; scanner
+            // multi-leg positions (Condor, Butterfly, ...) had none and no other SL applies to
+            // multi-leg, so with Stop Loss enabled they get DEFAULT_MULTI_LEG_SL_PCT. Max loss
+            // comes from the legs' expiry payoff when it can be computed (see PayoffMath).
+            Double slPct = pos.getSlPct() != null ? pos.getSlPct()
+                    : (isMultiLeg && stopLossEnabled ? DEFAULT_MULTI_LEG_SL_PCT : null);
+            double maxLossRs = effectiveMaxLoss(pos);
+            if (marksTradable && !inGracePeriod && !shouldExit && slPct != null && slPct > 0 && maxLossRs > 0) {
+                double slThreshold = maxLossRs * slPct / 100.0;
                 if (slConfirmed(pos.getId(), pnl < 0 && Math.abs(pnl) >= slThreshold)) {
                     shouldExit = true;
                     exitReason = "PER_POSITION_SL";
-                    log.info("PER_POS_SL: {} {} — loss ₹{} >= SL ₹{} ({}%)", pos.getUnderlying(),
-                        pos.getStrategyType(), String.format("%.0f", Math.abs(pnl)), String.format("%.0f", slThreshold), pos.getSlPct());
+                    log.info("PER_POS_SL: {} {} — loss ₹{} >= SL ₹{} ({}% of max loss ₹{})", pos.getUnderlying(),
+                        pos.getStrategyType(), String.format("%.0f", Math.abs(pnl)), String.format("%.0f", slThreshold), slPct,
+                        String.format("%.0f", maxLossRs));
                     addLog("PER_POS_SL", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrategyType()
-                        + " — loss ₹" + String.format("%.0f", Math.abs(pnl)) + " hit " + pos.getSlPct() + "% SL");
+                        + " — loss ₹" + String.format("%.0f", Math.abs(pnl)) + " hit " + slPct + "% SL");
                 }
             }
 
@@ -1944,6 +1950,21 @@ boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
     }
 
     /** True when every leg of a multi-leg position has a quote in {@code quotes}. */
+    /** SL % of max loss for scanner multi-leg positions that carry no SL of their own. */
+    static final double DEFAULT_MULTI_LEG_SL_PCT = 40.0;
+
+    /**
+     * Max loss in rupees for SL sizing: the legs' expiry payoff when computable (what can really
+     * be lost on these fills), otherwise the stored maxLossAmount, otherwise 0 (no SL).
+     */
+    static double effectiveMaxLoss(LivePosition pos) {
+        Double perUnit = PayoffMath.maxLossPerUnit(pos.getLegs());
+        int lotSize = pos.getLotSize() != null ? pos.getLotSize() : 0;
+        int lots = pos.getLots() != null ? pos.getLots() : 1;
+        if (perUnit != null && perUnit > 0 && lotSize > 0) return perUnit * lotSize * lots;
+        return pos.getMaxLossAmount() != null && pos.getMaxLossAmount() > 0 ? pos.getMaxLossAmount() : 0;
+    }
+
     /** Per-position time exit: due from (15:30 - timeExitMinutes) until the close. */
     static boolean timeExitDue(LivePosition pos, LocalTime now) {
         Integer m = pos.getTimeExitMinutes();

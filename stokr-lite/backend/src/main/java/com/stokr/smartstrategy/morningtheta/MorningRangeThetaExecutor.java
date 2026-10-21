@@ -36,6 +36,17 @@ public class MorningRangeThetaExecutor {
     private final ZerodhaSpotPriceFetcher spotFetcher;
 
     private final AtomicBoolean enabled = new AtomicBoolean(false);
+
+    /** Strategy Control Center switch (STRAT_MORNING_THETA_paperEnabled); optional for tests. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.stokr.arbitrage.AutoExecSettingRepository settingRepo;
+
+    private boolean paperEnabledInControlCenter() {
+        if (settingRepo == null) return true;
+        return settingRepo.findBySettingKey("STRAT_MORNING_THETA_paperEnabled")
+                .map(st -> !"false".equalsIgnoreCase(String.valueOf(st.getSettingValue()).trim()))
+                .orElse(true);
+    }
     private volatile String lastStatus = "Not started";
     private volatile LocalDate lastEntryDate;
     private final ConcurrentHashMap<String, Boolean> todayAdjusted = new ConcurrentHashMap<>();
@@ -128,6 +139,10 @@ public class MorningRangeThetaExecutor {
     }
 
     private void tryEntry(LocalDate today, List<LivePosition> openPositions) {
+        if (!paperEnabledInControlCenter()) {
+            lastStatus = "Paused in Strategy Control Center — " + nowStr();
+            return;
+        }
         // Max 1 position per underlying
         Set<String> openUnderlyings = new HashSet<>();
         for (LivePosition p : openPositions) {
@@ -249,12 +264,20 @@ public class MorningRangeThetaExecutor {
         req.put("maxLoss", maxLoss);
         req.put("maxProfit", maxProfit);
 
-        // Intraday exits: SL at 100% of premium, target at 50%, exit 45 min before close
-        req.put("slPct", 100.0);
+        // Intraday exits: SL when the loss equals the premium collected, target at 50%, exit 45
+        // min before close. The exit engine applies slPct to the position's max loss, so express
+        // "100% of premium" as that share of max loss (100% of max loss would never fire in time).
+        req.put("slPct", slPctForPremiumStop(maxProfit, maxLoss));
         req.put("targetPct", 50.0);
         req.put("timeExitMinutes", 45);
 
         return req;
+    }
+
+    /** slPct (of max loss) at which the loss equals the premium collected; 100 if unknown. */
+    static double slPctForPremiumStop(double premium, double maxLoss) {
+        if (premium <= 0 || maxLoss <= 0) return 100.0;
+        return Math.min(100.0, 100.0 * premium / maxLoss);
     }
 
     private List<LivePosition> getOpenMorningThetaPositions() {

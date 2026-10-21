@@ -85,34 +85,12 @@ public class ZerodhaSpotPriceFetcher {
             String token = getAuthToken();
             if (token == null) {
                 log.warn("Zerodha auth token unavailable for quote fetch — spot/futures will be 0");
-                        double fallbackSpot = 0, fallbackFut = 0;
-        if (spotCached != null && spotCached > 0) fallbackSpot = spotCached;
-        else if (spotKey.contains("BANK")) fallbackSpot = 53800.0;
-        else if (spotKey.contains("MID")) fallbackSpot = 13100.0;
-        else if (spotKey.contains("FIN")) fallbackSpot = 24200.0;
-        else if (spotKey.contains("NIFTY")) fallbackSpot = 24650.0;
-        else fallbackSpot = 0.0;
-
-        if (futCached != null && futCached > 0) fallbackFut = futCached;
-        else fallbackFut = fallbackSpot;
-
-        return new double[]{fallbackSpot, fallbackFut};
+                        return fallback(spotCached, spotTime, futCached, futTime, now);
             }
 
             if (apiKey == null || apiKey.isBlank()) {
                 log.warn("Zerodha API key not configured (broker.zerodha.api-key) — quote fetch will fail");
-                        double fallbackSpot = 0, fallbackFut = 0;
-        if (spotCached != null && spotCached > 0) fallbackSpot = spotCached;
-        else if (spotKey.contains("BANK")) fallbackSpot = 53800.0;
-        else if (spotKey.contains("MID")) fallbackSpot = 13100.0;
-        else if (spotKey.contains("FIN")) fallbackSpot = 24200.0;
-        else if (spotKey.contains("NIFTY")) fallbackSpot = 24650.0;
-        else fallbackSpot = 0.0;
-
-        if (futCached != null && futCached > 0) fallbackFut = futCached;
-        else fallbackFut = fallbackSpot;
-
-        return new double[]{fallbackSpot, fallbackFut};
+                        return fallback(spotCached, spotTime, futCached, futTime, now);
             }
 
             String urlStr = "https://api.kite.trade/quote?i=" + spotKey.replace(" ", "%20") + "&i=" + futuresKey.replace(" ", "%20");
@@ -163,19 +141,20 @@ public class ZerodhaSpotPriceFetcher {
         } catch (Exception e) {
             log.error("Failed batch fetch for {} / {}: {}", spotKey, futuresKey, e.getMessage());
         }
-                double fallbackSpot = 0, fallbackFut = 0;
-        if (spotCached != null && spotCached > 0) fallbackSpot = spotCached;
-        else if (spotKey.contains("BANK")) fallbackSpot = 53800.0;
-        else if (spotKey.contains("MID")) fallbackSpot = 13100.0;
-        else if (spotKey.contains("FIN")) fallbackSpot = 24200.0;
-        else if (spotKey.contains("NIFTY")) fallbackSpot = 24650.0;
-        else fallbackSpot = 0.0;
+                return fallback(spotCached, spotTime, futCached, futTime, now);
+    }
 
-        if (futCached != null && futCached > 0) fallbackFut = futCached;
-        else fallbackFut = fallbackSpot;
+    /** A failed fetch may reuse a cached price only while it is still recent. */
+    static final long MAX_FALLBACK_AGE_MS = 60_000;
 
-        return new double[]{fallbackSpot, fallbackFut};
+    /**
+     * Fallback after a failed fetch: the cached price if under a minute old, else 0 ("unknown",
+     * which every caller treats as no price). Never a hard-coded or hours-old price -- those
+     * produced fake strikes, fills and exits -- and never the spot passed off as the future.
+     */
+    static double[] fallback(Double spotCached, Long spotTime, Double futCached, Long futTime, long now) {
+        double spot = spotCached != null && spotCached > 0 && spotTime != null && now - spotTime <= MAX_FALLBACK_AGE_MS ? spotCached : 0;
+        double fut = futCached != null && futCached > 0 && futTime != null && now - futTime <= MAX_FALLBACK_AGE_MS ? futCached : 0;
+        return new double[]{spot, fut};
     }
 }
-
-

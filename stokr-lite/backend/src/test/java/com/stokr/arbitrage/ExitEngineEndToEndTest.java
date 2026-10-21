@@ -134,4 +134,26 @@ class ExitEngineEndToEndTest {
         // Old behaviour booked the SELL leg as expired worthless (+Rs 3,000).
         assertEquals(0, engine.computeMultiLegPnl(pos, quotes), 1);  // leg carried at entry
     }
+
+    @Test
+    void scannerCondorWithoutOwnRulesGetsDefaultStopLossOnPayoffMaxLoss() {
+        // Scanner positions carry no slPct; previously nothing could stop them out before 15:20.
+        pos.setStrategyType("CONDOR_SPREAD");
+        pos.setSlPct(null); pos.setTargetPct(null); pos.setTimeExitMinutes(null);
+        pos.setMaxLossAmount(null); pos.setMaxProfitAmount(null);
+        pos.setTargetEdge(java.math.BigDecimal.valueOf(3000));
+        // Long put condor 54700/54800/55600/55700: debit 60-45-40+70 = 45 pts -> max loss Rs 1,350.
+        pos.setLegs(List.of(
+            new LinkedHashMap<>(Map.of("symbol", "A", "strike", 54700, "optionType", "PE", "side", "BUY", "qty", 1, "price", 60.0)),
+            new LinkedHashMap<>(Map.of("symbol", "B", "strike", 54800, "optionType", "PE", "side", "SELL", "qty", 1, "price", 45.0)),
+            new LinkedHashMap<>(Map.of("symbol", "C", "strike", 55600, "optionType", "PE", "side", "SELL", "qty", 1, "price", 40.0)),
+            new LinkedHashMap<>(Map.of("symbol", "D", "strike", 55700, "optionType", "PE", "side", "BUY", "qty", 1, "price", 70.0))));
+        assertEquals(1350, OptionArbAutoExecService.effectiveMaxLoss(pos), 1e-9);
+        // Marks: long legs drop, shorts unchanged -> loss (20+20) x 30 = Rs 1,200 >= 40% of 1,350.
+        quotes.put("A", q(40, 41)); quotes.put("B", q(44, 45)); quotes.put("C", q(39, 40)); quotes.put("D", q(50, 51));
+        engine.checkRolloverAt(LocalTime.of(11, 0));
+        engine.checkRolloverAt(LocalTime.of(11, 0));
+        assertEquals("CLOSED", pos.getStatus());
+        assertEquals("PER_POSITION_SL", pos.getExitReason());
+    }
 }
