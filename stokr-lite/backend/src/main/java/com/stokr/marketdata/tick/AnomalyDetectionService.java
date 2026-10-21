@@ -30,6 +30,22 @@ public class AnomalyDetectionService {
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final BigDecimal ZERO = BigDecimal.ZERO;
 
+    // Fast in-memory panic tracker for down-acceleration circuit breaker
+    private static final Map<String, Long> LAST_DOWN_PANIC_MS = new ConcurrentHashMap<>();
+
+    public static boolean isPanicActive(String symbolOrUnderlying, long windowMs) {
+        if (symbolOrUnderlying == null) return false;
+        String key = symbolOrUnderlying.toUpperCase();
+        Long ts = LAST_DOWN_PANIC_MS.get(key);
+        if (ts == null) return false;
+        return (System.currentTimeMillis() - ts) < windowMs;
+    }
+
+    public static void recordPanic(String symbolOrUnderlying) {
+        if (symbolOrUnderlying == null) return;
+        LAST_DOWN_PANIC_MS.put(symbolOrUnderlying.toUpperCase(), System.currentTimeMillis());
+    }
+
     private final TickAnomalyRepository anomalyRepo;
     private final TickDataRepository tickDataRepo;
 
@@ -173,6 +189,12 @@ public class AnomalyDetectionService {
             .createdAt(Instant.now())
             .build();
         anomalyRepo.save(anomaly);
+        if ("DOWN".equalsIgnoreCase(direction)) {
+            recordPanic(symbol);
+            if (symbol.startsWith("NIFTY")) recordPanic("NIFTY");
+            if (symbol.startsWith("BANKNIFTY")) recordPanic("BANKNIFTY");
+            if (symbol.startsWith("FINNIFTY")) recordPanic("FINNIFTY");
+        }
         log.info("Anomaly: {} {} @ {} mag={} vol={} dir={}",
             type, symbol, price, String.format("%.2f", magnitude), volume, direction);
     }

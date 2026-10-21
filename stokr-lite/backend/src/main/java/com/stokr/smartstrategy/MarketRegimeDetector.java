@@ -117,9 +117,11 @@ public class MarketRegimeDetector {
         double prevClose = ohlc != null && ohlc[3] > 0 ? ohlc[3] : 0;
         double dayRange = ohlc != null && ohlc[1] > 0 && ohlc[2] > 0 ? (ohlc[1] - ohlc[2]) / spot * 100 : 0;
         double dayChangePct = prevClose > 0 ? (spot - prevClose) / prevClose * 100 : 0;
+        double open = ohlc != null && ohlc[0] > 0 ? ohlc[0] : prevClose;
+        double openChangePct = open > 0 ? (spot - open) / open * 100 : 0;
         double avgDayRange = underlying.equals("BANKNIFTY") ? 1.5 : 1.0;
 
-        Regime regime = classify(ivRank, dayRange, avgDayRange, dayChangePct);
+        Regime regime = classify(ivRank, dayRange, avgDayRange, dayChangePct, openChangePct);
 
         Map<String, Double> weights = computeStrategyWeights(regime, ivRank);
 
@@ -131,11 +133,15 @@ public class MarketRegimeDetector {
     static final double TREND_THRESHOLD_PCT = 0.5;
 
     static Regime classify(double ivRank, double dayRangePct, double avgDayRangePct, double dayChangePct) {
+        return classify(ivRank, dayRangePct, avgDayRangePct, dayChangePct, 0.0);
+    }
+
+    static Regime classify(double ivRank, double dayRangePct, double avgDayRangePct, double dayChangePct, double openChangePct) {
         if (dayRangePct > avgDayRangePct * 2 || (ivRank > 70 && dayRangePct > avgDayRangePct * 1.5)) {
             return Regime.HIGH_VOLATILE;
         }
-        if (dayChangePct > TREND_THRESHOLD_PCT) return Regime.TRENDING_UP;
-        if (dayChangePct < -TREND_THRESHOLD_PCT) return Regime.TRENDING_DOWN;
+        if (dayChangePct > TREND_THRESHOLD_PCT || openChangePct > TREND_THRESHOLD_PCT) return Regime.TRENDING_UP;
+        if (dayChangePct < -TREND_THRESHOLD_PCT || openChangePct < -TREND_THRESHOLD_PCT) return Regime.TRENDING_DOWN;
         return Regime.SIDEWAYS;
     }
 
@@ -154,9 +160,9 @@ public class MarketRegimeDetector {
                 weights.put("CALENDAR_SPREAD_EDGE", 0.9);
             }
             case TRENDING_DOWN -> {
-                weights.put("JADE_LIZARD", 0.6);
-                weights.put("RATIO_BUTTERFLY", 0.8);
-                weights.put("IRON_CONDOR", 0.5);
+                weights.put("JADE_LIZARD", 0.0); // Completely disabled in downward trend
+                weights.put("RATIO_BUTTERFLY", 0.5);
+                weights.put("IRON_CONDOR", 0.4);
                 weights.put("BROKEN_WING_BUTTERFLY", 1.2);
                 weights.put("SKEW_HARVEST", 1.1);
                 weights.put("EXPIRY_THETA_CRUSH", 0.9);
@@ -177,8 +183,8 @@ public class MarketRegimeDetector {
                 weights.put("IRON_CONDOR", 1.4);
                 weights.put("BROKEN_WING_BUTTERFLY", 1.3);
                 weights.put("SKEW_HARVEST", 1.2);
-                weights.put("JADE_LIZARD", 1.1);
-                weights.put("RATIO_BUTTERFLY", 0.8);
+                weights.put("JADE_LIZARD", 0.0); // Completely disabled in high volatile conditions
+                weights.put("RATIO_BUTTERFLY", 0.5);
                 weights.put("EXPIRY_THETA_CRUSH", 0.6);
                 weights.put("BOX_SPREAD_ARB", 1.0);
                 weights.put("CALENDAR_SPREAD_EDGE", 0.7);

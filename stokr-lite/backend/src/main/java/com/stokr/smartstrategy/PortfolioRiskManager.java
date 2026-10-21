@@ -128,6 +128,13 @@ public class PortfolioRiskManager {
                 totalOpenRisk, newRisk, maxTotalRisk));
         }
 
+        // 8. Circuit Breaker / Market Panic Guard (15-min down velocity cool-off)
+        if (com.stokr.marketdata.tick.AnomalyDetectionService.isPanicActive(underlying, 15 * 60 * 1000L)) {
+            if ("BULLISH".equalsIgnoreCase(newDirection) || strategyType.contains("LIZARD") || strategyType.contains("BUTTERFLY")) {
+                return new RiskCheck(false, "Panic circuit breaker active for " + underlying + " (downward price acceleration detected within 15m)");
+            }
+        }
+
         return new RiskCheck(true, "All risk checks passed");
     }
 
@@ -179,6 +186,8 @@ public class PortfolioRiskManager {
 
     @SuppressWarnings("unchecked")
     private String inferDirection(Map<String, Object> opp) {
+        String strat = (String) opp.getOrDefault("strategyType", "");
+        if ("JADE_LIZARD".equalsIgnoreCase(strat)) return "BULLISH";
         List<Map<String, Object>> legs = (List<Map<String, Object>>) opp.get("legList");
         if (legs == null) return null;
         int sellPuts = 0, sellCalls = 0;
@@ -201,6 +210,7 @@ public class PortfolioRiskManager {
     }
 
     private String inferPositionDirection(LivePosition pos) {
+        if ("JADE_LIZARD".equalsIgnoreCase(pos.getStrategyType())) return "BULLISH";
         var legs = pos.getLegs();
         if (legs == null) return "NEUTRAL";
         int sellPuts = 0, sellCalls = 0;

@@ -81,9 +81,9 @@ public class JadeLizardScanner {
                     int callSellStrike = atmStrike + callDist * step;
                     int callBuyStrike = callSellStrike + callSpreadWidth * step;
 
-                    // Put hedge: buy a far OTM put to cap downside but keep asymmetry
-                    // Wider than call spread so we retain more credit (Jade Lizard character)
-                    int putHedgeSteps = "BANKNIFTY".equals(underlying) ? 10 : 8;
+                    // Put hedge: bounded wing width to prevent catastrophic tail-risk blowouts
+                    // Max 4 steps on BankNifty (400 pts) and 3 on Nifty (150 pts) instead of unbounded 1000 pts
+                    int putHedgeSteps = "BANKNIFTY".equals(underlying) ? 4 : 3;
                     int putBuyStrike = putSellStrike - putHedgeSteps * step;
 
                     OptionChainService.OptionQuote putSellQ = getQuote(quotes, underlying, expiry, putSellStrike, "PE");
@@ -118,9 +118,9 @@ public class JadeLizardScanner {
                     double netCreditRs = creditRs - txnCost;
                     if (netCreditRs < 50) continue;
 
-                    // Only show good setups: credit > 30% of wider spread, or zero upside risk
+                    // Strict Risk/Reward: Credit must be at least 35% of the wider spread width
                     double widerWidth = Math.max(callSpreadWidthPts, putSpreadWidthPts);
-                    if (!zeroUpsideRisk && credit < widerWidth * 0.25) continue;
+                    if (credit < widerWidth * 0.35) continue;
 
                     // Breakeven on downside
                     double breakEvenDown = putSellStrike - credit;
