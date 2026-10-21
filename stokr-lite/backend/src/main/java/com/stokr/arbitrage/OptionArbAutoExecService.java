@@ -526,6 +526,27 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             if (totalEdge < minEdge) continue;
             if (opp.getExpiryDate() == null || opp.getStrike() == null) continue;
 
+            // STRICT DEDUPLICATION: Skip if ANY position of the same strategy is already OPEN on this underlying
+            boolean sameStrategyUnderlyingOpen = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
+                    .anyMatch(p -> "PAPER".equals(p.getBroker())
+                            && opp.getStrategyType() != null && opp.getStrategyType().equalsIgnoreCase(p.getStrategyType())
+                            && opp.getUnderlying() != null && opp.getUnderlying().equalsIgnoreCase(p.getUnderlying()));
+            if (sameStrategyUnderlyingOpen) {
+                log.info("Auto-exec skipped for {} {}: already has an active OPEN position on this underlying", opp.getStrategyType(), opp.getUnderlying());
+                continue;
+            }
+
+            // 15-Minute Entry Cooldown Guard: Skip if same strategy and underlying entered within last 15 mins
+            LocalDateTime entryCooldownCutoff = LocalDateTime.now(ZoneId.of("Asia/Kolkata")).minusMinutes(15);
+            boolean recentlyEntered = positionRepo.findAll().stream()
+                    .filter(p -> "PAPER".equals(p.getBroker()) && p.getEnteredAt() != null && p.getEnteredAt().isAfter(entryCooldownCutoff))
+                    .anyMatch(p -> opp.getStrategyType() != null && opp.getStrategyType().equalsIgnoreCase(p.getStrategyType())
+                            && opp.getUnderlying() != null && opp.getUnderlying().equalsIgnoreCase(p.getUnderlying()));
+            if (recentlyEntered) {
+                log.info("Auto-exec skipped for {} {}: entered within last 15 minutes", opp.getStrategyType(), opp.getUnderlying());
+                continue;
+            }
+
             if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
                     .anyMatch(p -> "PAPER".equals(p.getBroker()) && opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
 

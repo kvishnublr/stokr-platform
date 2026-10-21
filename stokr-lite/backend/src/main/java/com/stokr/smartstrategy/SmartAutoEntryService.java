@@ -215,15 +215,37 @@ public class SmartAutoEntryService {
                 String und = String.valueOf(opp.get("underlying"));
                 String expStr = String.valueOf(opp.getOrDefault("expiry", opp.getOrDefault("expiryDate", "")));
 
-                // Check DB for identical active open strike set (allow multiple DIFFERENT strike sets of the same strategy)
-                boolean sameSetInDb = openPositions.stream().anyMatch(pos ->
+                // STRICT DEDUPLICATION: Skip if ANY position of the same strategy is already OPEN on this underlying
+                boolean alreadyOpenOnUnderlying = openPositions.stream().anyMatch(pos ->
                     "OPEN".equals(pos.getStatus()) &&
-                    com.stokr.arbitrage.SetDeduplicationHelper.isSameSet(pos, opp)
+                    stratType.equalsIgnoreCase(pos.getStrategyType()) &&
+                    und.equalsIgnoreCase(pos.getUnderlying())
                 );
-                if (sameSetInDb) {
-                    log.info("SMART_AUTO: Skipped identical active set in DB: {} {} ({})", stratType, und, opp.get("action"));
+                if (alreadyOpenOnUnderlying) {
+                    log.info("SMART_AUTO: Skipped {} {} - already has an active OPEN position on this underlying", stratType, und);
                     continue;
                 }
+
+                // 15-Minute DB Cooldown Guard: Skip if same strategy and underlying entered within last 15 mins
+                java.time.LocalDateTime dbCooldownCutoff = java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Kolkata")).minusMinutes(15);
+                boolean recentInDb = positionRepo.findAll().stream()
+                    .filter(p -> p.getEnteredAt() != null && p.getEnteredAt().isAfter(dbCooldownCutoff))
+                    .anyMatch(p -> stratType.equalsIgnoreCase(p.getStrategyType()) && und.equalsIgnoreCase(p.getUnderlying()));
+                if (recentInDb) {
+                    log.info("SMART_AUTO: Skipped {} {} - position entered within last 15 minutes", stratType, und);
+                    continue;
+                }
+
+                // 15-Minute Re-entry Cooldown Guard: Skip if same strategy and underlying exited within last 15 mins
+                boolean recentlyExited = positionRepo.findAll().stream()
+                    .filter(p -> ("CLOSED".equals(p.getStatus()) || "EXITED".equals(p.getStatus()))
+                            && p.getExitedAt() != null && p.getExitedAt().isAfter(dbCooldownCutoff))
+                    .anyMatch(p -> stratType.equalsIgnoreCase(p.getStrategyType()) && und.equalsIgnoreCase(p.getUnderlying()));
+                if (recentlyExited) {
+                    log.info("SMART_AUTO: Skipped {} {} - position exited within last 15 minutes (re-entry cooldown)", stratType, und);
+                    continue;
+                }
+
                 if (entered >= 1) break; // Max 1 entry per cycle
 
                 String stratLimit = strategyLimitBreach(stratType, openPositions);
@@ -232,12 +254,13 @@ public class SmartAutoEntryService {
                     continue;
                 }
 
-                String key = opp.get("strategyType") + ":" + opp.get("underlying") + ":"
-                    + opp.getOrDefault("putSellStrike", opp.getOrDefault("strike", ""));
+                // In-memory cooldown key at Strategy:Underlying level (not per strike)
+                String key = stratType.toUpperCase() + ":" + und.toUpperCase();
 
                 // Cooldown check
                 Long lastEntry = recentEntries.get(key);
                 if (lastEntry != null && System.currentTimeMillis() - lastEntry < COOLDOWN_MS) {
+                    log.info("SMART_AUTO: Skipped {} {} - in-memory cooldown active", stratType, und);
                     continue;
                 }
 
