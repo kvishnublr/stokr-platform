@@ -91,12 +91,12 @@ public class PortfolioRiskCalculator {
 
         if (maxLoss > 0 && totalNetPnl <= -maxLoss) {
             status.halted = true;
-            status.haltReason = "Daily loss limit Rs." + String.format("%.0f", maxLoss)
-                    + " hit (today's net P&L: Rs." + String.format("%.0f", totalNetPnl) + "). Halting all new entries.";
+            status.haltReason = "Daily loss limit ₹" + String.format("%.0f", maxLoss)
+                    + " hit (today's net P&L: -₹" + String.format("%.0f", Math.abs(totalNetPnl)) + "). Halting all new entries.";
         } else if (maxProfit > 0 && totalNetPnl >= maxProfit) {
             status.halted = true;
-            status.haltReason = "Daily profit target Rs." + String.format("%.0f", maxProfit)
-                    + " reached (today's net P&L: Rs." + String.format("%.0f", totalNetPnl) + "). Halting to lock in gains.";
+            status.haltReason = "Daily profit target ₹" + String.format("%.0f", maxProfit)
+                    + " reached (today's net P&L: +₹" + String.format("%.0f", totalNetPnl) + "). Halting to lock in gains.";
         } else {
             status.halted = false;
             status.haltReason = null;

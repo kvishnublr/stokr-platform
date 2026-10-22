@@ -477,8 +477,8 @@ public class SmartAutoEntryService {
             double pnl = positionRepo.findAll().stream().filter(mine)
                     .filter(p -> "OPEN".equals(p.getStatus()) || (p.getExitedAt() != null && !p.getExitedAt().isBefore(dayStart)))
                     .mapToDouble(p -> p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0.0).sum();
-            if (maxLoss != null && maxLoss > 0 && pnl <= -maxLoss) return "daily loss limit Rs." + String.format("%.0f", maxLoss) + " hit";
-            if (maxProfit != null && maxProfit > 0 && pnl >= maxProfit) return "daily profit cap Rs." + String.format("%.0f", maxProfit) + " reached";
+            if (maxLoss != null && maxLoss > 0 && pnl <= -maxLoss) return "daily loss limit ₹" + String.format("%.0f", maxLoss) + " hit";
+            if (maxProfit != null && maxProfit > 0 && pnl >= maxProfit) return "daily profit cap ₹" + String.format("%.0f", maxProfit) + " reached";
         }
         return null;
     }

@@ -1712,7 +1712,11 @@ function StrategyConfigurationControlPanel({ fnoHistory, cashHistory }) {
       <div className={`rounded-2xl border p-5 shadow-sm space-y-4 transition-all ${portfolioRisk.halted ? 'bg-rose-50/70 border-rose-300 ring-2 ring-rose-500/20' : 'bg-white border-slate-200'}`}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <span className="text-2xl p-2.5 rounded-2xl bg-slate-100 border border-slate-200">???</span>
+            <div className={`w-11 h-11 rounded-2xl border flex items-center justify-center shrink-0 ${portfolioRisk.halted ? 'bg-rose-100 border-rose-200 text-rose-600' : 'bg-indigo-50 border-indigo-100 text-indigo-600'}`}>
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-black text-slate-900 tracking-tight">Portfolio Daily Risk &amp; Circuit Breakers (Entire Day)</h3>
@@ -1725,7 +1729,9 @@ function StrategyConfigurationControlPanel({ fnoHistory, cashHistory }) {
           <div>
             {portfolioRisk.halted ? (
               <div className="px-3.5 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-black shadow-md flex items-center gap-1.5 animate-pulse">
-                <span>??</span>
+                <svg className="w-3.5 h-3.5 text-white shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
+                </svg>
                 <span>CIRCUIT BREAKER ACTIVE: TRADING HALTED</span>
               </div>
             ) : (
@@ -1740,7 +1746,9 @@ function StrategyConfigurationControlPanel({ fnoHistory, cashHistory }) {
         {/* Status Callout if Halted */}
         {portfolioRisk.halted && portfolioRisk.haltReason && (
           <div className="p-3 bg-rose-100 border border-rose-300 rounded-xl text-xs font-bold text-rose-900 flex items-center gap-2">
-            <span className="text-base">??</span>
+            <svg className="w-4 h-4 text-rose-700 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
             <span>{portfolioRisk.haltReason}</span>
           </div>
         )}

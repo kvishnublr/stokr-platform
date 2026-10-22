@@ -39,7 +39,7 @@ class PortfolioDailyRiskTest {
         closed.setStatus("CLOSED");
         closed.setBroker("PAPER");
         closed.setCurrentPnl(BigDecimal.valueOf(1200.0));
-        closed.setExitedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")).minusMinutes(30));
+        closed.setExitedAt(java.time.LocalDate.now(ZoneId.of("Asia/Kolkata")).atTime(10, 30));
 
         when(positionRepo.findAllClosed()).thenReturn(List.of(closed));
         when(positionRepo.findAllOpen()).thenReturn(List.of());
@@ -59,13 +59,13 @@ class PortfolioDailyRiskTest {
         closed1.setStatus("CLOSED");
         closed1.setBroker("PAPER");
         closed1.setCurrentPnl(BigDecimal.valueOf(-3500.0));
-        closed1.setExitedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")).minusHours(2));
+        closed1.setExitedAt(java.time.LocalDate.now(ZoneId.of("Asia/Kolkata")).atTime(9, 45));
 
         LivePosition closed2 = new LivePosition();
         closed2.setStatus("CLOSED");
         closed2.setBroker("PAPER");
         closed2.setCurrentPnl(BigDecimal.valueOf(-2000.0));
-        closed2.setExitedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")).minusHours(1));
+        closed2.setExitedAt(java.time.LocalDate.now(ZoneId.of("Asia/Kolkata")).atTime(10, 15));
 
         when(positionRepo.findAllClosed()).thenReturn(List.of(closed1, closed2));
         when(positionRepo.findAllOpen()).thenReturn(List.of());
@@ -85,7 +85,7 @@ class PortfolioDailyRiskTest {
         closed.setStatus("CLOSED");
         closed.setBroker("PAPER");
         closed.setCurrentPnl(BigDecimal.valueOf(6000.0));
-        closed.setExitedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")).minusHours(3));
+        closed.setExitedAt(java.time.LocalDate.now(ZoneId.of("Asia/Kolkata")).atTime(11, 0));
 
         LivePosition open = new LivePosition();
         open.setStatus("OPEN");
@@ -115,7 +115,7 @@ class PortfolioDailyRiskTest {
         closed.setStatus("CLOSED");
         closed.setBroker("PAPER");
         closed.setCurrentPnl(BigDecimal.valueOf(25000.0));
-        closed.setExitedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")).minusHours(1));
+        closed.setExitedAt(java.time.LocalDate.now(ZoneId.of("Asia/Kolkata")).atTime(12, 0));
 
         when(positionRepo.findAllClosed()).thenReturn(List.of(closed));
         when(positionRepo.findAllOpen()).thenReturn(List.of());

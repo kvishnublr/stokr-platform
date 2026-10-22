@@ -488,7 +488,7 @@ function EmptyState({ tab, marketOpen, lastScannedAt }) {
 }
 
 /* ──── PAYOFF CHART ──── */
-/* ???? CAPITAL REQUIRED (NSE SPAN HEDGED MARGIN ENGINE) ???? */
+/* CAPITAL REQUIRED (NSE SPAN HEDGED MARGIN ENGINE) */
 function computeCapitalRequired(legs, lotSize, spot, opp) {
   if (!legs || legs.length === 0) return 0;
 

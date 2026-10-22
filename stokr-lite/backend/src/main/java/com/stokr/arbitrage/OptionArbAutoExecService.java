@@ -2839,10 +2839,10 @@ for (LivePosition pos : openPositions) {
                             || (p.getExitedAt() != null && !p.getExitedAt().isBefore(dayStart)))
                     .mapToDouble(p -> p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0.0).sum();
             if (maxLoss != null && maxLoss > 0 && pnl <= -maxLoss) {
-                return "Strategy daily loss limit Rs." + String.format("%.0f", maxLoss) + " hit (today Rs." + String.format("%.0f", pnl) + ")";
+                return "Strategy daily loss limit ₹" + String.format("%.0f", maxLoss) + " hit (today -₹" + String.format("%.0f", Math.abs(pnl)) + ")";
             }
             if (maxProfit != null && maxProfit > 0 && pnl >= maxProfit) {
-                return "Strategy daily profit cap Rs." + String.format("%.0f", maxProfit) + " reached (today Rs." + String.format("%.0f", pnl) + ")";
+                return "Strategy daily profit cap ₹" + String.format("%.0f", maxProfit) + " reached (today +₹" + String.format("%.0f", pnl) + ")";
             }
         }
         return null;
