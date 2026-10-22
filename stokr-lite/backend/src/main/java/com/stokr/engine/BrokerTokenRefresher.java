@@ -7,6 +7,8 @@ import com.stokr.broker.BrokerAccountRepository;
 import com.stokr.broker.BrokerService;
 import com.stokr.broker.TotpUtils;
 import com.stokr.risk.ErrorLogService;
+import com.stokr.broker.BrokerAdapter;
+import java.math.BigDecimal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -209,5 +211,52 @@ public class BrokerTokenRefresher {
         } catch (Exception e) {
             return "FAILED: " + e.getMessage();
         }
+    }
+
+    /**
+     * Institutional Pre-Market Health Gate: Runs at 08:45 AM IST every weekday.
+     * Verifies that all active broker accounts have valid, non-expired tokens before
+     * market opening bell at 09:15 AM.
+     */
+    @Scheduled(cron = "0 45 8 * * MON-FRI", zone = "Asia/Kolkata")
+    public void preMarketHealthAudit() {
+        log.info("=== PRE-MARKET 08:45 AM BROKER READINESS AUDIT STARTING ===");
+        List<BrokerAccount> activeAccounts = brokerAccountRepository.findAll().stream()
+            .filter(a -> "ACTIVE".equalsIgnoreCase(a.getStatus()))
+            .toList();
+
+        for (BrokerAccount account : activeAccounts) {
+            String broker = account.getBrokerName();
+            if ("PAPER".equalsIgnoreCase(broker)) continue;
+            try {
+                BrokerAdapter adapter = brokerService.getAdapter(broker);
+                if (adapter == null) {
+                    log.warn("PRE_MARKET_AUDIT: No adapter found for broker {}", broker);
+                    continue;
+                }
+                String token = account.getAccessToken();
+                if (token == null || token.isBlank()) {
+                    log.error("PRE_MARKET_AUDIT ALERT: Account {} ({}) has NO access token! Manual login required before 09:15 AM",
+                        account.getId(), broker);
+                    errorLogService.logError(account.getUserId(), "PRE_MARKET_TOKEN_MISSING",
+                        broker + " Account " + account.getId(), "Access token is empty. Login before 09:15 AM.", "WARN");
+                    continue;
+                }
+                BigDecimal margin = adapter.getAvailableMargin(token);
+                String marginErr = adapter.lastMarginError();
+                if (marginErr != null && marginErr.toLowerCase().contains("token")) {
+                    log.error("PRE_MARKET_AUDIT ALERT: Account {} ({}) TOKEN EXPIRED! Error: {}. Re-login needed!",
+                        account.getId(), broker, marginErr);
+                    errorLogService.logError(account.getUserId(), "PRE_MARKET_TOKEN_EXPIRED",
+                        broker + " Account " + account.getId(), marginErr, "ERROR");
+                } else {
+                    log.info("PRE_MARKET_AUDIT OK: Account {} ({}) ready for market open. Available Margin: ₹{}",
+                        account.getId(), broker, margin != null ? margin : "N/A");
+                }
+            } catch (Exception e) {
+                log.error("PRE_MARKET_AUDIT ERROR for account {} ({}): {}", account.getId(), broker, e.getMessage());
+            }
+        }
+        log.info("=== PRE-MARKET 08:45 AM BROKER READINESS AUDIT FINISHED ===");
     }
 }

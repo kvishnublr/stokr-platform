@@ -60,6 +60,18 @@ public class OptionArbitrageController {
     private final ZerodhaSpotPriceFetcher spotFetcher;
     private final OptionArbAutoExecService autoExecService;
     @Autowired private MultiTenantExecutionRouter executionRouter;
+    @Autowired(required = false) private MarketRegimeService marketRegimeService;
+
+    private int calculateDynamicWingWidth(String underlying, double spot, int step) {
+        int baseMin = "BANKNIFTY".equalsIgnoreCase(underlying) ? 4 : 3;
+        double vix = (marketRegimeService != null && marketRegimeService.getCurrentVix() > 0)
+            ? marketRegimeService.getCurrentVix()
+            : 13.0; // Institutional baseline VIX
+        // 1-sigma daily expected move = Spot * (VIX / (100 * sqrt(252)))
+        double dailySigma = spot * (vix / 1587.45);
+        int volatilitySteps = (int) Math.round(dailySigma / step);
+        return Math.max(baseMin, volatilitySteps);
+    }
     private final LivePositionRepository livePositionRepo;
     private final OptionArbOpportunityRepository oppRepo;
     private final com.stokr.delivery.CashScannerService cashScannerService;
@@ -583,7 +595,7 @@ public class OptionArbitrageController {
             }
             Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
-            int minWingWidth = "BANKNIFTY".equalsIgnoreCase(underlying) ? 4 : 3;
+            int minWingWidth = calculateDynamicWingWidth(underlying, spot, step);
             for (int wingWidth = minWingWidth; wingWidth <= 12; wingWidth++) {
                 int putSell = atmStrike - wingWidth * step;
                 int callSell = atmStrike + wingWidth * step;

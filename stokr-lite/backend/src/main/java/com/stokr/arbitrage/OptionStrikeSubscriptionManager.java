@@ -43,6 +43,12 @@ public class OptionStrikeSubscriptionManager {
     public void init() {
         // Initial subscribe attempt on startup
         refreshSubscriptions();
+        try {
+            tickClient.subscribe("NSE:INDIA VIX", 264969);
+            log.info("Subscribed NSE:INDIA VIX (token 264969) to WebSocket");
+        } catch (Exception e) {
+            log.warn("Failed to subscribe INDIA VIX: {}", e.getMessage());
+        }
     }
 
     /**

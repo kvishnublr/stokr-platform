@@ -49,6 +49,10 @@ public class AnomalyDetectionService {
     private final TickAnomalyRepository anomalyRepo;
     private final TickDataRepository tickDataRepo;
 
+    // Throttle database persistence so high-frequency ticks don't flood PostgreSQL
+    private final Map<String, Long> lastDbPersistMs = new ConcurrentHashMap<>();
+    private static final long DB_PERSIST_THROTTLE_MS = 10_000L; // max 1 DB record per 10s per symbol:type
+
     // VWAP and ATR tracking per symbol (updated every minute from tick candles)
     private final Map<String, VwapState> vwapCache = new ConcurrentHashMap<>();
     private final Map<String, double[]> atrCache = new ConcurrentHashMap<>();  // 5-min ATR
@@ -187,6 +191,21 @@ public class AnomalyDetectionService {
 
     private void recordAnomaly(String symbol, String type, BigDecimal price, BigDecimal magnitude,
                                 long volume, BigDecimal vwapDev, String direction) {
+        if ("DOWN".equalsIgnoreCase(direction)) {
+            recordPanic(symbol);
+            if (symbol.startsWith("NIFTY")) recordPanic("NIFTY");
+            if (symbol.startsWith("BANKNIFTY")) recordPanic("BANKNIFTY");
+            if (symbol.startsWith("FINNIFTY")) recordPanic("FINNIFTY");
+        }
+
+        String throttleKey = symbol + ":" + type;
+        long now = System.currentTimeMillis();
+        Long last = lastDbPersistMs.get(throttleKey);
+        if (last != null && (now - last) < DB_PERSIST_THROTTLE_MS) {
+            return;
+        }
+        lastDbPersistMs.put(throttleKey, now);
+
         var anomaly = TickAnomaly.builder()
             .symbol(symbol)
             .anomalyType(type)
@@ -201,12 +220,6 @@ public class AnomalyDetectionService {
             .createdAt(Instant.now())
             .build();
         anomalyRepo.save(anomaly);
-        if ("DOWN".equalsIgnoreCase(direction)) {
-            recordPanic(symbol);
-            if (symbol.startsWith("NIFTY")) recordPanic("NIFTY");
-            if (symbol.startsWith("BANKNIFTY")) recordPanic("BANKNIFTY");
-            if (symbol.startsWith("FINNIFTY")) recordPanic("FINNIFTY");
-        }
         log.info("Anomaly: {} {} @ {} mag={} vol={} dir={}",
             type, symbol, price, String.format("%.2f", magnitude), volume, direction);
     }

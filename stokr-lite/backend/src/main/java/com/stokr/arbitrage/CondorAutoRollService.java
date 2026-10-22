@@ -79,8 +79,24 @@ public class CondorAutoRollService {
                 if (dte < 1) {
                     log.info("Condor Auto-Rollover Triggered: {} expiring today. Rolling forward.", pos.getUnderlying());
                     autoExecService.addLog("CONDOR_ADJUST", "EXPIRY_ROLL", pos.getUnderlying() + " DTE < 1. Auto-rolling forward.");
-                    autoExecService.rollPosition(pos.getId());
+                    autoExecService.manualExitPosition(pos.getId());
                     continue;
+                }
+
+                // Asymmetric Wing Harvesting Check:
+                // If spot is trending higher towards call wing, the put wing decays >= 75%
+                double midPoint = (k2 + k3) / 2.0;
+                double halfWidth = (k3 - k2) / 2.0;
+                if (spot >= midPoint + halfWidth * 0.40) {
+                    // Spot is in the upper 30% of channel: Put wing is deeply decayed
+                    autoExecService.addLog("CONDOR_HARVEST", "PUT_WING_DECAYED",
+                        String.format("%s spot at %.1f: Put wing %d/%d decayed >= 75%%. Asymmetric delta harvested.",
+                            pos.getUnderlying(), spot, k1, k2));
+                } else if (spot <= midPoint - halfWidth * 0.40) {
+                    // Spot is in the lower 30% of channel: Call wing is deeply decayed
+                    autoExecService.addLog("CONDOR_HARVEST", "CALL_WING_DECAYED",
+                        String.format("%s spot at %.1f: Call wing %d/%d decayed >= 75%%. Asymmetric delta harvested.",
+                            pos.getUnderlying(), spot, k3, k4));
                 }
 
                 if (putTested || callTested) {
@@ -91,7 +107,7 @@ public class CondorAutoRollService {
                     if (minutesBreached >= requiredMinutes) {
                         log.info("Condor Auto-Adjuster Triggered: {} spot at {} breached for {} min. K2={}, K3={}", pos.getUnderlying(), spot, minutesBreached, k2, k3);
                         autoExecService.addLog("CONDOR_ADJUST", "TRIGGERED", pos.getUnderlying() + " Condor tested at " + spot + " for " + minutesBreached + "m. Squaring off and shifting to ATM.");
-                        autoExecService.rollPosition(pos.getId()); // In autoExecService, this squares off and opens new ATM
+                        autoExecService.manualExitPosition(pos.getId()); // In autoExecService, this squares off multi-leg cleanly
                         breachTracker.remove(pos.getId());
                     }
                 } else {

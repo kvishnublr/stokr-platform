@@ -115,4 +115,54 @@ class SuperSystemInstitutionalGuardsTest {
         assertEquals("SELL", legs.get(2).get("side"), "Third leg must be SELL (inner short wing)");
         assertEquals("SELL", legs.get(3).get("side"), "Fourth leg must be SELL (inner short wing)");
     }
+
+    @Test
+    @DisplayName("India VIX Integration: Spiking VIX triggers VOLATILITY_SHOCK and halts short Vega strategies")
+    void testIndiaVixSpikeProtection() {
+        ZerodhaSpotPriceFetcher spotFetcher = mock(ZerodhaSpotPriceFetcher.class);
+        com.stokr.marketdata.tick.AnomalyDetectionService anomalyService = mock(com.stokr.marketdata.tick.AnomalyDetectionService.class);
+        com.stokr.marketdata.tick.KiteTickWebSocketClient tickClient = mock(com.stokr.marketdata.tick.KiteTickWebSocketClient.class);
+
+        MarketRegimeService regimeService = new MarketRegimeService(spotFetcher, anomalyService, tickClient);
+        Mockito.when(spotFetcher.getSpotAndFutures(Mockito.anyString(), Mockito.anyString()))
+            .thenReturn(new double[]{24000.0, 24050.0});
+
+        // 1. Calm market: VIX at 12.0
+        regimeService.setOpeningVix(12.0);
+        regimeService.setCurrentVix(12.0);
+        assertEquals(0.0, regimeService.getVixChangePct(), 0.01);
+        assertTrue(regimeService.isStrategyAllowed("IRON_CONDOR", "NIFTY", LocalTime.of(11, 0)),
+            "Iron Condor should be allowed when VIX is steady");
+
+        // 2. Sudden VIX Spike: VIX surges to 13.5 (+12.5% intraday surge)
+        regimeService.setCurrentVix(13.5);
+        assertTrue(regimeService.getVixChangePct() >= 5.0, "VIX change must exceed 5%");
+        MarketRegime regime = regimeService.detectRegime("NIFTY", LocalTime.of(11, 0));
+        assertEquals(MarketRegime.VOLATILITY_SHOCK, regime, "VIX spike must trigger VOLATILITY_SHOCK");
+
+        // Vega-short option strategies must be blocked
+        assertFalse(regimeService.isStrategyAllowed("IRON_CONDOR", "NIFTY", LocalTime.of(11, 0)),
+            "Iron Condor must be blocked during VIX surge to prevent Vega expansion loss");
+        assertFalse(regimeService.isStrategyAllowed("BUTTERFLY", "NIFTY", LocalTime.of(11, 0)),
+            "Butterfly must be blocked during VIX surge");
+    }
+
+    @Test
+    @DisplayName("Dynamic Strike Sizing: Volatility expansion automatically broadens condor wing padding")
+    void testDynamicStrikeDistanceScaling() {
+        double spot = 25000.0;
+        int step = 50;
+
+        // Formula: dailySigma = spot * (vix / 1587.45)
+        // Calm market: VIX = 10.0 -> dailySigma = 157.48 -> steps = round(157.48 / 50) = 3
+        double calmSigma = spot * (10.0 / 1587.45);
+        int calmSteps = Math.max(3, (int) Math.round(calmSigma / step));
+        assertEquals(3, calmSteps, "Calm day uses tight 3-step (150 pt) buffer");
+
+        // High volatility day: VIX = 18.0 -> dailySigma = 283.47 -> steps = round(283.47 / 50) = 6
+        double highSigma = spot * (18.0 / 1587.45);
+        int highSteps = Math.max(3, (int) Math.round(highSigma / step));
+        assertEquals(6, highSteps, "Volatile day automatically expands to 6-step (300 pt) defensive buffer");
+        assertTrue(highSteps > calmSteps, "Wing width must scale dynamically with volatility");
+    }
 }

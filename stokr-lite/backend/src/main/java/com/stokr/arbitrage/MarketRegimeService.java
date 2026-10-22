@@ -35,6 +35,9 @@ public class MarketRegimeService {
     private final AnomalyDetectionService anomalyService;
     private final KiteTickWebSocketClient tickClient;
 
+    private volatile double currentVix = 0.0;
+    private volatile double openingVix = 0.0;
+
     // Rolling 5-minute spot price samples (timestampMs -> price)
     private final Map<String, Deque<PriceSample>> rollingPrices = new ConcurrentHashMap<>();
 
@@ -57,10 +60,17 @@ public class MarketRegimeService {
     private void onTick(TickData tick) {
         if (tick == null || tick.getSymbol() == null || tick.getLtp() == null) return;
         String sym = tick.getSymbol();
+        double price = tick.getLtp().doubleValue();
+        if (sym.contains("INDIA VIX") || sym.contains("VIX")) {
+            if (price > 0) {
+                currentVix = price;
+                if (openingVix <= 0) openingVix = price;
+            }
+            return;
+        }
         for (Map.Entry<String, String> entry : SPOT_KEYS.entrySet()) {
             if (entry.getValue().equals(sym) || sym.contains(entry.getKey())) {
                 String underlying = entry.getKey();
-                double price = tick.getLtp().doubleValue();
                 if (price > 0) {
                     recordPrice(underlying, price);
                 }
@@ -76,6 +86,28 @@ public class MarketRegimeService {
         while (!deque.isEmpty() && (now - deque.peekFirst().timeMs) > 300_000L) {
             deque.pollFirst();
         }
+    }
+
+    public double getCurrentVix() {
+        return currentVix;
+    }
+
+    public void setCurrentVix(double vix) {
+        this.currentVix = vix;
+        if (this.openingVix <= 0) this.openingVix = vix;
+    }
+
+    public double getOpeningVix() {
+        return openingVix;
+    }
+
+    public void setOpeningVix(double vix) {
+        this.openingVix = vix;
+    }
+
+    public double getVixChangePct() {
+        if (openingVix <= 0 || currentVix <= 0) return 0.0;
+        return ((currentVix - openingVix) / openingVix) * 100.0;
     }
 
     public double getFiveMinMovePct(String underlying, double currentPrice) {
@@ -102,6 +134,14 @@ public class MarketRegimeService {
         if (spot <= 0) return MarketRegime.RANGE_BOUND_CHOP; // Safe fallback
 
         recordPrice(underlying, spot);
+
+        // 0. Macro Volatility Shock check: India VIX spike >= 5.0% or absolute level >= 22.0
+        double vixChangePct = getVixChangePct();
+        if (vixChangePct >= 5.0 || currentVix >= 22.0) {
+            log.warn("REGIME_DETECT: {} flagged VOLATILITY_SHOCK due to VIX spike: current={:.2f}, open={:.2f}, change={:.2f}%",
+                underlying, currentVix, openingVix, vixChangePct);
+            return MarketRegime.VOLATILITY_SHOCK;
+        }
 
         // 1. Check VWAP Deviation
         BigDecimal vwapBd = anomalyService.getVwap(spotKey);
@@ -150,6 +190,16 @@ public class MarketRegimeService {
         // Arbitrage is delta-neutral and risk-free across all regimes except extreme market closure
         if (strat.contains("BOX") || strat.contains("PARITY")) {
             return regime != MarketRegime.VOLATILITY_SHOCK;
+        }
+
+        // If strategy sells option volatility (Vega short) and VIX is spiking >= 4.0%, block entry
+        if (strat.contains("CONDOR") || strat.contains("BUTTERFLY") || strat.contains("STRADDLE") || strat.contains("STRANGLE")) {
+            double vixChange = getVixChangePct();
+            if (vixChange >= 4.0) {
+                log.warn("REGIME_BLOCKED: {} blocked for {} due to VIX spike ({:.2f}%) causing Vega expansion risk",
+                    strat, underlying, vixChange);
+                return false;
+            }
         }
 
         switch (regime) {
