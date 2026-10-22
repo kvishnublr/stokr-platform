@@ -664,9 +664,10 @@ public class OptionArbitrageController {
                     opp.put("spotPrice", spot);
                     opp.put("wingWidth", wingWidth * step);
                     opp.put("confidence", Math.min(95, 60 + riskReward * 100));
+                    // SMART LEG SEQUENCING: Hedges First (BUY PE/CE), Shorts Second (SELL PE/CE)
                     opp.put("legList", List.of(
-                        ironLeg(putSell, "PE", "SELL", 1, psBid), ironLeg(putBuy, "PE", "BUY", 1, pbAsk),
-                        ironLeg(callSell, "CE", "SELL", 1, csBid), ironLeg(callBuy, "CE", "BUY", 1, cbAsk)));
+                        ironLeg(putBuy, "PE", "BUY", 1, pbAsk), ironLeg(callBuy, "CE", "BUY", 1, cbAsk),
+                        ironLeg(putSell, "PE", "SELL", 1, psBid), ironLeg(callSell, "CE", "SELL", 1, csBid)));
                     results.add(opp);
                 }
             }

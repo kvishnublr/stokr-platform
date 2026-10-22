@@ -337,8 +337,12 @@ public class OptionChainService {
 
     /** True once the contract expiring on {@code expiry} can no longer be traded. */
     private static boolean isPast(LocalDate expiry, LocalDate today) {
+        return isPast(expiry, today, LocalTime.now(ZoneId.of("Asia/Kolkata")));
+    }
+
+    private static boolean isPast(LocalDate expiry, LocalDate today, LocalTime now) {
         return expiry.isBefore(today)
-                || (expiry.equals(today) && LocalTime.now(ZoneId.of("Asia/Kolkata")).isAfter(LocalTime.of(15, 30)));
+                || (expiry.equals(today) && now != null && now.isAfter(LocalTime.of(15, 30)));
     }
 
     /**
@@ -367,28 +371,70 @@ public class OptionChainService {
         return monthlyExpiry(LocalDate.now(ZoneId.of("Asia/Kolkata")), getExpiryDayForUnderlying(underlying));
     }
 
+    public LocalDate getMonthlyExpiryDate(String underlying, LocalDate today) {
+        return monthlyExpiry(today, getExpiryDayForUnderlying(underlying));
+    }
+
+    public LocalDate getMonthlyExpiryDate(String underlying, LocalDate today, LocalTime now) {
+        return monthlyExpiry(today, getExpiryDayForUnderlying(underlying), now);
+    }
+
     static LocalDate monthlyExpiry(LocalDate today, DayOfWeek targetDay) {
+        return monthlyExpiry(today, targetDay, LocalTime.now(ZoneId.of("Asia/Kolkata")));
+    }
+
+    static LocalDate monthlyExpiry(LocalDate today, DayOfWeek targetDay, LocalTime now) {
         LocalDate expiryDay = lastWeekdayOfMonth(today, targetDay);
-        if (isPast(expiryDay, today)) expiryDay = lastWeekdayOfMonth(today.plusMonths(1), targetDay);
+        if (isPast(expiryDay, today, now)) expiryDay = lastWeekdayOfMonth(today.plusMonths(1), targetDay);
         return expiryDay;
     }
+
     public LocalDate getNearestExpiry(String underlying) {
-        LocalDate weekly = getWeeklyExpiryDate(underlying);
-        return weekly != null ? weekly : getMonthlyExpiryDate(underlying);
+        return getNearestExpiry(underlying, LocalDate.now(ZoneId.of("Asia/Kolkata")), LocalTime.now(ZoneId.of("Asia/Kolkata")));
+    }
+
+    public LocalDate getNearestExpiry(String underlying, LocalDate today, LocalTime now) {
+        LocalDate weekly = getWeeklyExpiryDate(underlying, today, now);
+        LocalDate chosen = (weekly != null) ? weekly : getMonthlyExpiryDate(underlying, today, now);
+
+        // 0DTE GAMMA SHIELD: If today is expiry day and time is past 13:00 IST,
+        // roll new scans to the next weekly expiry so we don't enter violent same-day gamma risk
+        if (chosen != null && chosen.equals(today) && now != null && now.isAfter(LocalTime.of(13, 0))) {
+            if ("NIFTY".equalsIgnoreCase(underlying)) {
+                LocalDate nextWeekly = weeklyExpiry(today.plusDays(1), getExpiryDayForUnderlying(underlying), now);
+                if (nextWeekly != null && !nextWeekly.equals(today)) return nextWeekly;
+            } else {
+                LocalDate nextMonthly = monthlyExpiry(today.plusDays(1), getExpiryDayForUnderlying(underlying), now);
+                if (nextMonthly != null && !nextMonthly.equals(today)) return nextMonthly;
+            }
+        }
+        return chosen;
     }
 
     public LocalDate getWeeklyExpiryDate(String underlying) {
+        return getWeeklyExpiryDate(underlying, LocalDate.now(ZoneId.of("Asia/Kolkata")), LocalTime.now(ZoneId.of("Asia/Kolkata")));
+    }
+
+    public LocalDate getWeeklyExpiryDate(String underlying, LocalDate today) {
+        return getWeeklyExpiryDate(underlying, today, LocalTime.now(ZoneId.of("Asia/Kolkata")));
+    }
+
+    public LocalDate getWeeklyExpiryDate(String underlying, LocalDate today, LocalTime now) {
         // SEBI 2025 rule: Only NIFTY has weekly expiries on NSE.
         if (!underlying.toUpperCase().equals("NIFTY")) return null;
 
-        return weeklyExpiry(LocalDate.now(ZoneId.of("Asia/Kolkata")), getExpiryDayForUnderlying(underlying));
+        return weeklyExpiry(today, getExpiryDayForUnderlying(underlying), now);
     }
 
     static LocalDate weeklyExpiry(LocalDate today, DayOfWeek targetDay) {
+        return weeklyExpiry(today, targetDay, LocalTime.now(ZoneId.of("Asia/Kolkata")));
+    }
+
+    static LocalDate weeklyExpiry(LocalDate today, DayOfWeek targetDay, LocalTime now) {
         LocalDate d = today;
         while (d.getDayOfWeek() != targetDay) d = d.plusDays(1);
         LocalDate expiry = onOrBeforeTradingDay(d);
-        if (isPast(expiry, today)) expiry = onOrBeforeTradingDay(d.plusWeeks(1));
+        if (isPast(expiry, today, now)) expiry = onOrBeforeTradingDay(d.plusWeeks(1));
         return expiry;
     }
 
@@ -541,7 +587,18 @@ public class OptionChainService {
             if (fetchedAtMs <= 0 || System.currentTimeMillis() - fetchedAtMs > MAX_TRADABLE_AGE_MS) return "quote older than 15s";
             if (bid <= 0 || ask <= 0) return "no two-sided bid/ask";
             if (ask < bid) return "crossed bid/ask";
-            if (ask - bid > Math.max(5.0, 0.10 * (ask + bid) / 2)) return "bid/ask spread too wide";
+
+            // INSTITUTIONAL BID-ASK SPREAD LIQUIDITY GATE:
+            double mid = (ask + bid) / 2.0;
+            double spread = ask - bid;
+            if (mid > 25.0) {
+                // For mid > 25: Relative spread must not exceed 8% of mid
+                if (spread > 0.08 * mid) return "bid/ask spread too wide";
+            } else {
+                // For low-premium strikes (<= 25): Spread cannot exceed min(2.0 pts, 12% of mid)
+                if (spread > Math.min(2.0, Math.max(1.0, 0.12 * mid))) return "bid/ask spread too wide";
+            }
+            if (spread > 3.0 && mid <= 35.0) return "bid/ask spread too wide";
             return null;
         }
 

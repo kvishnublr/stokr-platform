@@ -677,6 +677,17 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                     resolvedLegs.add(resolved);
                     if (sym != null) symbols.add(sym);
                 }
+                // INSTITUTIONAL SMART LEG SEQUENCING: Hedges First, Shorts Second
+                // Always sort legs so BUY (outer protection wings) execute before SELL (inner short wings).
+                // This eliminates naked exposure and unlocks exchange hedge margin relief upfront.
+                resolvedLegs.sort((a, b) -> {
+                    boolean aBuy = "BUY".equalsIgnoreCase((String) a.get("side"));
+                    boolean bBuy = "BUY".equalsIgnoreCase((String) b.get("side"));
+                    if (aBuy && !bBuy) return -1;
+                    if (!aBuy && bBuy) return 1;
+                    return 0;
+                });
+
                 Map<String, OptionChainService.OptionQuote> legQuotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
                 // Paper fills only against a fresh two-sided market -- never LTP or stale cache.
                 String untradable = symbols.size() < resolvedLegs.size() ? "unresolved leg symbol"
@@ -1246,6 +1257,20 @@ for (LivePosition pos : openPositions) {
                         addLog("EARLY_THREAT_EXIT", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrategyType()
                                 + " — short wing premium doubled, cut early at ₹" + String.format("%.0f", pnl));
                     }
+                }
+            }
+
+            // 0DTE GAMMA SHIELD EXIT: If holding a 0DTE (same-day expiry) position,
+            // force exit at 14:15 IST before the final 14:30 - 15:30 settlement pin squeeze
+            if (!shouldExit && pos.getExpiryDate() != null) {
+                java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+                java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+                if (pos.getExpiryDate().equals(today) && nowIST.isAfter(java.time.LocalTime.of(14, 15))) {
+                    shouldExit = true;
+                    exitReason = "0DTE_GAMMA_SHIELD_EXIT";
+                    log.info("0DTE_GAMMA_SHIELD_EXIT: {} {} — closing at {} before expiry settlement squeeze (P&L ₹{})",
+                            pos.getUnderlying(), pos.getStrategyType(), nowIST, String.format("%.0f", pnl));
+                    addLog("GAMMA_SHIELD", "EXIT", pos.getUnderlying() + " 0DTE trade closed at 14:15 IST (P&L ₹" + String.format("%.0f", pnl) + ")");
                 }
             }
 
