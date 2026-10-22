@@ -818,7 +818,15 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             return;
         }
 
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        boolean isOpeningTurbulence = nowIST.isBefore(java.time.LocalTime.of(9, 30));
         for (OptionArbOpportunity opp : newOpps) {
+            if (isOpeningTurbulence && ("IRON_CONDOR".equalsIgnoreCase(opp.getStrategyType()) 
+                    || "CALENDAR_SPREAD".equalsIgnoreCase(opp.getStrategyType()) 
+                    || (opp.getStrategyType() != null && opp.getStrategyType().contains("SPREAD")))) {
+                log.info("AUTO_EXEC: Skipping live {} entry for {} during opening turbulence (< 09:30 AM IST)", opp.getStrategyType(), opp.getUnderlying());
+                continue;
+            }
             if (currentOpen >= maxPositions) break;
             if (opp.getUnderlying() == null || opp.getEdgeAfterCosts() == null) continue;
             if (!"NIFTY".equalsIgnoreCase(opp.getUnderlying()) && !"BANKNIFTY".equalsIgnoreCase(opp.getUnderlying())) {
@@ -1995,6 +2003,24 @@ for (LivePosition pos : openPositions) {
             }).max().orElse(-costPerShare);
             double realTargetEdge = maxProfitPerShare * lotSize;
             position.setTargetEdge(BigDecimal.valueOf(realTargetEdge));
+
+            double worstPayoffPerShare = candidateStrikes.stream().mapToDouble(x -> {
+                double payoff = pairs.stream().mapToDouble(p -> {
+                    int strike = ((Number) p.spec().get("strike")).intValue();
+                    String optType = (String) p.spec().get("optionType");
+                    int qtyMult = p.spec().get("qty") instanceof Number n ? n.intValue() : 1;
+                    boolean isBuy = p.planned().side() == BrokerOrderRequest.Side.BUY;
+                    double intrinsic = "PE".equalsIgnoreCase(optType) ? Math.max(strike - x, 0) : Math.max(x - strike, 0);
+                    return (isBuy ? intrinsic : -intrinsic) * qtyMult;
+                }).sum();
+                return payoff - costPerShare;
+            }).min().orElse(-costPerShare);
+            double maxLoss = Math.abs(worstPayoffPerShare) * lotSize * lots;
+            position.setMaxLossAmount(maxLoss > 0 ? maxLoss : 3000.0 * lots);
+            position.setMaxProfitAmount((realTargetEdge > 0 ? realTargetEdge : 2000.0) * lots);
+            position.setSlPct(40.0);
+            position.setTargetPct(50.0);
+            position.setTimeExitMinutes(75);
 
             positionRepo.save(position);
 
