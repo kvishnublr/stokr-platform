@@ -48,4 +48,19 @@ public class TickData {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    @Transient
+    private BigDecimal bestBid;
+
+    @Transient
+    private BigDecimal bestAsk;
+
+    @Transient
+    private int bestBidQty;
+
+    @Transient
+    private int bestAskQty;
+
+    @Transient
+    private long openInterest;
 }

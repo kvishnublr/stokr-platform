@@ -194,13 +194,45 @@ public class KiteTickParser {
 
             if (packetLen == MODE_FULL) {
                 buf.getInt(); // last_trade_timestamp
-                buf.getInt(); // oi
+                int oi = buf.getInt(); // oi
                 buf.getInt(); // oi_day_high
                 buf.getInt(); // oi_day_low
                 buf.getInt(); // exchange_timestamp
-                // Skip depth (120 bytes = 10 entries * 12 bytes)
-                int depthBytes = MODE_FULL - (buf.position() - startPos);
-                if (depthBytes > 0) buf.position(buf.position() + Math.min(depthBytes, buf.remaining()));
+
+                tick.setOpenInterest(Integer.toUnsignedLong(oi));
+
+                // Parse Market Depth (120 bytes: 5 buy entries, then 5 sell entries @ 12 bytes each)
+                if (buf.remaining() >= 120) {
+                    // Entry 0: Best Bid (12 bytes)
+                    int bidQty = buf.getInt();
+                    int bidPrice = buf.getInt();
+                    buf.getShort(); // orders
+                    buf.getShort(); // padding
+
+                    // Skip next 4 buy entries (4 * 12 = 48 bytes)
+                    buf.position(buf.position() + 48);
+
+                    // Entry 5: Best Ask (12 bytes)
+                    int askQty = buf.getInt();
+                    int askPrice = buf.getInt();
+                    buf.getShort(); // orders
+                    buf.getShort(); // padding
+
+                    // Skip remaining 4 sell entries (4 * 12 = 48 bytes)
+                    buf.position(buf.position() + 48);
+
+                    if (bidPrice > 0) {
+                        tick.setBestBid(divPrice(segment, bidPrice));
+                        tick.setBestBidQty(bidQty);
+                    }
+                    if (askPrice > 0) {
+                        tick.setBestAsk(divPrice(segment, askPrice));
+                        tick.setBestAskQty(askQty);
+                    }
+                } else {
+                    int depthBytes = MODE_FULL - (buf.position() - startPos);
+                    if (depthBytes > 0) buf.position(buf.position() + Math.min(depthBytes, buf.remaining()));
+                }
             }
 
             return tick;

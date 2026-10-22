@@ -43,6 +43,9 @@ public class OptionArbAutoExecService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private ZerodhaSpotPriceFetcher spotPriceFetcher;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MarketRegimeService marketRegimeService;
+
     private static final Map<String, String> SETTLE_SPOT_KEYS = Map.of(
         "NIFTY", "NSE:NIFTY 50", "BANKNIFTY", "NSE:NIFTY BANK");
 
@@ -546,6 +549,12 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                     || "CALENDAR_SPREAD".equalsIgnoreCase(opp.getStrategyType()) 
                     || (opp.getStrategyType() != null && opp.getStrategyType().contains("SPREAD")))) {
                 log.info("AUTO_EXEC: Skipping {} entry for {} during opening turbulence (< 09:30 AM IST)", opp.getStrategyType(), opp.getUnderlying());
+                continue;
+            }
+
+            // DYNAMIC MARKET REGIME GATEKEEPER: Suppress neutral strategies during strong 1-way momentum
+            if (marketRegimeService != null && !marketRegimeService.isStrategyAllowed(opp.getStrategyType(), opp.getUnderlying())) {
+                log.info("AUTO_EXEC_REGIME_REJECT: {} entry for {} blocked by Market Regime Classifier", opp.getStrategyType(), opp.getUnderlying());
                 continue;
             }
             if (opp.getUnderlying() == null || opp.getEdgeAfterCosts() == null) continue;

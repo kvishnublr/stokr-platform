@@ -152,6 +152,18 @@ public class AnomalyDetectionService {
     /**
      * Called every minute by the aggregator to update VWAP and ATR from finalized tick candles.
      */
+    public BigDecimal getVwap(String symbol) {
+        if (symbol == null) return BigDecimal.ZERO;
+        VwapState vs = vwapCache.get(symbol);
+        return vs != null ? vs.vwap() : BigDecimal.ZERO;
+    }
+
+    public double getAtr(String symbol) {
+        if (symbol == null) return 0.0;
+        double[] trs = atrCache.get(symbol);
+        return trs != null && trs.length > 0 ? trs[0] : 0.0;
+    }
+
     public void updateMetrics(TickCandleData candle) {
         String symbol = candle.getSymbol();
         VwapState vs = vwapCache.computeIfAbsent(symbol, k -> new VwapState());

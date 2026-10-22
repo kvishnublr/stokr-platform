@@ -8,6 +8,8 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Slf4j
 @Component
@@ -20,6 +22,13 @@ public class MultiLegSpreadScheduler {
     private final CalendarSpreadService calendarSpreadService;
     private final OptionArbitrageController arbController;
     private final OptionArbAutoExecService autoExecService;
+    private final MarketRegimeService marketRegimeService;
+
+    private final ExecutorService scanExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "spot-delta-spread-scan");
+        t.setDaemon(true);
+        return t;
+    });
 
     public MultiLegSpreadScheduler(BoxSpreadService boxSpreadService,
                                     VerticalSpreadService verticalSpreadService,
@@ -27,7 +36,8 @@ public class MultiLegSpreadScheduler {
                                     CondorSpreadService condorSpreadService,
                                     CalendarSpreadService calendarSpreadService,
                                     @Lazy OptionArbitrageController arbController,
-                                    OptionArbAutoExecService autoExecService) {
+                                    OptionArbAutoExecService autoExecService,
+                                    MarketRegimeService marketRegimeService) {
         this.boxSpreadService = boxSpreadService;
         this.verticalSpreadService = verticalSpreadService;
         this.butterflySpreadService = butterflySpreadService;
@@ -35,38 +45,28 @@ public class MultiLegSpreadScheduler {
         this.calendarSpreadService = calendarSpreadService;
         this.arbController = arbController;
         this.autoExecService = autoExecService;
+        this.marketRegimeService = marketRegimeService;
     }
 
-    @Scheduled(cron = "10/20 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
-    public void scanBox() {
-        scanAndExec("box-spread", () -> boxSpreadService.scanBoxSpread("ALL"));
-    }
-
-    @Scheduled(cron = "15/20 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
-    public void scanVertical() {
-        scanAndExec("vertical-spread", () -> verticalSpreadService.scanVerticalSpread("ALL"));
-    }
-
-    @Scheduled(cron = "0/20 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    // High-frequency sub-second RAM scanning (5s heartbeat cadence, 0 REST API calls)
+    @Scheduled(cron = "0/5 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
     public void scanButterfly() {
         scanAndExec("butterfly-spread", () -> butterflySpreadService.scanButterflySpread("ALL"));
     }
 
-    @Scheduled(cron = "5/20 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
-    public void scanCondor() {
-        scanAndExec("condor-spread", () -> condorSpreadService.scanCondorSpread("ALL"));
+    @Scheduled(cron = "1/5 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void scanVertical() {
+        scanAndExec("vertical-spread", () -> verticalSpreadService.scanVerticalSpread("ALL"));
     }
 
-    @Scheduled(cron = "18/20 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
-    public void scanCalendar() {
-        scanAndExec("calendar-spread", () -> calendarSpreadService.scanCalendarSpreads("ALL"));
-    }
-
-    @Scheduled(cron = "12/20 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    @Scheduled(cron = "2/5 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
     public void scanIronCondor() {
         scanAndExec("iron-condor", () -> {
             List<Map<String, Object>> all = new ArrayList<>();
             for (String u : List.of("NIFTY", "BANKNIFTY")) {
+                if (!marketRegimeService.isStrategyAllowed("IRON_CONDOR", u)) {
+                    continue; // Skip Iron Condor during trending or shock regimes
+                }
                 try {
                     all.addAll(arbController.scanIronCondorForUnderlying(u));
                 } catch (Exception e) {
@@ -74,6 +74,40 @@ public class MultiLegSpreadScheduler {
                 }
             }
             return all;
+        });
+    }
+
+    @Scheduled(cron = "3/5 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void scanBox() {
+        scanAndExec("box-spread", () -> boxSpreadService.scanBoxSpread("ALL"));
+    }
+
+    @Scheduled(cron = "4/5 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void scanCalendar() {
+        scanAndExec("calendar-spread", () -> calendarSpreadService.scanCalendarSpreads("ALL"));
+        scanAndExec("condor-spread", () -> condorSpreadService.scanCondorSpread("ALL"));
+    }
+
+    /**
+     * Event-driven trigger: called the exact millisecond spot price moves significantly.
+     */
+    public void triggerImmediateScan(String underlying) {
+        scanExecutor.submit(() -> {
+            try {
+                java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+                if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(java.time.LocalTime.of(9, 30)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+                    return;
+                }
+                // If trending, evaluate directional spreads immediately
+                if (!marketRegimeService.isStrategyAllowed("IRON_CONDOR", underlying)) {
+                    scanAndExec("event-vertical-" + underlying, () -> verticalSpreadService.scanVerticalSpread(underlying));
+                } else {
+                    scanIronCondor();
+                    scanButterfly();
+                }
+            } catch (Exception e) {
+                log.debug("Immediate event-driven scan failed for {}: {}", underlying, e.getMessage());
+            }
         });
     }
 

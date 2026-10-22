@@ -29,6 +29,9 @@ public class OptionChainService {
     private static final Logger log = LoggerFactory.getLogger(OptionChainService.class);
 
     private final ZerodhaTokenManager tokenManager;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private LiveOptionMatrix liveOptionMatrix;
     private final RestTemplate restTemplate = new RestTemplate();
 
     @Value("${zerodha.api-key:$ZERODHA_API_KEY}")
@@ -133,11 +136,25 @@ public class OptionChainService {
         List<String> toFetch = new ArrayList<>();
         
         for (String inst : instruments) {
-            String key = addExchangePrefix(inst);
-            CachedQuote cq = globalQuoteCache.get(key);
-            if (cq != null && (now - cq.timestamp) < 12000) { // 12 seconds cache
-                quotes.put(key, cq.quote);
-                quotes.put(stripExchangePrefix(key), cq.quote);
+            String cleanKey = stripExchangePrefix(inst);
+            String prefixedKey = addExchangePrefix(inst);
+
+            // 1. Primary zero-latency lookup from streaming WebSocket LiveOptionMatrix (valid within 8s)
+            if (liveOptionMatrix != null) {
+                OptionQuote liveQ = liveOptionMatrix.getQuote(cleanKey, 8000);
+                if (liveQ != null && liveQ.lastPrice > 0) {
+                    quotes.put(prefixedKey, liveQ);
+                    quotes.put(cleanKey, liveQ);
+                    continue;
+                }
+            }
+
+            // 2. Secondary fallback to REST cache
+            CachedQuote cq = globalQuoteCache.get(prefixedKey);
+            if (cq == null) cq = globalQuoteCache.get(cleanKey);
+            if (cq != null && (now - cq.timestamp) < 12000) {
+                quotes.put(prefixedKey, cq.quote);
+                quotes.put(cleanKey, cq.quote);
             } else {
                 toFetch.add(inst);
             }
