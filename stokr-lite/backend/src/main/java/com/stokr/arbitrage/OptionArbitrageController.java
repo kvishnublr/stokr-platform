@@ -583,7 +583,8 @@ public class OptionArbitrageController {
             }
             Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
 
-            for (int wingWidth = 1; wingWidth <= 8; wingWidth++) {
+            int minWingWidth = "BANKNIFTY".equalsIgnoreCase(underlying) ? 4 : 3;
+            for (int wingWidth = minWingWidth; wingWidth <= 12; wingWidth++) {
                 int putSell = atmStrike - wingWidth * step;
                 int callSell = atmStrike + wingWidth * step;
                 int putBuy = putSell - step;

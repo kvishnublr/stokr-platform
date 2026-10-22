@@ -89,6 +89,13 @@ public class PortfolioRiskCalculator {
         status.todayUnrealizedPnl = unrealizedPnl;
         status.todayNetPnl = totalNetPnl;
 
+        double lockedFloor = 0.0;
+        if (realizedPnl >= 5000.0) {
+            lockedFloor = realizedPnl * 0.60;
+        } else if (realizedPnl >= 2500.0) {
+            lockedFloor = realizedPnl * 0.40;
+        }
+
         if (maxLoss > 0 && totalNetPnl <= -maxLoss) {
             status.halted = true;
             status.haltReason = "Daily loss limit ₹" + String.format("%.0f", maxLoss)
@@ -97,6 +104,10 @@ public class PortfolioRiskCalculator {
             status.halted = true;
             status.haltReason = "Daily profit target ₹" + String.format("%.0f", maxProfit)
                     + " reached (today's net P&L: +₹" + String.format("%.0f", totalNetPnl) + "). Halting to lock in gains.";
+        } else if (lockedFloor > 0 && totalNetPnl < lockedFloor) {
+            status.halted = true;
+            status.haltReason = "Daily profit ratchet triggered: realized profit peaked at ₹" + String.format("%.0f", realizedPnl)
+                    + ", trailing floor ₹" + String.format("%.0f", lockedFloor) + " hit (net P&L: ₹" + String.format("%.0f", totalNetPnl) + "). Halting to preserve today's gains.";
         } else {
             status.halted = false;
             status.haltReason = null;

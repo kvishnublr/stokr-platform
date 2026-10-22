@@ -126,4 +126,56 @@ class PortfolioDailyRiskTest {
         assertFalse(status.halted);
         assertEquals(25000.0, status.todayNetPnl);
     }
+
+    @Test
+    void dailyProfitRatchetHaltsWhenPullbackHitsFloor() {
+        // Realized profit was 3000 (triggering 40% floor = 1200)
+        LivePosition closed = new LivePosition();
+        closed.setStatus("CLOSED");
+        closed.setBroker("PAPER");
+        closed.setCurrentPnl(BigDecimal.valueOf(3000.0));
+        closed.setExitedAt(java.time.LocalDate.now(ZoneId.of("Asia/Kolkata")).atTime(10, 30));
+
+        // Open position currently drawing down -2000, bringing net P&L down to 1000 (< 1200 floor)
+        LivePosition open = new LivePosition();
+        open.setStatus("OPEN");
+        open.setBroker("PAPER");
+        open.setCurrentPnl(BigDecimal.valueOf(-2000.0));
+
+        when(positionRepo.findAllClosed()).thenReturn(List.of(closed));
+        when(positionRepo.findAllOpen()).thenReturn(List.of(open));
+
+        PortfolioRiskCalculator.PortfolioRiskStatus status = 
+                PortfolioRiskCalculator.evaluateDailyRisk(positionRepo, settingRepo, null, "PAPER");
+
+        assertTrue(status.halted);
+        assertNotNull(status.haltReason);
+        assertTrue(status.haltReason.contains("Daily profit ratchet triggered"));
+        assertEquals(1000.0, status.todayNetPnl);
+    }
+
+    @Test
+    void dailyProfitRatchetAllowsTradingAboveFloor() {
+        LivePosition closed = new LivePosition();
+        closed.setStatus("CLOSED");
+        closed.setBroker("PAPER");
+        closed.setCurrentPnl(BigDecimal.valueOf(3000.0));
+        closed.setExitedAt(java.time.LocalDate.now(ZoneId.of("Asia/Kolkata")).atTime(10, 30));
+
+        // Open position drawdown -1000, net P&L = 2000 (> 1200 floor)
+        LivePosition open = new LivePosition();
+        open.setStatus("OPEN");
+        open.setBroker("PAPER");
+        open.setCurrentPnl(BigDecimal.valueOf(-1000.0));
+
+        when(positionRepo.findAllClosed()).thenReturn(List.of(closed));
+        when(positionRepo.findAllOpen()).thenReturn(List.of(open));
+
+        PortfolioRiskCalculator.PortfolioRiskStatus status = 
+                PortfolioRiskCalculator.evaluateDailyRisk(positionRepo, settingRepo, null, "PAPER");
+
+        assertFalse(status.halted);
+        assertNull(status.haltReason);
+        assertEquals(2000.0, status.todayNetPnl);
+    }
 }

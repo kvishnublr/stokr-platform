@@ -539,7 +539,15 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
         }
 
         long currentOpen = positionRepo.countOpenLive(); 
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        boolean isOpeningTurbulence = nowIST.isBefore(java.time.LocalTime.of(9, 30));
         for (OptionArbOpportunity opp : newOpps) {
+            if (isOpeningTurbulence && ("IRON_CONDOR".equalsIgnoreCase(opp.getStrategyType()) 
+                    || "CALENDAR_SPREAD".equalsIgnoreCase(opp.getStrategyType()) 
+                    || (opp.getStrategyType() != null && opp.getStrategyType().contains("SPREAD")))) {
+                log.info("AUTO_EXEC: Skipping {} entry for {} during opening turbulence (< 09:30 AM IST)", opp.getStrategyType(), opp.getUnderlying());
+                continue;
+            }
             if (opp.getUnderlying() == null || opp.getEdgeAfterCosts() == null) continue;
             if (!"NIFTY".equalsIgnoreCase(opp.getUnderlying()) && !"BANKNIFTY".equalsIgnoreCase(opp.getUnderlying())) {
                 log.info("Auto-exec rejected non-allowed symbol {}: Only NIFTY and BANKNIFTY are allowed", opp.getUnderlying());
@@ -690,6 +698,9 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                     .underlying(opp.getUnderlying()).strike(opp.getStrike()).action(opp.getAction())
                     .strategyType(opp.getStrategyType()).expiryDate(opp.getExpiryDate()).lots(lots).lotSize(lotSize)
                     .targetEdge(opp.getEdgeAfterCosts()).entryCost(BigDecimal.valueOf(entryCost))
+                    .slPct(40.0).targetPct(50.0).timeExitMinutes(75)
+                    .maxLossAmount(Math.max(3000.0 * lots, (opp.getEdgePoints() != null ? (double) lotSize - opp.getEdgePoints().doubleValue() : 80.0) * lotSize * lots))
+                    .maxProfitAmount((opp.getEdgeAfterCosts() != null ? Math.max(1000.0, opp.getEdgeAfterCosts().doubleValue()) : 2000.0) * lots)
                     .status("OPEN").enteredAt(LocalDateTime.now()).createdAt(LocalDateTime.now()).build();
                 livePos.setLegs(resolvedLegs);
                 positionRepo.save(livePos);
@@ -1189,6 +1200,36 @@ for (LivePosition pos : openPositions) {
                         String.format("%.0f", targetEdge), String.format("%.0f", pnl));
                 addLog("AUTO_EXIT", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrike()
                         + " — " + String.format("%.0f", pctAchieved) + "% of target reached (₹" + String.format("%.0f", pnl) + ")");
+            }
+
+            // Early Threat Exit: If short option leg has doubled in premium (>= 2.2x entry price),
+            // cut the threatened multi-leg position early to avoid maximum wing loss
+            if (!shouldExit && isMultiLeg && "IRON_CONDOR".equalsIgnoreCase(pos.getStrategyType())) {
+                List<Map<String, Object>> legs = pos.getLegs();
+                if (legs != null && !legs.isEmpty()) {
+                    boolean shortBreached = false;
+                    for (Map<String, Object> leg : legs) {
+                        String side = (String) leg.get("side");
+                        String symbol = (String) leg.get("symbol");
+                        if ("SELL".equalsIgnoreCase(side) && symbol != null && quotes.containsKey(symbol)) {
+                            var q = quotes.get(symbol);
+                            double entry = leg.get("entryPrice") instanceof Number n ? n.doubleValue() : (leg.get("price") instanceof Number p ? p.doubleValue() : 0);
+                            double currPrice = q.ask > 0 ? q.ask : q.lastPrice;
+                            if (entry > 0 && currPrice >= entry * 2.2) {
+                                shortBreached = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (shortBreached && pnl < -200) {
+                        shouldExit = true;
+                        exitReason = "EARLY_THREAT_EXIT";
+                        log.info("EARLY_THREAT_EXIT: {} {} — short strike breached (pnl ₹{})",
+                                pos.getUnderlying(), pos.getStrategyType(), String.format("%.0f", pnl));
+                        addLog("EARLY_THREAT_EXIT", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrategyType()
+                                + " — short wing premium doubled, cut early at ₹" + String.format("%.0f", pnl));
+                    }
+                }
             }
 
             // Per-position SL (Smart Strategies) — with 2-min entry grace period
