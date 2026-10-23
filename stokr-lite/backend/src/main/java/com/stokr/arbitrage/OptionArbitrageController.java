@@ -2494,6 +2494,7 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                         .lotSize(lotSize)
                         .targetEdge(opp.getEdgeAfterCosts())
                         .entryCost(BigDecimal.valueOf(entryCost))
+                        .holdType(LivePosition.defaultHoldTypeFor(opp.getStrategyType()))
                         .status("OPEN")
                         .enteredAt(LocalDateTime.now())
                         .createdAt(LocalDateTime.now())
@@ -2567,6 +2568,7 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                         ceLive, peLive, futLive, opp.getStrike(), opp.getAction(), opp.getUnderlying(),
                         opp.getExpiryDate() != null ? java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), opp.getExpiryDate()) : 0)))
                     .entryCost(BigDecimal.valueOf((ceLive + peLive + futLive) * lotSize))
+                    .holdType("INTRADAY")
                     .status("OPEN")
                     .enteredAt(LocalDateTime.now())
                     .createdAt(LocalDateTime.now())

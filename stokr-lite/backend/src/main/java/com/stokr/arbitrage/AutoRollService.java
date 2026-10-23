@@ -433,6 +433,7 @@ public class AutoRollService {
                 .lotSize(lotSize)
                 .targetEdge(opp.getEdgeAfterCosts())
                 .entryCost(BigDecimal.valueOf(entryCost))
+                .holdType(LivePosition.defaultHoldTypeFor(opp.getStrategyType()))
                 .status("OPEN")
                 .enteredAt(LocalDateTime.now())
                 .createdAt(LocalDateTime.now())

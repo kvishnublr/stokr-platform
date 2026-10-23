@@ -1276,6 +1276,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
         case 'enteredAt': va = a.enteredAt || ''; vb = b.enteredAt || ''; break;
         case 'broker': va = a.broker || 'PAPER'; vb = b.broker || 'PAPER'; break;
         case 'strategy': va = a.strategyType || ''; vb = b.strategyType || ''; break;
+        case 'holdType': va = a.holdType || ''; vb = b.holdType || ''; break;
         case 'underlying': va = a.underlying || ''; vb = b.underlying || ''; break;
         case 'strike': va = a.strike || 0; vb = b.strike || 0; break;
         case 'expiry': va = a.expiryDate || ''; vb = b.expiryDate || ''; break;
@@ -1376,7 +1377,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-lg">📊</span>
             <h3 className="text-sm font-black text-slate-800">
-              {brokerFilter === 'PAPER' ? 'Paper Positions' : brokerFilter === 'LIVE' ? 'Live Positions' : 'All Positions'}
+              {brokerFilter === 'PAPER' ? 'F&O Paper Positions (Intraday & Positional)' : brokerFilter === 'LIVE' ? 'F&O Live Positions (Intraday & Positional)' : 'F&O Positions (Intraday & Positional)'}
             </h3>
             <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-full">{positions.length}</span>
             <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-bold rounded-full">2s tick</span>
@@ -1433,6 +1434,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                   <SortTh col="exitedAt" className="px-1.5 py-2">Exit Time</SortTh>
                   <SortTh col="broker" className="px-1.5 py-2">Broker</SortTh>
                   <SortTh col="strategy" className="px-1.5 py-2">Strategy</SortTh>
+                  <SortTh col="holdType" className="px-1.5 py-2 text-center">Type</SortTh>
                   <SortTh col="underlying" className="px-1.5 py-2">Symbol</SortTh>
                   <SortTh col="strike" className="px-1.5 py-2 text-right">Strike</SortTh>
                   <SortTh col="expiry" className="px-1.5 py-2">Expiry</SortTh>
@@ -1485,6 +1487,23 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                         <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black bg-violet-500/15 text-violet-700 border border-violet-200 whitespace-nowrap shadow-2xs">
                           {STRATEGY_LABELS[p.strategyType] || p.strategyType || '—'}
                         </span>
+                      </td>
+                      <td className="px-1.5 py-1 text-center whitespace-nowrap">
+                        {(() => {
+                          const ht = (p.holdType || '').toUpperCase();
+                          const isPositional = ht === 'OVERNIGHT_SWING' || ht === 'POSITIONAL' || ht === 'NRML' || (
+                            !ht && (p.strategyType?.includes('CONDOR') || p.strategyType?.includes('CALENDAR') || p.strategyType?.includes('BOX'))
+                          );
+                          return isPositional ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-2xs" title="Overnight / Positional Hold">
+                              <span>📅</span> Positional
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs" title="Intraday Hold">
+                              <span>⚡</span> Intraday
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-1.5 py-1 font-black text-slate-900 text-[11px] tracking-tight">{p.underlying}</td>
                       <td className="px-1.5 py-1 text-right font-mono font-black text-slate-800 text-[10px]">{p.strike}</td>
@@ -1590,7 +1609,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                     </tr>
                     {isExpanded && canShowPayoff && (
                       <tr className="bg-indigo-50/30 border-b border-indigo-100">
-                        <td colSpan={15} className="p-3">
+                        <td colSpan={16} className="p-3">
                           <DetailedOpportunityExpandedRow item={p} executionBroker={executionBroker} title={`Open Position — ${p.underlying} ${p.action}`} />
                           {p.status === 'OPEN' && p.opportunityId && (
                             <PositionTriggersPanel positionId={p.opportunityId} />
@@ -1600,7 +1619,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                     )}
                     {goLiveResult && goLiveResult.posId === p.id && (
                       <tr className={goLiveResult.type === 'success' ? 'bg-emerald-50' : 'bg-red-50'}>
-                        <td colSpan={15} className="px-4 py-2.5">
+                        <td colSpan={16} className="px-4 py-2.5">
                           <div className="flex items-start gap-2">
                             <span className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-black ${goLiveResult.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`}>
                               {goLiveResult.type === 'success' ? '✓' : '✕'}

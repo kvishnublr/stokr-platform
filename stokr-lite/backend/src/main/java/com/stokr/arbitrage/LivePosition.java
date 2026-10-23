@@ -101,6 +101,23 @@ public class LivePosition {
     private LocalDateTime exitedAt;
     private LocalDateTime createdAt;
 
+    public static String defaultHoldTypeFor(String strategyType) {
+        if (strategyType == null) return "INTRADAY";
+        String s = strategyType.toUpperCase();
+        if (s.contains("CONDOR") || s.contains("CALENDAR") || s.contains("BOX")) {
+            return "OVERNIGHT_SWING";
+        }
+        return "INTRADAY";
+    }
+
+    @PrePersist
+    @PreUpdate
+    public void ensureHoldType() {
+        if (this.holdType == null || this.holdType.isBlank()) {
+            this.holdType = defaultHoldTypeFor(this.strategyType);
+        }
+    }
+
     @Transient
     public java.util.List<java.util.Map<String, Object>> getLegs() {
         if (legsJson == null || legsJson.isEmpty()) return null;
@@ -160,7 +177,7 @@ public class LivePosition {
         map.put("exitReason", exitReason);
         map.put("trailingSlLevel", trailingSlLevel);
         map.put("peakPnl", peakPnl);
-        map.put("holdType", holdType != null ? holdType : "INTRADAY");
+        map.put("holdType", (holdType != null && !holdType.isBlank()) ? holdType : defaultHoldTypeFor(strategyType));
         map.put("enteredAt", enteredAt != null ? enteredAt.toString() : null);
         map.put("exitedAt", exitedAt != null ? exitedAt.toString() : null);
         map.put("createdAt", createdAt != null ? createdAt.toString() : null);

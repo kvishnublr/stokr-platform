@@ -721,6 +721,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                     .slPct(40.0).targetPct(50.0).timeExitMinutes(75)
                     .maxLossAmount(Math.max(3000.0 * lots, (opp.getEdgePoints() != null ? (double) lotSize - opp.getEdgePoints().doubleValue() : 80.0) * lotSize * lots))
                     .maxProfitAmount((opp.getEdgeAfterCosts() != null ? Math.max(1000.0, opp.getEdgeAfterCosts().doubleValue()) : 2000.0) * lots)
+                    .holdType(LivePosition.defaultHoldTypeFor(opp.getStrategyType()))
                     .status("OPEN").enteredAt(LocalDateTime.now()).createdAt(LocalDateTime.now()).build();
                 livePos.setLegs(resolvedLegs);
                 positionRepo.save(livePos);
@@ -781,6 +782,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                     .futSymbol(futSymbol).ceSymbol(ceSymbol).peSymbol(peSymbol)
                     .targetEdge(opp.getEdgeAfterCosts())
                     .entryCost(BigDecimal.valueOf((ceLive + peLive + futLive) * lotSize * lots))
+                    .holdType("INTRADAY")
                     .status("OPEN").enteredAt(LocalDateTime.now()).createdAt(LocalDateTime.now()).build();
                 positionRepo.save(livePos);
                 addLog("EXEC", "PAPER", "Auto-executed PAPER Bid Parity trade for " + opp.getUnderlying() + " @ CE:" + ceLive + " PE:" + peLive + " FUT:" + futLive);
@@ -1723,6 +1725,7 @@ for (LivePosition pos : openPositions) {
                     opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() : 0,
                     opp.getStrike(), opp.getAction(), opp.getUnderlying(),
                     opp.getExpiryDate() != null ? java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), opp.getExpiryDate()) : 0)))
+                .holdType("INTRADAY")
                 .status("EXECUTING")
                 .enteredAt(LocalDateTime.now())
                 .createdAt(LocalDateTime.now())
@@ -1876,6 +1879,7 @@ for (LivePosition pos : openPositions) {
                 .lots(lots)
                 .lotSize(lotSize)
                 .targetEdge(BigDecimal.valueOf(targetEdge))
+                .holdType(LivePosition.defaultHoldTypeFor(opp.getStrategyType()))
                 .status("EXECUTING")
                 .enteredAt(LocalDateTime.now())
                 .createdAt(LocalDateTime.now())

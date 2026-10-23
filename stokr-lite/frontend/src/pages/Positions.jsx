@@ -1338,7 +1338,7 @@ export default function Positions() {
           {/* Foldable Group 1: F&O Arbitrage Active Positions */}
           {(assetFilter === 'ALL' || assetFilter === 'FNO') && (
             <AccordionCard
-              title={`F&O Arbitrage Active Trades (${fnoActivePositions.length})`}
+              title={`F&O Active Trades — Intraday & Positional (${fnoActivePositions.length})`}
               icon="⚡"
               count={fnoActivePositions.length}
               defaultOpen={true}
