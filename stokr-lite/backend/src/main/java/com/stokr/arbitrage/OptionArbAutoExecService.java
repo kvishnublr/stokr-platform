@@ -671,7 +671,14 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 for (Map<String, Object> leg : legs) {
                     int strike = ((Number) leg.get("strike")).intValue();
                     String optionType = (String) leg.get("optionType");
-                    String sym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), strike, optionType);
+                    String sym = leg.get("symbol") instanceof String s && !s.isBlank() ? s : null;
+                    if (sym == null) {
+                        LocalDate legExpiry = opp.getExpiryDate();
+                        if (leg.get("expiry") instanceof String expStr && !expStr.isBlank()) {
+                            try { legExpiry = LocalDate.parse(expStr); } catch (Exception ignored) {}
+                        }
+                        sym = optionChainService.buildNfoSymbol(opp.getUnderlying(), legExpiry, strike, optionType);
+                    }
                     Map<String, Object> resolved = new java.util.LinkedHashMap<>(leg);
                     resolved.put("symbol", sym);
                     resolvedLegs.add(resolved);
@@ -1898,7 +1905,14 @@ for (LivePosition pos : openPositions) {
                 int strike = ((Number) spec.get("strike")).intValue();
                 String optionType = (String) spec.get("optionType");
                 String side = (String) spec.get("side");
-                String symbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), strike, optionType);
+                String symbol = spec.get("symbol") instanceof String s && !s.isBlank() ? s : null;
+                if (symbol == null) {
+                    LocalDate legExpiry = opp.getExpiryDate();
+                    if (spec.get("expiry") instanceof String expStr && !expStr.isBlank()) {
+                        try { legExpiry = LocalDate.parse(expStr); } catch (Exception ignored) {}
+                    }
+                    symbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), legExpiry, strike, optionType);
+                }
                 int qty;
                 if (spec.containsKey("rawQty")) {
                     qty = ((Number) spec.get("rawQty")).intValue();

@@ -1070,7 +1070,14 @@ public class OptionArbitrageController {
                                 for (Map<String, Object> leg : o.getLegList()) {
                                     int strike = ((Number) leg.get("strike")).intValue();
                                     String optionType = (String) leg.get("optionType");
-                                    String sym = optionChainService.buildNfoSymbol(o.getUnderlying(), o.getExpiryDate(), strike, optionType);
+                                    String sym = leg.get("symbol") instanceof String s && !s.isBlank() ? s : null;
+                                    if (sym == null) {
+                                        LocalDate legExpiry = o.getExpiryDate();
+                                        if (leg.get("expiry") instanceof String expStr && !expStr.isBlank()) {
+                                            try { legExpiry = LocalDate.parse(expStr); } catch (Exception ignored) {}
+                                        }
+                                        sym = optionChainService.buildNfoSymbol(o.getUnderlying(), legExpiry, strike, optionType);
+                                    }
                                     Map<String, Object> resolved = new LinkedHashMap<>(leg);
                                     resolved.put("symbol", sym);
                                     resolvedLegs.add(resolved);
@@ -2456,7 +2463,14 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
                     for (Map<String, Object> leg : legs) {
                         int strike = ((Number) leg.get("strike")).intValue();
                         String optionType = (String) leg.get("optionType");
-                        String sym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), strike, optionType);
+                        String sym = leg.get("symbol") instanceof String s && !s.isBlank() ? s : null;
+                        if (sym == null) {
+                            LocalDate legExpiry = opp.getExpiryDate();
+                            if (leg.get("expiry") instanceof String expStr && !expStr.isBlank()) {
+                                try { legExpiry = LocalDate.parse(expStr); } catch (Exception ignored) {}
+                            }
+                            sym = optionChainService.buildNfoSymbol(opp.getUnderlying(), legExpiry, strike, optionType);
+                        }
                         Map<String, Object> resolved = new LinkedHashMap<>(leg);
                         resolved.put("symbol", sym);
                         resolvedLegs.add(resolved);
