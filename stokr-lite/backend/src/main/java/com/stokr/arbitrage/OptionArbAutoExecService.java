@@ -720,15 +720,19 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 }
                 entryCost = Math.abs(entryCost) * lotSize * lots;
 
+                String defaultHold = LivePosition.defaultHoldTypeFor(opp.getStrategyType());
+                boolean isOvernight = "OVERNIGHT_SWING".equalsIgnoreCase(defaultHold);
+                int timeExitMin = isOvernight ? 0 : 75;
+
                 LivePosition livePos = LivePosition.builder()
                     .userId(1L).broker("PAPER").opportunityId(opp.getId())
                     .underlying(opp.getUnderlying()).strike(opp.getStrike()).action(opp.getAction())
                     .strategyType(opp.getStrategyType()).expiryDate(opp.getExpiryDate()).lots(lots).lotSize(lotSize)
                     .targetEdge(opp.getEdgeAfterCosts()).entryCost(BigDecimal.valueOf(entryCost))
-                    .slPct(40.0).targetPct(50.0).timeExitMinutes(75)
+                    .slPct(40.0).targetPct(50.0).timeExitMinutes(timeExitMin)
                     .maxLossAmount(Math.max(3000.0 * lots, (opp.getEdgePoints() != null ? (double) lotSize - opp.getEdgePoints().doubleValue() : 80.0) * lotSize * lots))
                     .maxProfitAmount((opp.getEdgeAfterCosts() != null ? Math.max(1000.0, opp.getEdgeAfterCosts().doubleValue()) : 2000.0) * lots)
-                    .holdType(LivePosition.defaultHoldTypeFor(opp.getStrategyType()))
+                    .holdType(defaultHold)
                     .status("OPEN").enteredAt(LocalDateTime.now()).createdAt(LocalDateTime.now()).build();
                 livePos.setLegs(resolvedLegs);
                 positionRepo.save(livePos);
@@ -806,7 +810,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
         if (!Boolean.TRUE.equals(settings.get("enabled"))) return;
 
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 29))) return;
+        if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(14, 30))) return;
 
         String broker = (String) settings.getOrDefault("broker", "PAPER");
         if (!"PAPER".equalsIgnoreCase(broker)) {
@@ -1053,11 +1057,20 @@ for (LivePosition pos : openPositions) {
             double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
 
             boolean isTimeExitDue = false;
-            if (pos.getTimeExitMinutes() != null && pos.getTimeExitMinutes() > 0) {
-                LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-                LocalTime exitTime = LocalTime.of(15, 30).minusMinutes(pos.getTimeExitMinutes());
-                if (!now.isBefore(exitTime) && now.isBefore(LocalTime.of(15, 30))) {
-                    isTimeExitDue = true;
+            boolean isOvernightPositional = "OVERNIGHT_SWING".equalsIgnoreCase(pos.getHoldType())
+                || "POSITIONAL".equalsIgnoreCase(pos.getHoldType())
+                || "NRML".equalsIgnoreCase(pos.getHoldType());
+            boolean isExpiringToday = pos.getExpiryDate() != null
+                && pos.getExpiryDate().isEqual(LocalDate.now(ZoneId.of("Asia/Kolkata")));
+
+            // Positional trades MUST NEVER be closed by an intraday time-exit unless today is expiry day!
+            if (!isOvernightPositional || isExpiringToday) {
+                if (pos.getTimeExitMinutes() != null && pos.getTimeExitMinutes() > 0) {
+                    LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+                    LocalTime exitTime = LocalTime.of(15, 30).minusMinutes(pos.getTimeExitMinutes());
+                    if (!now.isBefore(exitTime) && now.isBefore(LocalTime.of(15, 30))) {
+                        isTimeExitDue = true;
+                    }
                 }
             }
 

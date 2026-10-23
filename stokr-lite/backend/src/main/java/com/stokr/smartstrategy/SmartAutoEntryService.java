@@ -89,10 +89,10 @@ public class SmartAutoEntryService {
             return new TimingWindow("MIDDAY", 1.0, "Mid-day — normal conditions");
         }
         // Theta boost: 13:30-14:45 — theta decay accelerates, great for sellers
-        if (now.isBefore(LocalTime.of(14, 45))) {
+        if (now.isBefore(LocalTime.of(14, 30))) {
             return new TimingWindow("THETA_BOOST", 1.15, "Theta boost zone — accelerated decay");
         }
-        // Late entry avoid: 14:45-15:15 — gamma risk, avoid new positions
+        // Late entry avoid: after 14:30 — gamma risk and insufficient time, avoid new positions
         if (now.isBefore(LocalTime.of(15, 15))) {
             return new TimingWindow("LATE_AVOID", 0, "Too close to market close — avoid new entries");
         }
@@ -380,10 +380,10 @@ public class SmartAutoEntryService {
             }
             default -> {
                 // SKEW_HARVEST, CALENDAR_SPREAD_EDGE
-                req.put("holdType", "INTRADAY");
+                req.put("holdType", "OVERNIGHT_SWING");
                 req.put("slPct", 45.0);
                 req.put("targetPct", 45.0);
-                req.put("timeExitMinutes", 75);
+                req.put("timeExitMinutes", 0);
             }
         }
 
@@ -406,7 +406,7 @@ public class SmartAutoEntryService {
     private boolean isMarketHours() {
         if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday()) return false;
         LocalTime now = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        return !now.isBefore(LocalTime.of(9, 25)) && now.isBefore(LocalTime.of(15, 15));
+        return !now.isBefore(LocalTime.of(9, 25)) && now.isBefore(LocalTime.of(14, 30));
     }
 
     private String now() {
