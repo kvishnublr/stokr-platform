@@ -1258,9 +1258,25 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
     return combined;
   }, [rawOpen, rawClosedToday, viewScope]);
 
-  const positions = brokerFilter === 'ALL' ? mergedToday
+  const [holdFilter, setHoldFilter] = useState('ALL'); // 'ALL' | 'INTRADAY' | 'POSITIONAL'
+
+  const isPositional = (p) => {
+    const ht = (p.holdType || '').toUpperCase();
+    return ht === 'OVERNIGHT_SWING' || ht === 'POSITIONAL' || ht === 'NRML' || (
+      !ht && (p.strategyType?.includes('CONDOR') || p.strategyType?.includes('CALENDAR') || p.strategyType?.includes('BOX'))
+    );
+  };
+
+  const filteredByBroker = brokerFilter === 'ALL' ? mergedToday
     : brokerFilter === 'PAPER' ? mergedToday.filter(isPaper)
     : mergedToday.filter(p => !isPaper(p));
+
+  const positions = holdFilter === 'ALL' ? filteredByBroker
+    : holdFilter === 'POSITIONAL' ? filteredByBroker.filter(isPositional)
+    : filteredByBroker.filter(p => !isPositional(p));
+
+  const intradayCount = filteredByBroker.filter(p => !isPositional(p)).length;
+  const positionalCount = filteredByBroker.filter(isPositional).length;
     
   const openCount = rawOpen.length;
   const todayClosedCount = rawClosedToday.length;
@@ -1377,7 +1393,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-lg">📊</span>
             <h3 className="text-sm font-black text-slate-800">
-              {brokerFilter === 'PAPER' ? 'F&O Paper Positions (Intraday & Positional)' : brokerFilter === 'LIVE' ? 'F&O Live Positions (Intraday & Positional)' : 'F&O Positions (Intraday & Positional)'}
+              {brokerFilter === 'PAPER' ? 'F&O Paper Positions' : brokerFilter === 'LIVE' ? 'F&O Live Positions' : 'F&O Positions'} {holdFilter === 'INTRADAY' ? '— Intraday Only' : holdFilter === 'POSITIONAL' ? '— Positional Only' : '(Intraday & Positional)'}
             </h3>
             <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-full">{positions.length}</span>
             <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-bold rounded-full">2s tick</span>
@@ -1411,6 +1427,19 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
                   </button>
                 ))}
               </div>
+
+              <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-full p-1 shadow-inner" onClick={(e) => e.stopPropagation()}>
+                {[
+                  { id: 'ALL', label: `All Types (${filteredByBroker.length})` },
+                  { id: 'INTRADAY', label: `⚡ Intraday (${intradayCount})` },
+                  { id: 'POSITIONAL', label: `📅 Positional (${positionalCount})` },
+                ].map(h => (
+                  <button key={h.id} type="button" onClick={() => setHoldFilter(h.id)}
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-black cursor-pointer transition-all ${holdFilter === h.id ? 'bg-indigo-600 text-white shadow-md scale-105' : 'text-slate-600 hover:bg-slate-200 hover:text-slate-900'}`}>
+                    {h.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1421,7 +1450,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false, modeFi
 
         {!collapsed && positions.length === 0 && (
           <div className="p-8 text-center text-slate-400 text-sm font-semibold">
-            No {brokerFilter === 'PAPER' ? 'paper' : brokerFilter === 'LIVE' ? 'live' : ''} positions right now
+            No {holdFilter === 'INTRADAY' ? 'intraday' : holdFilter === 'POSITIONAL' ? 'positional' : ''} {brokerFilter === 'PAPER' ? 'paper' : brokerFilter === 'LIVE' ? 'live' : ''} positions right now
           </div>
         )}
 
