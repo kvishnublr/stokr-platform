@@ -155,10 +155,17 @@ public class SmartAutoEntryService {
             safeScan("CALENDAR_SPREAD_EDGE", () -> calendarSpreadScanner.scan("ALL"), allOpportunities);
             safeScan("SKEW_HARVEST", () -> skewHarvestScanner.scan("ALL"), allOpportunities);
 
-            // Iron Condor ONLY on Expiry Days (Wed/Thu) to capture concentrated 0DTE/1DTE theta
+            // Iron Condor ONLY on Expiry Days (Wed/Thu) to capture concentrated 0DTE/1DTE theta (dte <= 1)
             java.time.DayOfWeek dayOfWeek = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).getDayOfWeek();
             if (dayOfWeek == java.time.DayOfWeek.WEDNESDAY || dayOfWeek == java.time.DayOfWeek.THURSDAY) {
-                safeScan("IRON_CONDOR", () -> ironCondorScanner.scan("ALL"), allOpportunities);
+                safeScan("IRON_CONDOR", () -> {
+                    List<Map<String, Object>> condors = ironCondorScanner.scan("ALL");
+                    if (condors == null) return List.of();
+                    return condors.stream().filter(o -> {
+                        Number dte = (Number) o.get("dte");
+                        return dte != null && dte.intValue() <= 1;
+                    }).toList();
+                }, allOpportunities);
             }
 
             // Filter out non-actionable opportunities (no legs = preview only)

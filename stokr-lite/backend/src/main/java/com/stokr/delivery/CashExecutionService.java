@@ -338,21 +338,25 @@ public class CashExecutionService {
 
         // Market Regime Gatekeeper: Do not enter fresh cash equity longs when NIFTY is trending down or in volatility shock
         if (marketRegimeService != null) {
-            com.stokr.arbitrage.MarketRegime niftyRegime = marketRegimeService.detectRegime("NIFTY");
-            if (niftyRegime == com.stokr.arbitrage.MarketRegime.BEARISH_TREND || niftyRegime == com.stokr.arbitrage.MarketRegime.VOLATILITY_SHOCK) {
-                log.info("Auto-exec cash skipped: NIFTY is in {} - suppressing cash equity buys", niftyRegime);
-                return;
+            try {
+                com.stokr.arbitrage.MarketRegime niftyRegime = marketRegimeService.detectRegime("NIFTY");
+                if (niftyRegime == com.stokr.arbitrage.MarketRegime.BEARISH_TREND || niftyRegime == com.stokr.arbitrage.MarketRegime.VOLATILITY_SHOCK) {
+                    log.info("Auto-exec cash skipped: NIFTY is in {} - suppressing cash equity buys", niftyRegime);
+                    return;
+                }
+            } catch (Exception e) {
+                log.warn("Market regime check failed for cash auto-exec (proceeding with caution): {}", e.getMessage());
             }
         }
 
         List<CashPosition> allPositions = positionRepo.findAllByOrderByEnteredAtDesc();
         List<CashPosition> openPositions = allPositions.stream().filter(p -> "OPEN".equals(p.getStatus())).toList();
-        long openPaperCount = openPositions.stream().filter(p -> "PAPER".equals(p.getBroker())).count();
+        long openPaperCount = openPositions.stream().filter(p -> p.getBroker() == null || "PAPER".equalsIgnoreCase(p.getBroker())).count();
         if (openPaperCount >= MAX_OPEN_PAPER) return;
 
         LocalDateTime todayStart = LocalDateTime.now().with(java.time.LocalTime.MIN);
         long todayExecutedCash = positionRepo.findAll().stream()
-            .filter(p -> "PAPER".equals(p.getBroker()) && p.getEnteredAt() != null && p.getEnteredAt().isAfter(todayStart))
+            .filter(p -> (p.getBroker() == null || "PAPER".equalsIgnoreCase(p.getBroker())) && p.getEnteredAt() != null && p.getEnteredAt().isAfter(todayStart))
             .count();
         if (todayExecutedCash >= DAILY_EXEC_LIMIT) {
             log.info("Auto-exec cash skipped: today's cash trades {} reached daily limit {}", todayExecutedCash, DAILY_EXEC_LIMIT);
@@ -360,14 +364,14 @@ public class CashExecutionService {
         }
 
         long openSurgeCount = openPositions.stream()
-                .filter(p -> "PAPER".equals(p.getBroker()) && "CASH_SURGE".equalsIgnoreCase(p.getStrategyType()))
+                .filter(p -> (p.getBroker() == null || "PAPER".equalsIgnoreCase(p.getBroker())) && "CASH_SURGE".equalsIgnoreCase(p.getStrategyType()))
                 .count();
         long openSwingCount = openPositions.stream()
-                .filter(p -> "PAPER".equals(p.getBroker()) && "CASH_SWING".equalsIgnoreCase(p.getStrategyType()))
+                .filter(p -> (p.getBroker() == null || "PAPER".equalsIgnoreCase(p.getBroker())) && "CASH_SWING".equalsIgnoreCase(p.getStrategyType()))
                 .count();
 
         java.util.Set<String> openPaperSymbols = openPositions.stream()
-                .filter(p -> "PAPER".equals(p.getBroker()))
+                .filter(p -> p.getBroker() == null || "PAPER".equalsIgnoreCase(p.getBroker()))
                 .map(CashPosition::getSymbol)
                 .collect(java.util.stream.Collectors.toSet());
 

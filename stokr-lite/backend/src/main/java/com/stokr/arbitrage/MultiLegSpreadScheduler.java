@@ -67,9 +67,12 @@ public class MultiLegSpreadScheduler {
         if (day != java.time.DayOfWeek.WEDNESDAY && day != java.time.DayOfWeek.THURSDAY) {
             return; // Suppressed on Mon, Tue, Fri to prevent multi-day directional drift losses
         }
+        List<String> targets = (day == java.time.DayOfWeek.THURSDAY)
+                ? List.of("NIFTY")
+                : List.of("BANKNIFTY", "NIFTY");
         scanAndExec("iron-condor", () -> {
             List<Map<String, Object>> all = new ArrayList<>();
-            for (String u : List.of("NIFTY", "BANKNIFTY")) {
+            for (String u : targets) {
                 if (!marketRegimeService.isStrategyAllowed("IRON_CONDOR", u)) {
                     continue; // Skip Iron Condor during trending or shock regimes
                 }

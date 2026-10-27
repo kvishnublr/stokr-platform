@@ -542,6 +542,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
         }
 
         long currentOpen = positionRepo.countOpenLive(); 
+        List<LivePosition> openPositions = new ArrayList<>(positionRepo.findAllOpen());
         java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
         boolean isOpeningTurbulence = nowIST.isBefore(java.time.LocalTime.of(9, 30));
         for (OptionArbOpportunity opp : newOpps) {
@@ -578,8 +579,8 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
 
             // STRICT UNDERLIER MUTEX: Allow at most 1 active OPEN position per underlying across all strategies
             // Prevents Greek cross-talk, margin locking, and multi-leg churn
-            boolean anyUnderlyingOpen = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
-                    .anyMatch(p -> "PAPER".equals(p.getBroker())
+            boolean anyUnderlyingOpen = openPositions.stream()
+                    .anyMatch(p -> ("PAPER".equalsIgnoreCase(p.getBroker()) || p.getBroker() == null)
                             && opp.getUnderlying() != null && opp.getUnderlying().equalsIgnoreCase(p.getUnderlying()));
             if (anyUnderlyingOpen) {
                 log.info("Auto-exec skipped for {} {}: underlying already has an active OPEN position (underlier mutex lock)", opp.getStrategyType(), opp.getUnderlying());
@@ -597,8 +598,8 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 continue;
             }
 
-            if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
-                    .anyMatch(p -> "PAPER".equals(p.getBroker()) && opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
+            if (openPositions.stream()
+                    .anyMatch(p -> ("PAPER".equalsIgnoreCase(p.getBroker()) || p.getBroker() == null) && opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
 
             String stratBreach = strategyLimitBreach(opp.getStrategyType(), true);
             if (stratBreach != null) {
@@ -612,8 +613,8 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             int strategyMaxLots = ((Number) settings.getOrDefault(prefix + "MaxLots", 9999)).intValue();
             int globalMaxLots = ((Number) settings.getOrDefault("maxOpenPositions", 9999)).intValue();
             
-            long openPaperStrategy = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
-                    .filter(p -> "PAPER".equals(p.getBroker()) && opp.getStrategyType().equals(p.getStrategyType()))
+            long openPaperStrategy = openPositions.stream()
+                    .filter(p -> ("PAPER".equalsIgnoreCase(p.getBroker()) || p.getBroker() == null) && opp.getStrategyType().equalsIgnoreCase(p.getStrategyType()))
                     .mapToInt(p -> p.getLots() != null ? p.getLots() : 1).sum();
             if (openPaperStrategy >= strategyMaxLots) {
                 tradeSupervisorService.recordRejectedSignal(opp.getUnderlying(), opp.getStrategyType(), opp.getStrike(), opp.getAction(),
@@ -643,8 +644,8 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                 continue;
             }
 
-            long openPaperTotal = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
-                    .filter(p -> "PAPER".equals(p.getBroker()))
+            long openPaperTotal = openPositions.stream()
+                    .filter(p -> ("PAPER".equalsIgnoreCase(p.getBroker()) || p.getBroker() == null))
                     .mapToInt(p -> p.getLots() != null ? p.getLots() : 1).sum();
             if (openPaperTotal >= globalMaxLots) {
                 tradeSupervisorService.recordRejectedSignal(opp.getUnderlying(), opp.getStrategyType(), opp.getStrike(), opp.getAction(),
@@ -736,6 +737,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                     .status("OPEN").enteredAt(LocalDateTime.now()).createdAt(LocalDateTime.now()).build();
                 livePos.setLegs(resolvedLegs);
                 positionRepo.save(livePos);
+                openPositions.add(livePos);
                 addLog("EXEC", "PAPER", "Auto-executed PAPER trade for " + opp.getUnderlying() + " (" + resolvedLegs.size() + " legs)");
             } else {
                 String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
@@ -796,6 +798,7 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
                     .holdType("INTRADAY")
                     .status("OPEN").enteredAt(LocalDateTime.now()).createdAt(LocalDateTime.now()).build();
                 positionRepo.save(livePos);
+                openPositions.add(livePos);
                 addLog("EXEC", "PAPER", "Auto-executed PAPER Bid Parity trade for " + opp.getUnderlying() + " @ CE:" + ceLive + " PE:" + peLive + " FUT:" + futLive);
             }
         }
