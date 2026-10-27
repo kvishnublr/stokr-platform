@@ -576,13 +576,13 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             if (totalEdge < minEdge) continue;
             if (opp.getExpiryDate() == null || opp.getStrike() == null) continue;
 
-            // STRICT DEDUPLICATION: Skip if ANY position of the same strategy is already OPEN on this underlying
-            boolean sameStrategyUnderlyingOpen = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
+            // STRICT UNDERLIER MUTEX: Allow at most 1 active OPEN position per underlying across all strategies
+            // Prevents Greek cross-talk, margin locking, and multi-leg churn
+            boolean anyUnderlyingOpen = positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(1L, "OPEN").stream()
                     .anyMatch(p -> "PAPER".equals(p.getBroker())
-                            && opp.getStrategyType() != null && opp.getStrategyType().equalsIgnoreCase(p.getStrategyType())
                             && opp.getUnderlying() != null && opp.getUnderlying().equalsIgnoreCase(p.getUnderlying()));
-            if (sameStrategyUnderlyingOpen) {
-                log.info("Auto-exec skipped for {} {}: already has an active OPEN position on this underlying", opp.getStrategyType(), opp.getUnderlying());
+            if (anyUnderlyingOpen) {
+                log.info("Auto-exec skipped for {} {}: underlying already has an active OPEN position (underlier mutex lock)", opp.getStrategyType(), opp.getUnderlying());
                 continue;
             }
 
@@ -817,7 +817,18 @@ public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) 
             log.warn("Auto-exec: BLOCKED non-paper broker '{}'. ONLY PAPER auto-execution is allowed.", broker);
             return;
         }
-        executePaperTrades(newOpps, settings);
+
+        // Institutional Priority Cascade: Box > Bid Parity > Condor > Butterfly > Calendar > Others
+        List<OptionArbOpportunity> sortedOpps = new ArrayList<>(newOpps);
+        sortedOpps.sort((a, b) -> {
+            int pA = getStrategyPriority(a.getStrategyType());
+            int pB = getStrategyPriority(b.getStrategyType());
+            if (pA != pB) return Integer.compare(pA, pB);
+            double edgeA = a.getEdgeAfterCosts() != null ? a.getEdgeAfterCosts().doubleValue() : 0.0;
+            double edgeB = b.getEdgeAfterCosts() != null ? b.getEdgeAfterCosts().doubleValue() : 0.0;
+            return Double.compare(edgeB, edgeA);
+        });
+        executePaperTrades(sortedOpps, settings);
         return;
     }
 
@@ -2942,10 +2953,26 @@ for (LivePosition pos : openPositions) {
         try { return Double.parseDouble(val.trim()); } catch (Exception e) { return null; }
     }
 
-    /** Lots from the Strategy Control Center if saved there, else the per-underlying setting. */
+    /** Lots from the Strategy Control Center if saved there, else 2 lots for top structural arbitrage, else fallback. */
     private int strategyLots(String stratId, int fallback) {
         Double v = strategySetting(stratId, "lots");
-        return v != null && v >= 1 ? v.intValue() : fallback;
+        if (v != null && v >= 1) return v.intValue();
+        if (stratId != null && (stratId.contains("BOX") || stratId.contains("CONDOR"))) {
+            return 2; // Institutional lot sizing for structural arbitrage
+        }
+        return fallback;
+    }
+
+    private static int getStrategyPriority(String stratType) {
+        if (stratType == null) return 99;
+        String upper = stratType.toUpperCase();
+        if (upper.contains("BOX")) return 1;
+        if (upper.contains("PARITY")) return 2;
+        if (upper.contains("CONDOR")) return 3;
+        if (upper.contains("BUTTERFLY")) return 4;
+        if (upper.contains("CALENDAR")) return 5;
+        if (upper.contains("THETA") || upper.contains("SKEW")) return 6;
+        return 10;
     }
 
     /**

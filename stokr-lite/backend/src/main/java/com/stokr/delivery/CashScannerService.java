@@ -68,8 +68,11 @@ public class CashScannerService {
             if (atr <= 0) continue;
 
             double entryPrice = closeP;
-            double stopLossPrice = round2(entryPrice - 1.5 * atr); if (stopLossPrice >= entryPrice || stopLossPrice <= 0) stopLossPrice = round2(entryPrice * 0.93);
-            double targetPrice = round2(entryPrice + 3.0 * atr);
+            // Institutional Swing SL: 2.2x ATR (minimum 5.0% buffer below entry) to absorb intraday noise
+            double slDistance = Math.max(2.2 * atr, entryPrice * 0.05);
+            double stopLossPrice = round2(entryPrice - slDistance);
+            if (stopLossPrice >= entryPrice || stopLossPrice <= 0) stopLossPrice = round2(entryPrice * 0.94);
+            double targetPrice = round2(entryPrice + Math.max(3.0 * atr, slDistance * 1.5));
             double score = delivRatio * volumeRatio * (1 + priceChangePct / 100.0);
 
             Map<String, Object> m = new LinkedHashMap<>();
@@ -135,8 +138,11 @@ public class CashScannerService {
             if (atr <= 0) continue;
 
             double entryPrice = closeP;
-            double stopLossPrice = round2(entryPrice - 1.5 * atr); if (stopLossPrice >= entryPrice || stopLossPrice <= 0) stopLossPrice = round2(entryPrice * 0.93);
-            double targetPrice = round2(entryPrice + 2.5 * atr);
+            // Institutional Swing SL: 2.2x ATR (minimum 5.0% buffer below entry) to absorb intraday noise
+            double slDistance = Math.max(2.2 * atr, entryPrice * 0.05);
+            double stopLossPrice = round2(entryPrice - slDistance);
+            if (stopLossPrice >= entryPrice || stopLossPrice <= 0) stopLossPrice = round2(entryPrice * 0.94);
+            double targetPrice = round2(entryPrice + Math.max(2.5 * atr, slDistance * 1.5));
 
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("symbol", entry.getKey());

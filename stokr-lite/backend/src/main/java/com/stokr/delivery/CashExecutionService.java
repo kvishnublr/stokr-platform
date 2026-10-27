@@ -21,10 +21,10 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CashExecutionService {
 
-    private static final int MAX_OPEN_PAPER = 15; // 15 total open slots
-    private static final int MAX_OPEN_SURGE = 5;  // 5 dedicated to short-term intraday surge
-    private static final int MAX_OPEN_SWING = 10; // 10 dedicated to multi-day swing
-    private static final int DAILY_EXEC_LIMIT = 10; // Allow up to 10 entries/day
+    private static final int MAX_OPEN_PAPER = 3;  // Focused Sniper Portfolio: Top 3 high-conviction positions
+    private static final int MAX_OPEN_SURGE = 1;  // 1 dedicated to short-term intraday surge
+    private static final int MAX_OPEN_SWING = 2;  // 2 dedicated to multi-day swing
+    private static final int DAILY_EXEC_LIMIT = 3;// Focused limit: 3 entries/day
     private static final double PAPER_CAPITAL = 10000.0;
     private static final int MAX_HOLD_DAYS_SURGE = 2;
     private static final int MAX_HOLD_DAYS_SWING = 5;
@@ -36,9 +36,10 @@ public class CashExecutionService {
     private final BrokerAccountRepository brokerAccountRepo;
     private final NseDeliveryDataRepository deliveryRepo;
     @org.springframework.context.annotation.Lazy @org.springframework.beans.factory.annotation.Autowired private CashScannerService cashScannerService;
+    @org.springframework.context.annotation.Lazy @org.springframework.beans.factory.annotation.Autowired private com.stokr.arbitrage.MarketRegimeService marketRegimeService;
 
     /** Minimum room between entry and stop; a tighter stop is hit by normal intraday noise. */
-    static final double MIN_STOP_DISTANCE = 0.015;
+    static final double MIN_STOP_DISTANCE = 0.035;
 
     /** Why a long entry at {@code ltp} with these levels makes no sense, or null when it does. */
     static String entryLevelsProblem(double ltp, double targetPrice, double stopLossPrice) {
@@ -334,6 +335,15 @@ public class CashExecutionService {
     public void autoPaperTradeCashSignals() {
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
         if (!com.stokr.marketdata.MarketCalendar.isTradingDayToday() || nowIST.isBefore(LocalTime.of(9, 20)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
+
+        // Market Regime Gatekeeper: Do not enter fresh cash equity longs when NIFTY is trending down or in volatility shock
+        if (marketRegimeService != null) {
+            com.stokr.arbitrage.MarketRegime niftyRegime = marketRegimeService.detectRegime("NIFTY");
+            if (niftyRegime == com.stokr.arbitrage.MarketRegime.BEARISH_TREND || niftyRegime == com.stokr.arbitrage.MarketRegime.VOLATILITY_SHOCK) {
+                log.info("Auto-exec cash skipped: NIFTY is in {} - suppressing cash equity buys", niftyRegime);
+                return;
+            }
+        }
 
         List<CashPosition> allPositions = positionRepo.findAllByOrderByEnteredAtDesc();
         List<CashPosition> openPositions = allPositions.stream().filter(p -> "OPEN".equals(p.getStatus())).toList();

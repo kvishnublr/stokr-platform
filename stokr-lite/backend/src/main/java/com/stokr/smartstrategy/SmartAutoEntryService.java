@@ -148,25 +148,18 @@ public class SmartAutoEntryService {
         try {
             List<Map<String, Object>> allOpportunities = new ArrayList<>();
 
-            // Scan all 8 strategy types
-            List<Map<String, Object>> adaptiveOpps = new ArrayList<>();
-            safeScan("ADAPTIVE", () -> adaptiveStrategyScanner.scan("ALL"), adaptiveOpps);
-            if (adaptiveOpps.size() > 3) {
-                adaptiveOpps.sort((a, b) -> Double.compare(
-                    ((Number) b.getOrDefault("compositeScore", b.getOrDefault("adaptiveScore", 0))).doubleValue(),
-                    ((Number) a.getOrDefault("compositeScore", a.getOrDefault("adaptiveScore", 0))).doubleValue()
-                ));
-                adaptiveOpps = new ArrayList<>(adaptiveOpps.subList(0, 3));
-            }
-            allOpportunities.addAll(adaptiveOpps);
-            safeScan("IRON_CONDOR", () -> ironCondorScanner.scan("ALL"), allOpportunities);
-            safeScan("JADE_LIZARD", () -> jadeLizardScanner.scan("ALL"), allOpportunities);
-            safeScan("BROKEN_WING_BUTTERFLY", () -> bwbScanner.scan("ALL"), allOpportunities);
-            safeScan("RATIO_BUTTERFLY", () -> ratioButterflyScanner.scan("ALL"), allOpportunities);
-            safeScan("SKEW_HARVEST", () -> skewHarvestScanner.scan("ALL"), allOpportunities);
+            // Sniper Focus: Prioritize proven Structural Arbitrage and Expiry Theta strategies
+            // Quarantined bleeding speculative strategies: JADE_LIZARD, BROKEN_WING_BUTTERFLY, RATIO_BUTTERFLY
             safeScan("BOX_SPREAD_ARB", () -> boxSpreadScanner.scan("ALL"), allOpportunities);
             safeScan("EXPIRY_THETA_CRUSH", () -> thetaCrushScanner.scan("ALL"), allOpportunities);
             safeScan("CALENDAR_SPREAD_EDGE", () -> calendarSpreadScanner.scan("ALL"), allOpportunities);
+            safeScan("SKEW_HARVEST", () -> skewHarvestScanner.scan("ALL"), allOpportunities);
+
+            // Iron Condor ONLY on Expiry Days (Wed/Thu) to capture concentrated 0DTE/1DTE theta
+            java.time.DayOfWeek dayOfWeek = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).getDayOfWeek();
+            if (dayOfWeek == java.time.DayOfWeek.WEDNESDAY || dayOfWeek == java.time.DayOfWeek.THURSDAY) {
+                safeScan("IRON_CONDOR", () -> ironCondorScanner.scan("ALL"), allOpportunities);
+            }
 
             // Filter out non-actionable opportunities (no legs = preview only)
             allOpportunities.removeIf(o -> o.get("legList") == null
@@ -204,6 +197,16 @@ public class SmartAutoEntryService {
             log.info("SMART_AUTO: {} opportunities scored above {} (timing: {}, mult: {}), top score: {}",
                 ranked.size(), MIN_SCORE, timing.phase, timing.scoreMultiplier, ranked.get(0).get("compositeScore"));
 
+            // Institutional Priority Cascade: Box > Bid Parity > Condor > Butterfly > Calendar > Others
+            ranked.sort((a, b) -> {
+                int pA = getStrategyPriority(String.valueOf(a.get("strategyType")));
+                int pB = getStrategyPriority(String.valueOf(b.get("strategyType")));
+                if (pA != pB) return Integer.compare(pA, pB);
+                double scoreA = ((Number) a.getOrDefault("compositeScore", 0)).doubleValue();
+                double scoreB = ((Number) b.getOrDefault("compositeScore", 0)).doubleValue();
+                return Double.compare(scoreB, scoreA);
+            });
+
             // Try to enter the best one that passes risk checks
             List<LivePosition> openPositions = positionRepo.findAllOpen();
             int entered = 0;
@@ -224,14 +227,14 @@ public class SmartAutoEntryService {
                 String und = String.valueOf(opp.get("underlying"));
                 String expStr = String.valueOf(opp.getOrDefault("expiry", opp.getOrDefault("expiryDate", "")));
 
-                // STRICT DEDUPLICATION: Skip if ANY position of the same strategy is already OPEN on this underlying
+                // STRICT UNDERLIER MUTEX: Allow at most 1 active OPEN position per underlying across all strategies
+                // Prevents Greek cross-talk, margin locking, and multi-leg churn
                 boolean alreadyOpenOnUnderlying = openPositions.stream().anyMatch(pos ->
                     "OPEN".equals(pos.getStatus()) &&
-                    stratType.equalsIgnoreCase(pos.getStrategyType()) &&
                     und.equalsIgnoreCase(pos.getUnderlying())
                 );
                 if (alreadyOpenOnUnderlying) {
-                    log.info("SMART_AUTO: Skipped {} {} - already has an active OPEN position on this underlying", stratType, und);
+                    log.info("SMART_AUTO: Skipped {} {} - underlying already has an active OPEN position (underlier mutex lock)", stratType, und);
                     continue;
                 }
 
@@ -454,10 +457,27 @@ public class SmartAutoEntryService {
         try { return Double.parseDouble(val.trim()); } catch (Exception e) { return null; }
     }
 
-    /** Strategy Control Center lots if saved, else the score-based default. */
+    /** Strategy Control Center lots if saved, else 2 lots for top structural arbitrage (Box, Condor), 1 lot for others. */
     private int lotsFor(Map<String, Object> opp) {
         Double v = settingNumber(String.valueOf(opp.get("strategyType")), "lots");
-        return v != null && v >= 1 ? v.intValue() : lotsForScore(opp);
+        if (v != null && v >= 1) return v.intValue();
+        String st = String.valueOf(opp.get("strategyType")).toUpperCase();
+        if (st.contains("BOX") || st.contains("CONDOR")) {
+            return 2; // Institutional lot sizing for structural arbitrage
+        }
+        return lotsForScore(opp);
+    }
+
+    private static int getStrategyPriority(String stratType) {
+        if (stratType == null) return 99;
+        String upper = stratType.toUpperCase();
+        if (upper.contains("BOX")) return 1;
+        if (upper.contains("PARITY")) return 2;
+        if (upper.contains("CONDOR")) return 3;
+        if (upper.contains("BUTTERFLY")) return 4;
+        if (upper.contains("CALENDAR")) return 5;
+        if (upper.contains("THETA") || upper.contains("SKEW")) return 6;
+        return 10;
     }
 
     /** Strategy Control Center maxActiveTrades / maxDailyLoss for paper positions; null if OK. */

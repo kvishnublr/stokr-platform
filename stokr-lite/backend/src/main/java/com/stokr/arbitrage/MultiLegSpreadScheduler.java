@@ -61,6 +61,12 @@ public class MultiLegSpreadScheduler {
 
     @Scheduled(cron = "2/5 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
     public void scanIronCondor() {
+        // Expiry-Day Focus: Iron Condor is strictly permitted only on Expiry Days (Wed for BankNifty, Thu for Nifty)
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        java.time.DayOfWeek day = today.getDayOfWeek();
+        if (day != java.time.DayOfWeek.WEDNESDAY && day != java.time.DayOfWeek.THURSDAY) {
+            return; // Suppressed on Mon, Tue, Fri to prevent multi-day directional drift losses
+        }
         scanAndExec("iron-condor", () -> {
             List<Map<String, Object>> all = new ArrayList<>();
             for (String u : List.of("NIFTY", "BANKNIFTY")) {
