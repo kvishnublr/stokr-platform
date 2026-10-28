@@ -161,8 +161,19 @@ public class BrokerTokenRefresher {
                     .build(),
                 HttpResponse.BodyHandlers.ofString());
 
+            if (resp.statusCode() >= 400) {
+                log.error("Zerodha connect HTTP {}: {}", resp.statusCode(), resp.body());
+                throw new RuntimeException("Zerodha connect HTTP " + resp.statusCode() + ": " + resp.body());
+            }
+
             String location = resp.headers().firstValue("location").orElse(null);
-            if (location == null || location.isBlank()) break;
+            if (location == null || location.isBlank()) {
+                if (resp.body() != null && resp.body().contains("error")) {
+                    log.error("Zerodha connect response error: {}", resp.body());
+                    throw new RuntimeException("Zerodha connect error: " + resp.body());
+                }
+                break;
+            }
 
             if (location.startsWith("/")) {
                 URI base = URI.create(cur);

@@ -85,33 +85,15 @@ public class ZerodhaSpotPriceFetcher {
             String token = getAuthToken();
             if (token == null) {
                 log.warn("Zerodha auth token unavailable for quote fetch — spot/futures will be 0");
-                        double fallbackSpot = 0, fallbackFut = 0;
-        if (spotCached != null && spotCached > 0) fallbackSpot = spotCached;
-        else if (spotKey.contains("BANK")) fallbackSpot = 53800.0;
-        else if (spotKey.contains("MID")) fallbackSpot = 13100.0;
-        else if (spotKey.contains("FIN")) fallbackSpot = 24200.0;
-        else if (spotKey.contains("NIFTY")) fallbackSpot = 24650.0;
-        else fallbackSpot = 0.0;
-
-        if (futCached != null && futCached > 0) fallbackFut = futCached;
-        else fallbackFut = fallbackSpot;
-
+                        double fallbackSpot = getFallbackSpot(spotKey);
+        double fallbackFut = futCached != null && futCached > 0 ? futCached : fallbackSpot;
         return new double[]{fallbackSpot, fallbackFut};
             }
 
             if (apiKey == null || apiKey.isBlank()) {
                 log.warn("Zerodha API key not configured (broker.zerodha.api-key) — quote fetch will fail");
-                        double fallbackSpot = 0, fallbackFut = 0;
-        if (spotCached != null && spotCached > 0) fallbackSpot = spotCached;
-        else if (spotKey.contains("BANK")) fallbackSpot = 53800.0;
-        else if (spotKey.contains("MID")) fallbackSpot = 13100.0;
-        else if (spotKey.contains("FIN")) fallbackSpot = 24200.0;
-        else if (spotKey.contains("NIFTY")) fallbackSpot = 24650.0;
-        else fallbackSpot = 0.0;
-
-        if (futCached != null && futCached > 0) fallbackFut = futCached;
-        else fallbackFut = fallbackSpot;
-
+                        double fallbackSpot = getFallbackSpot(spotKey);
+        double fallbackFut = futCached != null && futCached > 0 ? futCached : fallbackSpot;
         return new double[]{fallbackSpot, fallbackFut};
             }
 
@@ -163,19 +145,47 @@ public class ZerodhaSpotPriceFetcher {
         } catch (Exception e) {
             log.error("Failed batch fetch for {} / {}: {}", spotKey, futuresKey, e.getMessage());
         }
-                double fallbackSpot = 0, fallbackFut = 0;
-        if (spotCached != null && spotCached > 0) fallbackSpot = spotCached;
-        else if (spotKey.contains("BANK")) fallbackSpot = 53800.0;
-        else if (spotKey.contains("MID")) fallbackSpot = 13100.0;
-        else if (spotKey.contains("FIN")) fallbackSpot = 24200.0;
-        else if (spotKey.contains("NIFTY")) fallbackSpot = 24650.0;
-        else fallbackSpot = 0.0;
-
-        if (futCached != null && futCached > 0) fallbackFut = futCached;
-        else fallbackFut = fallbackSpot;
-
+                double fallbackSpot = getFallbackSpot(spotKey);
+        double fallbackFut = futCached != null && futCached > 0 ? futCached : fallbackSpot;
         return new double[]{fallbackSpot, fallbackFut};
     }
+
+    private double getFallbackSpot(String spotKey) {
+        Double spotCached = cache.get(spotKey);
+        if (spotCached != null && spotCached > 0) return spotCached;
+
+        try {
+            String ticker = null;
+            if (spotKey.contains("BANK")) ticker = "%5ENSEBANK";
+            else if (spotKey.contains("MID")) ticker = "NIFTY_MID_SELECT.NS";
+            else if (spotKey.contains("FIN")) ticker = "NIFTY_FIN_SERVICE.NS";
+            else if (spotKey.contains("NIFTY")) ticker = "%5ENSEI";
+
+            if (ticker != null) {
+                String url = "https://query1.finance.yahoo.com/v8/finance/chart/" + ticker + "?interval=1m";
+                HttpHeaders h = new HttpHeaders();
+                h.set("User-Agent", "Mozilla/5.0");
+                ResponseEntity<String> r = restTemplate.exchange(url, HttpMethod.GET, new HttpEntity<>(h), String.class);
+                if (r.getStatusCode().is2xxSuccessful() && r.getBody() != null) {
+                    JsonNode node = mapper.readTree(r.getBody());
+                    double p = node.path("chart").path("result").path(0).path("meta").path("regularMarketPrice").asDouble(0);
+                    if (p > 0) {
+                        log.info("Live fallback spot for {} via public feed: {}", spotKey, p);
+                        cache.put(spotKey, p);
+                        cacheTimestamps.put(spotKey, System.currentTimeMillis());
+                        return p;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Live public spot fetch failed for {}: {}", spotKey, e.getMessage());
+        }
+
+        if (spotKey.contains("BANK")) return 54300.0;
+        if (spotKey.contains("MID")) return 13300.0;
+        if (spotKey.contains("FIN")) return 24400.0;
+        if (spotKey.contains("NIFTY")) return 22700.0;
+        return 0.0;
+    }
+
 }
-
-

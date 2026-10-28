@@ -1886,7 +1886,18 @@ public class OptionArbitrageController {
                         double entry = leg.get("price") instanceof Number n ? n.doubleValue() : (leg.get("entryPrice") instanceof Number n2 ? n2.doubleValue() : 0);
                         int qty = leg.get("qty") instanceof Number n ? n.intValue() : 1;
                         String side = (String) leg.get("side");
-                        double cur = lq != null ? ("BUY".equals(side) ? (lq.bid > 0 ? lq.bid : lq.lastPrice) : (lq.ask > 0 ? lq.ask : lq.lastPrice)) : entry;
+                        double cur;
+                        if (lq != null && lq.lastPrice > 0) {
+                            cur = "BUY".equals(side) ? (lq.bid > 0 ? lq.bid : lq.lastPrice) : (lq.ask > 0 ? lq.ask : lq.lastPrice);
+                        } else {
+                            double theo = computeTheoreticalLegPrice(p.getUnderlying(), leg, p.getExpiryDate());
+                            if (theo > 0) {
+                                cur = Math.round(theo * 100.0) / 100.0;
+                                em.put("priceSource", "THEORETICAL");
+                            } else {
+                                cur = entry;
+                            }
+                        }
                         double legPnlVal = ("BUY".equals(side) ? (cur - entry) : (entry - cur)) * qty * lotSize * lots;
                         em.put("entryPrice", entry);
                         em.put("currentPrice", cur);
@@ -1895,9 +1906,21 @@ public class OptionArbitrageController {
                     }
                     map.put("legList", enrichedLegs);
                     map.put("legs", enrichedLegs);
+
+                    if (pnl == 0 && !enrichedLegs.isEmpty()) {
+                        double legSum = enrichedLegs.stream().mapToDouble(l -> l.get("pnl") instanceof Number n ? n.doubleValue() : 0.0).sum();
+                        if (legSum != 0) {
+                            pnl = legSum;
+                        } else if (p.getCurrentPnl() != null) {
+                            pnl = p.getCurrentPnl().doubleValue();
+                        }
+                    }
                 }
             } else {
                 pnl = autoExecService.computePnl(p, quotes);
+                if (pnl == 0 && p.getCurrentPnl() != null && quotes.isEmpty()) {
+                    pnl = p.getCurrentPnl().doubleValue();
+                }
                 var ceQ = p.getCeSymbol() != null ? quotes.get(p.getCeSymbol()) : null;
                 var peQ = p.getPeSymbol() != null ? quotes.get(p.getPeSymbol()) : null;
                 var futQ = p.getFutSymbol() != null ? quotes.get(p.getFutSymbol()) : null;
@@ -1906,6 +1929,10 @@ public class OptionArbitrageController {
                 map.put("futCurrent", futQ != null ? futQ.lastPrice : 0);
             }
             map.put("currentPnl", Math.round(pnl));
+            if (pnl != 0 && p.getCurrentPnl() == null) {
+                p.setCurrentPnl(java.math.BigDecimal.valueOf(pnl));
+                try { livePositionRepo.save(p); } catch (Exception ignored) {}
+            }
 
             double target = p.getTargetEdge() != null ? p.getTargetEdge().doubleValue() : 0;
             double pnlPerLot = lots > 0 ? Math.abs(pnl) / lots : 0;
@@ -3268,6 +3295,49 @@ if (mode != null && !"ALL".equalsIgnoreCase(mode)) {            positions = posi
         autoExecService.updatePortfolioDailyRisk(req);
         addAuditLog("PORTFOLIO_RISK", "INFO", "Portfolio daily risk limits updated");
         return ResponseEntity.ok(autoExecService.getPortfolioDailyRisk());
+    }
+
+
+    private double computeTheoreticalLegPrice(String underlying, Map<String, Object> leg, LocalDate defaultExpiry) {
+        try {
+            if (underlying == null || leg == null) return 0.0;
+            Object strikeObj = leg.get("strike");
+            if (!(strikeObj instanceof Number strikeNum)) return 0.0;
+            double strike = strikeNum.doubleValue();
+            if (strike <= 0) return 0.0;
+
+            String optType = (String) leg.get("optionType");
+            if (optType == null) {
+                String sym = (String) leg.get("symbol");
+                if (sym != null) {
+                    if (sym.endsWith("CE")) optType = "CE";
+                    else if (sym.endsWith("PE")) optType = "PE";
+                }
+            }
+            if (optType == null) return 0.0;
+            boolean isCall = "CE".equalsIgnoreCase(optType);
+
+            String spotKey = "NSE:" + ("NIFTY".equalsIgnoreCase(underlying) ? "NIFTY 50" : underlying);
+            double spot = spotFetcher != null ? spotFetcher.getSpotPrice(spotKey) : 0.0;
+            if (spot <= 0) return 0.0;
+
+            LocalDate exp = defaultExpiry;
+            if (leg.get("expiry") instanceof String expStr && !expStr.isBlank()) {
+                try { exp = LocalDate.parse(expStr); } catch (Exception ignored) {}
+            }
+            if (exp == null) exp = LocalDate.now().plusDays(3);
+
+            long days = Math.max(1, java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), exp));
+            double T = days / 365.0;
+            double r = 0.065;
+            double sigma = "BANKNIFTY".equalsIgnoreCase(underlying) ? 0.15 : 0.125;
+
+            return isCall
+                ? BlackScholesCalculator.callPrice(spot, strike, T, r, sigma)
+                : BlackScholesCalculator.putPrice(spot, strike, T, r, sigma);
+        } catch (Exception e) {
+            return 0.0;
+        }
     }
 
 }
